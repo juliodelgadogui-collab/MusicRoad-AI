@@ -1,0 +1,19 @@
+MUSICROAD AI 1.0.0 - SISTEMA COMPLETO
+
+PERFIS
+- ADM: gerencia clientes, Drive, biblioteca e radares.
+- CLIENTE: player, Smart Mix, GPS, rotas e músicas do dispositivo.
+
+LOGIN INICIAL
+ADM: adm / 1
+CLIENTE TESTE: cliente / 1
+
+CLIENTE - PRIMEIRO ACESSO
+1) O sistema abre uma tela de permissões.
+2) Solicita autorização para uma pasta onde existem músicas.
+3) Procura músicas automaticamente dentro da pasta e subpastas.
+4) Solicita localização para GPS/rota/radares.
+5) Nenhum arquivo local é enviado para o servidor.
+
+REQUISITO
+Use HTTPS para o GPS funcionar corretamente.
