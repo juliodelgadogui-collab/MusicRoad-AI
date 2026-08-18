@@ -6,6 +6,7 @@ import android.content.ContentUris;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.MediaStore;
@@ -14,6 +15,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,17 +37,20 @@ public final class NativeMusicRepository {
 
         ContentResolver resolver = context.getContentResolver();
         Uri collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-        String[] projection = new String[] {
-                MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.ALBUM_ID,
-                MediaStore.Audio.Media.DURATION,
-                MediaStore.Audio.Media.SIZE,
-                MediaStore.Audio.Media.DISPLAY_NAME,
-                MediaStore.Audio.Media.MIME_TYPE
-        };
+        List<String> projectionList = new ArrayList<>();
+        projectionList.add(MediaStore.Audio.Media._ID);
+        projectionList.add(MediaStore.Audio.Media.TITLE);
+        projectionList.add(MediaStore.Audio.Media.ARTIST);
+        projectionList.add(MediaStore.Audio.Media.ALBUM);
+        projectionList.add(MediaStore.Audio.Media.ALBUM_ID);
+        projectionList.add(MediaStore.Audio.Media.DURATION);
+        projectionList.add(MediaStore.Audio.Media.SIZE);
+        projectionList.add(MediaStore.Audio.Media.DISPLAY_NAME);
+        projectionList.add(MediaStore.Audio.Media.MIME_TYPE);
+        if (Build.VERSION.SDK_INT >= 29) projectionList.add(MediaStore.Audio.Media.RELATIVE_PATH);
+        else projectionList.add(MediaStore.Audio.Media.DATA);
+        String[] projection = projectionList.toArray(new String[0]);
+
         String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0";
         String sort = MediaStore.Audio.Media.ARTIST + " COLLATE NOCASE ASC, " + MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC";
 
@@ -60,6 +65,8 @@ public final class NativeMusicRepository {
             int sizeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE);
             int displayCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME);
             int mimeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE);
+            int relativeCol = Build.VERSION.SDK_INT >= 29 ? c.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) : -1;
+            int dataCol = Build.VERSION.SDK_INT < 29 ? c.getColumnIndex(MediaStore.Audio.Media.DATA) : -1;
 
             while (c.moveToNext()) {
                 long id = c.getLong(idCol);
@@ -73,9 +80,23 @@ public final class NativeMusicRepository {
                 long size = Math.max(0, c.getLong(sizeCol));
                 String mime = safe(c.getString(mimeCol), mimeFromName(display));
                 Uri uri = ContentUris.withAppendedId(collection, id);
+
+                String folderPath = "";
+                if (relativeCol >= 0) folderPath = normalizeFolderPath(c.getString(relativeCol));
+                else if (dataCol >= 0) {
+                    String data = c.getString(dataCol);
+                    if (data != null && !data.isEmpty()) {
+                        File parent = new File(data).getParentFile();
+                        if (parent != null) folderPath = normalizeFolderPath(parent.getPath());
+                    }
+                }
+                String folder = lastFolder(folderPath);
+                String genre = readGenre(context, uri);
+
                 result.add(new MusicTrack(
                         "android-" + id, title, artist, album, uri.toString(),
-                        "Dispositivo", mime, duration, size, albumId
+                        "Celular", mime, duration, size, albumId,
+                        genre, folder, folderPath
                 ));
             }
         } catch (SecurityException ignored) {
@@ -100,6 +121,35 @@ public final class NativeMusicRepository {
             root.put("tracks", arr);
         } catch (JSONException ignored) {}
         return root;
+    }
+
+    private static String readGenre(Context context, Uri uri) {
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(context, uri);
+            String genre = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE);
+            return genre == null ? "" : genre.trim();
+        } catch (Exception ignored) {
+            return "";
+        } finally {
+            try { retriever.release(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static String normalizeFolderPath(String value) {
+        if (value == null) return "";
+        String normalized = value.replace('\\', '/').trim();
+        while (normalized.endsWith("/")) normalized = normalized.substring(0, normalized.length() - 1);
+        return normalized;
+    }
+
+    private static String lastFolder(String path) {
+        if (path == null || path.trim().isEmpty()) return "Sem pasta";
+        String normalized = normalizeFolderPath(path);
+        int slash = normalized.lastIndexOf('/');
+        String folder = slash >= 0 ? normalized.substring(slash + 1) : normalized;
+        if (folder.isEmpty()) return "Sem pasta";
+        return folder;
     }
 
     private static String safe(String value, String fallback) {
