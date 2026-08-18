@@ -170,7 +170,7 @@ public final class NavigationService extends Service implements LocationListener
 
     private void persistState(){try{getSharedPreferences(PREFS,MODE_PRIVATE).edit().putString("route",routeToJson()).putString("hazards",hazardsToJson()).putString("limits",limitsToJson()).putString("destination",destination).apply();}catch(Exception ignored){}}
     private boolean restoreState(){try{SharedPreferences p=getSharedPreferences(PREFS,MODE_PRIVATE);parseRoute(p.getString("route",null));parseHazards(p.getString("hazards","[]"));parseLimits(p.getString("limits","[]"));destination=p.getString("destination","Destino");return route.size()>1;}catch(Exception e){return false;}}
-    private String routeToJson(){JSONArray a=new JSONArray();for(RoutePoint p:route){JSONArray c=new JSONArray();c.put(p.lon);c.put(p.lat);a.put(c);}return a.toString();}
+    private String routeToJson(){JSONArray a=new JSONArray();for(RoutePoint p:route){try{JSONArray c=new JSONArray();c.put(p.lon);c.put(p.lat);a.put(c);}catch(Exception ignored){}}return a.toString();}
     private String hazardsToJson(){JSONArray a=new JSONArray();for(Hazard h:hazards){JSONObject o=new JSONObject();try{o.put("external_id",h.key);o.put("latitude",h.lat);o.put("longitude",h.lon);o.put("route_m",h.routeM);o.put("velocidade",h.speed);o.put("tipo",h.type);o.put("fonte",h.source);o.put("alert_radius_m",h.alertRadiusM);if(!Float.isNaN(h.heading))o.put("heading",h.heading);}catch(Exception ignored){}a.put(o);}return a.toString();}
     private String limitsToJson(){JSONArray a=new JSONArray();for(SpeedLimit s:limits){JSONObject o=new JSONObject();try{o.put("route_m",s.routeM);o.put("velocidade",s.speed);}catch(Exception ignored){}a.put(o);}return a.toString();}
 
