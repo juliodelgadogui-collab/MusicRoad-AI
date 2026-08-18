@@ -6,7 +6,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -18,9 +20,13 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.util.Locale;
 
 public final class NativeBridge {
+    private static final String DOWNLOAD_PREFS="musicroad_offline_downloads_v1";
     private final MainActivity activity;
     NativeBridge(MainActivity activity){this.activity=activity;}
 
@@ -45,39 +51,99 @@ public final class NativeBridge {
         new Thread(() -> {
             try{if(delayMs>0)Thread.sleep(delayMs);}catch(InterruptedException ignored){}
             final String json=NativeMusicRepository.scanAsJson(activity).toString();
-            activity.runOnUiThread(() -> dispatchJs("document.dispatchEvent(new CustomEvent('mr:native-library',{detail:JSON.parse("+org.json.JSONObject.quote(json)+")}));"));
+            activity.runOnUiThread(() -> dispatchJs("document.dispatchEvent(new CustomEvent('mr:native-library',{detail:JSON.parse("+JSONObject.quote(json)+")}));"));
         },"MusicRoad-MediaStore").start();
     }
 
-    @JavascriptInterface public long downloadForOffline(String url,String filename,String mimeType){
+    private SharedPreferences downloadPrefs(){return activity.getSharedPreferences(DOWNLOAD_PREFS,Context.MODE_PRIVATE);}
+    private static String pkey(String prefix,String key){return prefix+(key==null?"":key);}
+
+    private JSONObject offlineDownloadState(String key){
+        JSONObject out=new JSONObject();
+        try{
+            SharedPreferences prefs=downloadPrefs();
+            long id=prefs.getLong(pkey("id:",key),-1);
+            boolean done=prefs.getBoolean(pkey("done:",key),false);
+            if(id<=0){out.put("state",done?"downloaded":"none");out.put("progress",done?100:0);return out;}
+            DownloadManager dm=(DownloadManager)activity.getSystemService(Context.DOWNLOAD_SERVICE);
+            try(Cursor c=dm.query(new DownloadManager.Query().setFilterById(id))){
+                if(c==null||!c.moveToFirst()){
+                    out.put("state",done?"downloaded":"none");out.put("progress",done?100:0);return out;
+                }
+                int status=c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+                long bytes=c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+                long total=c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+                int progress=total>0?(int)Math.max(0,Math.min(100,(bytes*100L)/total)):0;
+                if(status==DownloadManager.STATUS_SUCCESSFUL){
+                    prefs.edit().putBoolean(pkey("done:",key),true).apply();out.put("state","downloaded");out.put("progress",100);
+                }else if(status==DownloadManager.STATUS_RUNNING){out.put("state","downloading");out.put("progress",Math.max(1,progress));}
+                else if(status==DownloadManager.STATUS_PENDING){out.put("state","downloading");out.put("progress",Math.max(1,progress));}
+                else if(status==DownloadManager.STATUS_PAUSED){out.put("state","paused");out.put("progress",progress);}
+                else if(status==DownloadManager.STATUS_FAILED){prefs.edit().remove(pkey("id:",key)).putBoolean(pkey("done:",key),false).apply();out.put("state","failed");out.put("progress",0);}
+                else{out.put("state",done?"downloaded":"none");out.put("progress",done?100:progress);}
+            }
+        }catch(Exception e){try{out.put("state","none");out.put("progress",0);}catch(Exception ignored){}}
+        return out;
+    }
+
+    @JavascriptInterface public String getOfflineDownloadStates(String keysJson){
+        JSONObject out=new JSONObject();
+        try{
+            JSONArray keys=new JSONArray(keysJson==null?"[]":keysJson);
+            for(int i=0;i<keys.length();i++){
+                String key=keys.optString(i,"");if(key.isEmpty())continue;
+                out.put(key,offlineDownloadState(key));
+            }
+        }catch(Exception ignored){}
+        return out.toString();
+    }
+
+    private long enqueueOfflineDownload(String url,String filename,String mimeType,String offlineKey){
         if(url==null||url.trim().isEmpty())return -1;
         try{
+            if(offlineKey!=null&&!offlineKey.isEmpty()){
+                JSONObject existing=offlineDownloadState(offlineKey);
+                if("downloaded".equals(existing.optString("state")))return downloadPrefs().getLong(pkey("id:",offlineKey),-1);
+                if("downloading".equals(existing.optString("state"))||"paused".equals(existing.optString("state")))return downloadPrefs().getLong(pkey("id:",offlineKey),-1);
+            }
             String safe=(filename==null||filename.trim().isEmpty()?"musica":filename).replaceAll("[\\\\/:*?\"<>|]+","_").trim();
             String mt=mimeType==null?"":mimeType.toLowerCase(Locale.ROOT);
             if(!safe.matches("(?i).*\\.(mp3|m4a|aac|flac|wav|ogg|opus)$"))safe+=mt.contains("flac")?".flac":mt.contains("wav")?".wav":mt.contains("ogg")?".ogg":mt.contains("mp4")||mt.contains("m4a")?".m4a":".mp3";
             DownloadManager.Request req=new DownloadManager.Request(Uri.parse(url));
             if(!mt.isEmpty())req.setMimeType(mimeType);
             String cookie=CookieManager.getInstance().getCookie(url);if(cookie!=null&&!cookie.isEmpty())req.addRequestHeader("Cookie",cookie);
-            req.addRequestHeader("User-Agent","MusicRoadAndroid/4.3");
+            req.addRequestHeader("User-Agent","MusicRoadAndroid/"+BuildConfig.VERSION_NAME);
             req.setTitle(safe);req.setDescription("MusicRoad · música offline");req.setAllowedOverMetered(true);req.setAllowedOverRoaming(true);
             req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
             req.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC,"MusicRoad/"+safe);
             DownloadManager dm=(DownloadManager)activity.getSystemService(Context.DOWNLOAD_SERVICE);long id=dm.enqueue(req);
-            final long target=id;
+            if(offlineKey!=null&&!offlineKey.isEmpty())downloadPrefs().edit().putLong(pkey("id:",offlineKey),id).putBoolean(pkey("done:",offlineKey),false).putString(pkey("file:",offlineKey),safe).apply();
+            final long target=id;final String targetKey=offlineKey;
             BroadcastReceiver receiver=new BroadcastReceiver(){
                 @Override public void onReceive(Context context,Intent intent){
                     if(!DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(intent.getAction())||intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID,-1)!=target)return;
                     try{activity.unregisterReceiver(this);}catch(Exception ignored){}
-                    activity.runOnUiThread(()->{Toast.makeText(activity,"Música salva em Música/MusicRoad para ouvir offline.",Toast.LENGTH_SHORT).show();dispatchJs("document.dispatchEvent(new CustomEvent('mr:download-complete'));" );});
-                    dispatchLibraryAsync(1400);
+                    JSONObject state=targetKey==null?new JSONObject():offlineDownloadState(targetKey);
+                    String status=state.optString("state","downloaded");
+                    if(targetKey!=null&&!targetKey.isEmpty()&&"downloaded".equals(status))downloadPrefs().edit().putBoolean(pkey("done:",targetKey),true).apply();
+                    activity.runOnUiThread(()->{
+                        if("downloaded".equals(status))Toast.makeText(activity,"Música baixada ✓ pronta para ouvir offline.",Toast.LENGTH_SHORT).show();
+                        else Toast.makeText(activity,"O download da música não foi concluído.",Toast.LENGTH_SHORT).show();
+                        String detail=targetKey==null?"{}":"{key:"+JSONObject.quote(targetKey)+",state:"+JSONObject.quote(status)+",progress:"+("downloaded".equals(status)?100:0)+"}";
+                        dispatchJs("document.dispatchEvent(new CustomEvent('mr:download-complete',{detail:"+detail+"}));");
+                    });
+                    if("downloaded".equals(status))dispatchLibraryAsync(1100);
                 }
             };
             IntentFilter filter=new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
             if(Build.VERSION.SDK_INT>=33)activity.registerReceiver(receiver,filter,Context.RECEIVER_EXPORTED);else activity.registerReceiver(receiver,filter);
-            activity.runOnUiThread(()->Toast.makeText(activity,"Baixando música para o celular...",Toast.LENGTH_SHORT).show());
+            activity.runOnUiThread(()->Toast.makeText(activity,"Baixando para Música/MusicRoad...",Toast.LENGTH_SHORT).show());
             return id;
         }catch(Exception e){activity.runOnUiThread(()->Toast.makeText(activity,"Não foi possível iniciar o download.",Toast.LENGTH_SHORT).show());return -1;}
     }
+
+    @JavascriptInterface public long downloadForOffline(String url,String filename,String mimeType){return enqueueOfflineDownload(url,filename,mimeType,null);}
+    @JavascriptInterface public long downloadForOfflineTrack(String url,String filename,String mimeType,String offlineKey){return enqueueOfflineDownload(url,filename,mimeType,offlineKey);}
 
     @JavascriptInterface public boolean startNavigation(String routeJson,String hazardsJson,String speedLimitsJson,String destination){
         if(Build.VERSION.SDK_INT>=23 && activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED && activity.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED){
