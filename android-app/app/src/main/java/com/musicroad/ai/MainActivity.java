@@ -10,11 +10,14 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
@@ -56,7 +59,9 @@ public class MainActivity extends Activity {
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         webView=new WebView(this);
         webView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
-        webView.setOverScrollMode(android.view.View.OVER_SCROLL_NEVER);
+        webView.setBackgroundColor(Color.rgb(8,17,31));
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        applySystemBarInsets(webView);
         setContentView(webView);
         configureWebView();registerPlaybackReceiver();requestNotificationPermissionIfNeeded();
         if(savedInstanceState==null){
@@ -66,13 +71,29 @@ public class MainActivity extends Activity {
         }else webView.restoreState(savedInstanceState);
     }
 
+    private void applySystemBarInsets(View view){
+        view.setOnApplyWindowInsetsListener((v,insets)->{
+            int left,top,right,bottom;
+            if(Build.VERSION.SDK_INT>=30){
+                Insets bars=insets.getInsets(WindowInsets.Type.systemBars());
+                left=bars.left;top=bars.top;right=bars.right;bottom=bars.bottom;
+            }else{
+                left=insets.getSystemWindowInsetLeft();top=insets.getSystemWindowInsetTop();
+                right=insets.getSystemWindowInsetRight();bottom=insets.getSystemWindowInsetBottom();
+            }
+            v.setPadding(left,top,right,bottom);
+            return insets;
+        });
+        view.requestApplyInsets();
+    }
+
     private void configureWebView(){
         CookieManager cookies=CookieManager.getInstance();cookies.setAcceptCookie(true);cookies.setAcceptThirdPartyCookies(webView,true);
         WebSettings s=webView.getSettings();
         s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setGeolocationEnabled(true);
         s.setAllowFileAccess(true);s.setAllowContentAccess(true);s.setMediaPlaybackRequiresUserGesture(false);s.setSupportZoom(false);
-        s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(false);s.setTextZoom(100);
-        s.setUserAgentString(s.getUserAgentString()+" MusicRoadAndroid/3.0");
+        s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setUseWideViewPort(false);s.setLoadWithOverviewMode(false);s.setTextZoom(100);
+        s.setUserAgentString(s.getUserAgentString()+" MusicRoadAndroid/3.1");
         if(Build.VERSION.SDK_INT>=26)s.setSafeBrowsingEnabled(true);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         webView.addJavascriptInterface(new NativeBridge(this),"MusicRoadAndroid");
@@ -87,8 +108,7 @@ public class MainActivity extends Activity {
                 super.onReceivedError(view,request,error);if(request.isForMainFrame())view.loadUrl("file:///android_asset/offline.html?url="+Uri.encode(BuildConfig.MUSICROAD_URL));
             }
             @Override public void onPageFinished(WebView view,String url){
-                super.onPageFinished(view,url);
-                view.evaluateJavascript("document.documentElement.classList.add('native-app');window.MusicRoadNativeInfo={platform:'android',version:'"+BuildConfig.VERSION_NAME+"',mediaStore:true,nativePlayer:true,cockpit:true};document.dispatchEvent(new CustomEvent('mr:native-ready'));",null);
+                super.onPageFinished(view,url);injectNativeUi(view);
                 startService(PlaybackService.intentAction(MainActivity.this,PlaybackService.ACTION_BROADCAST_STATE));
             }
         });
@@ -106,6 +126,13 @@ public class MainActivity extends Activity {
         webView.setDownloadListener((url,userAgent,contentDisposition,mimeType,contentLength)->{
             try{DownloadManager.Request r=new DownloadManager.Request(Uri.parse(url));r.setMimeType(mimeType);String cookie=CookieManager.getInstance().getCookie(url);if(cookie!=null)r.addRequestHeader("Cookie",cookie);r.addRequestHeader("User-Agent",userAgent);String fn=URLUtil.guessFileName(url,contentDisposition,mimeType);r.setTitle(fn);r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);r.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,fn);((DownloadManager)getSystemService(DOWNLOAD_SERVICE)).enqueue(r);}catch(Exception ignored){}
         });
+    }
+
+    private void injectNativeUi(WebView view){
+        String css="html,body{width:100%;max-width:100%;overflow-x:hidden}body{min-height:100dvh;-webkit-text-size-adjust:100%;touch-action:manipulation}"+
+            "@media(max-width:900px){main{padding:12px 10px 184px!important;width:100%!important;max-width:100vw!important}.screen{width:100%;max-width:100%;overflow-x:hidden}.sidebar{padding:6px 6px 8px!important}.sidebar nav{gap:3px!important}.nav{min-width:0!important;padding:10px 3px!important;font-size:11px!important}.hero{padding:16px!important;gap:14px!important}.hero h1{font-size:clamp(24px,7.5vw,32px)!important;line-height:1.08!important}.panel{padding:14px!important}.toolbar{gap:10px!important}.trip-layout{min-height:auto!important;gap:10px!important}#map{min-height:52vh!important;height:52vh!important;border-radius:14px!important}.dashboard{grid-template-columns:repeat(3,1fr)!important;gap:6px!important}.dashboard div{padding:10px 6px!important;text-align:center!important}.dashboard strong{font-size:20px!important}.mini-player{left:0!important;right:0!important;bottom:57px!important;padding:8px 9px!important;gap:7px!important;grid-template-columns:42px minmax(0,1fr)!important;grid-template-areas:'img now' 'controls controls'!important}.mini-player img{width:40px!important;height:40px!important}.now{min-width:0!important}.now strong,.now span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.controls{gap:5px!important}.controls button{min-height:44px!important;padding:8px!important;font-size:16px!important}.controls #shuffle{font-size:12px!important}.track{grid-template-columns:44px minmax(0,1fr)!important}.track-actions{width:100%!important}}";
+        String js="(function(){document.documentElement.classList.add('native-app');window.MusicRoadNativeInfo={platform:'android',version:'"+BuildConfig.VERSION_NAME+"',mediaStore:true,nativePlayer:true,cockpit:true};var old=document.getElementById('mr-native-ui');if(old)old.remove();var st=document.createElement('style');st.id='mr-native-ui';st.textContent="+org.json.JSONObject.quote(css)+";document.head.appendChild(st);document.dispatchEvent(new CustomEvent('mr:native-ready'));})();";
+        view.evaluateJavascript(js,null);
     }
 
     private boolean isTrustedAppUri(Uri uri){
@@ -128,8 +155,7 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed(){
         if(webView==null){super.onBackPressed();return;}
         webView.evaluateJavascript("(function(){try{return !!(window.MusicRoadHandleBack&&window.MusicRoadHandleBack());}catch(e){return false;}})()",value->{
-            boolean handled="true".equals(value)||"\"true\"".equals(value);
-            if(!handled)runOnUiThread(this::handleBackFallback);
+            boolean handled="true".equals(value)||"\"true\"".equals(value);if(!handled)runOnUiThread(this::handleBackFallback);
         });
     }
     private void handleBackFallback(){
