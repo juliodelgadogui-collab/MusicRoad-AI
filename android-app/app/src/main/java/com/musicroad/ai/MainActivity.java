@@ -8,13 +8,16 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.Settings;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -31,6 +34,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import java.io.File;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -38,17 +42,34 @@ public class MainActivity extends Activity {
     private static final int REQ_FILES=1002;
     private static final int REQ_AUDIO=1003;
     private static final int REQ_NOTIFICATIONS=1004;
+    private static final String PREFS="musicroad_native";
+    private static final String PREF_UPDATE_ID="update_download_id";
+    private static final String APK_MIME="application/vnd.android.package-archive";
+
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private GeolocationPermissions.Callback geoCallback;
     private String geoOrigin;
     private long lastBackPressedAt=0;
+    private long updateDownloadId=-1;
+    private String pendingUpdateUrl;
+    private String pendingUpdateVersion="";
 
     private final BroadcastReceiver playbackReceiver=new BroadcastReceiver(){
         @Override public void onReceive(Context context,Intent intent){
             if(!PlaybackService.ACTION_STATE.equals(intent.getAction())||webView==null)return;
             String json=intent.getStringExtra(PlaybackService.EXTRA_STATE_JSON);if(json==null)return;
             runOnUiThread(()->webView.evaluateJavascript("if(window.Player&&Player.onNativeState){Player.onNativeState("+json+");}",null));
+        }
+    };
+
+    private final BroadcastReceiver updateReceiver=new BroadcastReceiver(){
+        @Override public void onReceive(Context context,Intent intent){
+            if(!DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(intent.getAction()))return;
+            long id=intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID,-1);
+            long expected=updateDownloadId;
+            if(expected<=0)expected=getPreferencesStore().getLong(PREF_UPDATE_ID,-1);
+            if(id>0&&id==expected)runOnUiThread(()->installDownloadedUpdate(id));
         }
     };
 
@@ -63,13 +84,16 @@ public class MainActivity extends Activity {
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         applySystemBarInsets(webView);
         setContentView(webView);
-        configureWebView();registerPlaybackReceiver();requestNotificationPermissionIfNeeded();
+        configureWebView();registerPlaybackReceiver();registerUpdateReceiver();requestNotificationPermissionIfNeeded();
+        updateDownloadId=getPreferencesStore().getLong(PREF_UPDATE_ID,-1);
         if(savedInstanceState==null){
             String url=BuildConfig.MUSICROAD_URL;
             if(url.contains("SEU-DOMINIO")){Toast.makeText(this,"Configure MUSICROAD_URL. A biblioteca nativa continua disponível offline.",Toast.LENGTH_LONG).show();webView.loadUrl("file:///android_asset/offline.html?unconfigured=1");}
             else webView.loadUrl(url);
         }else webView.restoreState(savedInstanceState);
     }
+
+    private SharedPreferences getPreferencesStore(){return getSharedPreferences(PREFS,MODE_PRIVATE);}
 
     private void applySystemBarInsets(View view){
         view.setOnApplyWindowInsetsListener((v,insets)->{
@@ -93,7 +117,7 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setGeolocationEnabled(true);
         s.setAllowFileAccess(true);s.setAllowContentAccess(true);s.setMediaPlaybackRequiresUserGesture(false);s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setUseWideViewPort(false);s.setLoadWithOverviewMode(false);s.setTextZoom(100);
-        s.setUserAgentString(s.getUserAgentString()+" MusicRoadAndroid/3.1");
+        s.setUserAgentString(s.getUserAgentString()+" MusicRoadAndroid/4.2");
         if(Build.VERSION.SDK_INT>=26)s.setSafeBrowsingEnabled(true);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         webView.addJavascriptInterface(new NativeBridge(this),"MusicRoadAndroid");
@@ -129,9 +153,7 @@ public class MainActivity extends Activity {
     }
 
     private void injectNativeUi(WebView view){
-        String css="html,body{width:100%;max-width:100%;overflow-x:hidden}body{min-height:100dvh;-webkit-text-size-adjust:100%;touch-action:manipulation}"+
-            "@media(max-width:900px){main{padding:12px 10px 184px!important;width:100%!important;max-width:100vw!important}.screen{width:100%;max-width:100%;overflow-x:hidden}.sidebar{padding:6px 6px 8px!important}.sidebar nav{gap:3px!important}.nav{min-width:0!important;padding:10px 3px!important;font-size:11px!important}.hero{padding:16px!important;gap:14px!important}.hero h1{font-size:clamp(24px,7.5vw,32px)!important;line-height:1.08!important}.panel{padding:14px!important}.toolbar{gap:10px!important}.trip-layout{min-height:auto!important;gap:10px!important}#map{min-height:52vh!important;height:52vh!important;border-radius:14px!important}.dashboard{grid-template-columns:repeat(3,1fr)!important;gap:6px!important}.dashboard div{padding:10px 6px!important;text-align:center!important}.dashboard strong{font-size:20px!important}.mini-player{left:0!important;right:0!important;bottom:57px!important;padding:8px 9px!important;gap:7px!important;grid-template-columns:42px minmax(0,1fr)!important;grid-template-areas:'img now' 'controls controls'!important}.mini-player img{width:40px!important;height:40px!important}.now{min-width:0!important}.now strong,.now span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.controls{gap:5px!important}.controls button{min-height:44px!important;padding:8px!important;font-size:16px!important}.controls #shuffle{font-size:12px!important}.track{grid-template-columns:44px minmax(0,1fr)!important}.track-actions{width:100%!important}}";
-        String js="(function(){document.documentElement.classList.add('native-app');window.MusicRoadNativeInfo={platform:'android',version:'"+BuildConfig.VERSION_NAME+"',mediaStore:true,nativePlayer:true,cockpit:true};var old=document.getElementById('mr-native-ui');if(old)old.remove();var st=document.createElement('style');st.id='mr-native-ui';st.textContent="+org.json.JSONObject.quote(css)+";document.head.appendChild(st);document.dispatchEvent(new CustomEvent('mr:native-ready'));})();";
+        String js="(function(){document.documentElement.classList.add('native-app');window.MusicRoadNativeInfo={platform:'android',version:'"+BuildConfig.VERSION_NAME+"',versionCode:"+BuildConfig.VERSION_CODE+",mediaStore:true,nativePlayer:true,cockpit:true,appUpdate:true};var old=document.getElementById('mr-native-ui');if(old)old.remove();document.dispatchEvent(new CustomEvent('mr:native-ready'));})();";
         view.evaluateJavascript(js,null);
     }
 
@@ -148,9 +170,65 @@ public class MainActivity extends Activity {
     private void requestNotificationPermissionIfNeeded(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATIONS);}
     void setTripMode(boolean active){if(active)getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
 
+    void requestAppUpdate(String url,String version){
+        Uri uri;
+        try{uri=Uri.parse(url);}catch(Exception e){Toast.makeText(this,"URL de atualização inválida.",Toast.LENGTH_SHORT).show();return;}
+        if(!isTrustedAppUri(uri)){Toast.makeText(this,"Atualização recusada: origem não confiável.",Toast.LENGTH_LONG).show();return;}
+        pendingUpdateUrl=url;pendingUpdateVersion=version==null?"":version;
+        if(Build.VERSION.SDK_INT>=26&&!getPackageManager().canRequestPackageInstalls()){
+            Toast.makeText(this,"Autorize o MusicRoad a instalar atualizações e volte ao app.",Toast.LENGTH_LONG).show();
+            try{startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())));}catch(Exception e){Toast.makeText(this,"Abra as configurações e permita instalar apps desta fonte.",Toast.LENGTH_LONG).show();}
+            return;
+        }
+        startAppUpdateDownload(url,pendingUpdateVersion);
+    }
+
+    private void startAppUpdateDownload(String url,String version){
+        try{
+            File dir=getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);if(dir!=null){File old=new File(dir,"MusicRoad-AI-update.apk");if(old.exists())old.delete();}
+            DownloadManager.Request r=new DownloadManager.Request(Uri.parse(url));r.setMimeType(APK_MIME);
+            String cookie=CookieManager.getInstance().getCookie(url);if(cookie!=null&&!cookie.isEmpty())r.addRequestHeader("Cookie",cookie);
+            r.addRequestHeader("User-Agent","MusicRoadAndroid/4.2");
+            r.setTitle(version==null||version.isEmpty()?"Atualização MusicRoad":"MusicRoad "+version);
+            r.setDescription("Baixando atualização do aplicativo");
+            r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            r.setAllowedOverMetered(true);r.setAllowedOverRoaming(true);
+            r.setDestinationInExternalFilesDir(this,Environment.DIRECTORY_DOWNLOADS,"MusicRoad-AI-update.apk");
+            DownloadManager dm=(DownloadManager)getSystemService(DOWNLOAD_SERVICE);updateDownloadId=dm.enqueue(r);
+            getPreferencesStore().edit().putLong(PREF_UPDATE_ID,updateDownloadId).apply();
+            pendingUpdateUrl=null;pendingUpdateVersion="";
+            dispatchWebEvent("mr:update-download-started");
+            Toast.makeText(this,"Baixando atualização do MusicRoad...",Toast.LENGTH_SHORT).show();
+        }catch(Exception e){Toast.makeText(this,"Não foi possível iniciar a atualização.",Toast.LENGTH_LONG).show();}
+    }
+
+    private void installDownloadedUpdate(long id){
+        DownloadManager dm=(DownloadManager)getSystemService(DOWNLOAD_SERVICE);
+        DownloadManager.Query q=new DownloadManager.Query().setFilterById(id);
+        try(Cursor c=dm.query(q)){
+            if(c==null||!c.moveToFirst())return;
+            int status=c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+            if(status==DownloadManager.STATUS_FAILED){clearUpdateDownload();Toast.makeText(this,"Falha ao baixar a atualização.",Toast.LENGTH_LONG).show();return;}
+            if(status!=DownloadManager.STATUS_SUCCESSFUL)return;
+        }catch(Exception e){return;}
+        Uri apk=dm.getUriForDownloadedFile(id);if(apk==null){clearUpdateDownload();return;}
+        try{
+            Intent install=new Intent(Intent.ACTION_VIEW);install.setDataAndType(apk,APK_MIME);install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_ACTIVITY_NEW_TASK);
+            dispatchWebEvent("mr:update-installing");clearUpdateDownload();startActivity(install);
+        }catch(ActivityNotFoundException e){Toast.makeText(this,"Instalador do Android não encontrado.",Toast.LENGTH_LONG).show();}
+    }
+
+    private void clearUpdateDownload(){updateDownloadId=-1;getPreferencesStore().edit().remove(PREF_UPDATE_ID).apply();}
+    private void dispatchWebEvent(String name){if(webView!=null)webView.evaluateJavascript("document.dispatchEvent(new CustomEvent('"+name+"'));",null);}
+
     private void registerPlaybackReceiver(){IntentFilter f=new IntentFilter(PlaybackService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(playbackReceiver,f,RECEIVER_NOT_EXPORTED);else registerReceiver(playbackReceiver,f);}
+    private void registerUpdateReceiver(){IntentFilter f=new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);if(Build.VERSION.SDK_INT>=33)registerReceiver(updateReceiver,f,RECEIVER_EXPORTED);else registerReceiver(updateReceiver,f);}
     @Override protected void onSaveInstanceState(Bundle outState){webView.saveState(outState);super.onSaveInstanceState(outState);}
-    @Override protected void onResume(){super.onResume();if(webView!=null)startService(PlaybackService.intentAction(this,PlaybackService.ACTION_BROADCAST_STATE));}
+    @Override protected void onResume(){
+        super.onResume();if(webView!=null)startService(PlaybackService.intentAction(this,PlaybackService.ACTION_BROADCAST_STATE));
+        if(pendingUpdateUrl!=null&&(Build.VERSION.SDK_INT<26||getPackageManager().canRequestPackageInstalls())){String u=pendingUpdateUrl,v=pendingUpdateVersion;pendingUpdateUrl=null;pendingUpdateVersion="";startAppUpdateDownload(u,v);}
+        long id=updateDownloadId>0?updateDownloadId:getPreferencesStore().getLong(PREF_UPDATE_ID,-1);if(id>0)installDownloadedUpdate(id);
+    }
 
     @Override public void onBackPressed(){
         if(webView==null){super.onBackPressed();return;}
@@ -160,9 +238,7 @@ public class MainActivity extends Activity {
     }
     private void handleBackFallback(){
         if(webView.canGoBack()&&!isAtAppRoot()){webView.goBack();return;}
-        long now=System.currentTimeMillis();
-        if(now-lastBackPressedAt<2200){finishAndRemoveTask();return;}
-        lastBackPressedAt=now;Toast.makeText(this,"Toque em Voltar novamente para sair do MusicRoad.",Toast.LENGTH_SHORT).show();
+        long now=System.currentTimeMillis();if(now-lastBackPressedAt<2200){finishAndRemoveTask();return;}lastBackPressedAt=now;Toast.makeText(this,"Toque em Voltar novamente para sair do MusicRoad.",Toast.LENGTH_SHORT).show();
     }
 
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
@@ -177,5 +253,5 @@ public class MainActivity extends Activity {
         else if(requestCode==REQ_AUDIO){boolean g=grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED;dispatchAudioPermission(g);}
     }
 
-    @Override protected void onDestroy(){try{unregisterReceiver(playbackReceiver);}catch(Exception ignored){}setTripMode(false);if(webView!=null){webView.loadUrl("about:blank");webView.stopLoading();webView.removeJavascriptInterface("MusicRoadAndroid");webView.destroy();}super.onDestroy();}
+    @Override protected void onDestroy(){try{unregisterReceiver(playbackReceiver);}catch(Exception ignored){}try{unregisterReceiver(updateReceiver);}catch(Exception ignored){}setTripMode(false);if(webView!=null){webView.loadUrl("about:blank");webView.stopLoading();webView.removeJavascriptInterface("MusicRoadAndroid");webView.destroy();}super.onDestroy();}
 }
