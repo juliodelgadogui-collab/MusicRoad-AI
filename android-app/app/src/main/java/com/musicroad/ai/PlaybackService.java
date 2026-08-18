@@ -146,7 +146,7 @@ public class PlaybackService extends Service {
                 String cookie=CookieManager.getInstance().getCookie(t.source);
                 if(cookie!=null&&!cookie.isEmpty())headers.put("Cookie",cookie);
                 headers.put("User-Agent","MusicRoadAndroid/3.0");
-                player.setDataSource(t.source,headers);
+                player.setDataSource(this,uri,headers);
             } else player.setDataSource(this,uri);
             applyVolume();
             player.setOnPreparedListener(mp->{
