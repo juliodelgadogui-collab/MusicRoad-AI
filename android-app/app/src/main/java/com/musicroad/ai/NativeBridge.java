@@ -1,6 +1,7 @@
 package com.musicroad.ai;
 
 import android.content.Intent;
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
@@ -18,7 +19,7 @@ public final class NativeBridge {
     // Compatibilidade com o frontend antigo.
     @JavascriptInterface public String getMusicLibrary(){return NativeMusicRepository.scanAsJson(activity).toString();}
 
-    // v3.2: não bloqueia a WebView enquanto o MediaStore é lido.
+    // Leitura assíncrona: bibliotecas grandes não bloqueiam toque/rolagem da WebView.
     @JavascriptInterface public void scanMusicLibraryAsync(){
         new Thread(() -> {
             final String json=NativeMusicRepository.scanAsJson(activity).toString();
@@ -38,6 +39,12 @@ public final class NativeBridge {
                 }catch(Exception ignored){}
             });
         },"MusicRoad-MediaStore").start();
+    }
+
+    @JavascriptInterface public void haptic(){
+        activity.runOnUiThread(() -> {
+            try{activity.getWindow().getDecorView().performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);}catch(Exception ignored){}
+        });
     }
 
     @JavascriptInterface public void playQueue(String queueJson,int startIndex){activity.startService(PlaybackService.intentSetQueue(activity,queueJson,startIndex,true));}
