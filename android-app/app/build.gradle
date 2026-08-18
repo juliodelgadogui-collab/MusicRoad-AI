@@ -2,7 +2,7 @@ plugins {
     id 'com.android.application'
 }
 
-def musicRoadUrl = project.findProperty('MUSICROAD_URL') ?: 'https://SEU-DOMINIO.com/musicroad-ai/'
+def musicRoadUrl = project.findProperty('MUSICROAD_URL') ?: 'https://musicroad1.gestao2.store/'
 
 android {
     namespace 'com.musicroad.ai'
@@ -12,14 +12,12 @@ android {
         applicationId 'com.musicroad.ai'
         minSdk 24
         targetSdk 35
-        versionCode 3
-        versionName '2.0.0'
+        versionCode 4
+        versionName '3.0.0'
         buildConfigField 'String', 'MUSICROAD_URL', '"' + musicRoadUrl.replace('"', '\\"') + '"'
     }
 
-    buildFeatures {
-        buildConfig true
-    }
+    buildFeatures { buildConfig true }
 
     buildTypes {
         release {
