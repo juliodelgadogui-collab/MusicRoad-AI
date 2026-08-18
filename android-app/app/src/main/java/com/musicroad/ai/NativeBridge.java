@@ -24,16 +24,12 @@ public final class NativeBridge {
 
     @JavascriptInterface public String platform(){return "android";}
     @JavascriptInterface public String version(){return BuildConfig.VERSION_NAME;}
+    @JavascriptInterface public int versionCode(){return BuildConfig.VERSION_CODE;}
     @JavascriptInterface public boolean hasAudioPermission(){return NativeMusicRepository.hasPermission(activity);}
     @JavascriptInterface public void requestAudioPermission(){activity.runOnUiThread(activity::requestAudioPermission);}
     @JavascriptInterface public String getMusicLibrary(){return NativeMusicRepository.scanAsJson(activity).toString();}
 
-    @JavascriptInterface public void scanMusicLibraryAsync(){
-        new Thread(() -> {
-            final String json=NativeMusicRepository.scanAsJson(activity).toString();
-            activity.runOnUiThread(() -> dispatchJs("document.dispatchEvent(new CustomEvent('mr:native-library',{detail:JSON.parse("+org.json.JSONObject.quote(json)+")}));"));
-        },"MusicRoad-MediaStore").start();
-    }
+    @JavascriptInterface public void scanMusicLibraryAsync(){dispatchLibraryAsync(0);}
 
     private WebView findWebView(){
         try{
@@ -44,6 +40,13 @@ public final class NativeBridge {
         return null;
     }
     private void dispatchJs(String js){WebView web=findWebView();if(web!=null)web.evaluateJavascript(js,null);}
+    private void dispatchLibraryAsync(long delayMs){
+        new Thread(() -> {
+            try{if(delayMs>0)Thread.sleep(delayMs);}catch(InterruptedException ignored){}
+            final String json=NativeMusicRepository.scanAsJson(activity).toString();
+            activity.runOnUiThread(() -> dispatchJs("document.dispatchEvent(new CustomEvent('mr:native-library',{detail:JSON.parse("+org.json.JSONObject.quote(json)+")}));"));
+        },"MusicRoad-MediaStore").start();
+    }
 
     @JavascriptInterface public long downloadForOffline(String url,String filename,String mimeType){
         if(url==null||url.trim().isEmpty())return -1;
@@ -54,17 +57,18 @@ public final class NativeBridge {
             DownloadManager.Request req=new DownloadManager.Request(Uri.parse(url));
             if(!mt.isEmpty())req.setMimeType(mimeType);
             String cookie=CookieManager.getInstance().getCookie(url);if(cookie!=null&&!cookie.isEmpty())req.addRequestHeader("Cookie",cookie);
-            req.addRequestHeader("User-Agent","MusicRoadAndroid/4.1");
+            req.addRequestHeader("User-Agent","MusicRoadAndroid/4.2");
             req.setTitle(safe);req.setDescription("MusicRoad · música offline");req.setAllowedOverMetered(true);req.setAllowedOverRoaming(true);
             req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,safe);
+            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC,"MusicRoad/"+safe);
             DownloadManager dm=(DownloadManager)activity.getSystemService(Context.DOWNLOAD_SERVICE);long id=dm.enqueue(req);
             final long target=id;
             BroadcastReceiver receiver=new BroadcastReceiver(){
                 @Override public void onReceive(Context context,Intent intent){
                     if(!DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(intent.getAction())||intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID,-1)!=target)return;
                     try{activity.unregisterReceiver(this);}catch(Exception ignored){}
-                    activity.runOnUiThread(()->{Toast.makeText(activity,"Música salva para ouvir offline.",Toast.LENGTH_SHORT).show();dispatchJs("document.dispatchEvent(new CustomEvent('mr:download-complete'));" );});
+                    activity.runOnUiThread(()->{Toast.makeText(activity,"Música salva em Música/MusicRoad para ouvir offline.",Toast.LENGTH_SHORT).show();dispatchJs("document.dispatchEvent(new CustomEvent('mr:download-complete'));" );});
+                    dispatchLibraryAsync(1400);
                 }
             };
             IntentFilter filter=new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
@@ -74,6 +78,7 @@ public final class NativeBridge {
         }catch(Exception e){activity.runOnUiThread(()->Toast.makeText(activity,"Não foi possível iniciar o download.",Toast.LENGTH_SHORT).show());return -1;}
     }
 
+    @JavascriptInterface public void requestAppUpdate(String url,String version){activity.runOnUiThread(()->activity.requestAppUpdate(url,version));}
     @JavascriptInterface public void haptic(){activity.runOnUiThread(() -> {try{activity.getWindow().getDecorView().performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);}catch(Exception ignored){}});}
 
     @JavascriptInterface public void playQueue(String queueJson,int startIndex){activity.startService(PlaybackService.intentSetQueue(activity,queueJson,startIndex,true));}
