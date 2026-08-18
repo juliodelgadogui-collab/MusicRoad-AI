@@ -45,8 +45,11 @@ public final class NavigationService extends Service implements LocationListener
     private final ArrayList<RoutePoint> route=new ArrayList<>();
     private final ArrayList<Hazard> hazards=new ArrayList<>();
     private final ArrayList<SpeedLimit> limits=new ArrayList<>();
+    private final ArrayList<Maneuver> maneuvers=new ArrayList<>();
     private final Set<String> warnedMilestones=new HashSet<>();
     private final Set<String> warnedNow=new HashSet<>();
+    private final Set<String> warnedManeuverPrepare=new HashSet<>();
+    private final Set<String> warnedManeuverNow=new HashSet<>();
     private final Handler handler=new Handler(Looper.getMainLooper());
     private LocationManager locationManager;
     private NotificationManager notificationManager;
@@ -54,6 +57,7 @@ public final class NavigationService extends Service implements LocationListener
     private double lastProgressM=0;
     private int offRouteSamples=0;
     private long lastSpeedWarningAt=0;
+    private long lastHazardVoiceAt=0;
     private boolean suspendedOffRoute=false;
 
     public static Intent startIntent(Context c,String routeJson,String hazardsJson,String limitsJson,String destination){
@@ -71,7 +75,7 @@ public final class NavigationService extends Service implements LocationListener
         if(ACTION_START.equals(action)){
             destination=safe(intent.getStringExtra(EXTRA_DEST),"Destino");
             parseRoute(intent.getStringExtra(EXTRA_ROUTE));parseHazards(intent.getStringExtra(EXTRA_HAZARDS));parseLimits(intent.getStringExtra(EXTRA_LIMITS));
-            warnedMilestones.clear();warnedNow.clear();lastProgressM=0;offRouteSamples=0;suspendedOffRoute=false;persistState();
+            warnedMilestones.clear();warnedNow.clear();warnedManeuverPrepare.clear();warnedManeuverNow.clear();lastProgressM=0;offRouteSamples=0;suspendedOffRoute=false;persistState();
             startForeground(NOTIF_TRIP,tripNotification("GPS ativo · monitorando a rota"));startLocation();return START_STICKY;
         }
         if(ACTION_UPDATE.equals(action)){
@@ -117,6 +121,7 @@ public final class NavigationService extends Service implements LocationListener
         int currentLimit=currentSpeedLimit(progress);
         Hazard next=nextHazard(progress,loc);
         if(next!=null)handleHazard(next,progress);
+        handleManeuver(progress);
         if(currentLimit>0&&loc.hasSpeed())handleSpeeding(Math.round(loc.getSpeed()*3.6f),currentLimit);
         String status=next==null?"GPS ativo · sem fiscalização próxima":next.label()+" · "+formatDistance(Math.max(0,next.routeM-progress));
         if(currentLimit>0)status+=" · limite "+currentLimit;updateTripNotification(status);
@@ -142,11 +147,23 @@ public final class NavigationService extends Service implements LocationListener
             if(!warnedMilestones.contains(mk)){
                 markPassedMilestones(key,milestone);
                 String text=h.text(milestone);String voice=h.voice(milestone);
-                showTransient(h.title(),text,milestone<=50?4200:5000);speak(voice);
+                showTransient(h.title(),text,milestone<=50?4200:5000);speak(voice);lastHazardVoiceAt=System.currentTimeMillis();
             }
         }
-        if(h.isSpeedEnforcement()&&distance<=25&&!warnedNow.contains(key)){
-            warnedNow.add(key);String text=h.speed>0?"Radar agora · limite "+h.speed+" km/h":"Radar agora";showTransient("RADAR AGORA",text,4200);speak(h.speed>0?"Radar agora. Limite de "+h.speed+" quilômetros por hora.":"Radar agora.");
+        if(distance<=22&&!warnedNow.contains(key)){
+            warnedNow.add(key);String text=h.frontText();showTransient(h.frontTitle(),text,4600);speak(h.frontVoice());lastHazardVoiceAt=System.currentTimeMillis();
+        }
+    }
+
+    private Maneuver nextManeuver(double progress){for(Maneuver m:maneuvers)if(m.routeM>=progress-25)return m;return null;}
+    private void handleManeuver(double progress){
+        Maneuver m=nextManeuver(progress);if(m==null)return;double distance=m.routeM-progress;if(distance<-25||distance>380)return;String key=m.key;long now=System.currentTimeMillis();
+        if(distance<=300&&distance>60&&!warnedManeuverPrepare.contains(key)){
+            if(now-lastHazardVoiceAt<2600)return;
+            warnedManeuverPrepare.add(key);int meters=distance>230?300:distance>150?200:100;String action=m.action();showTransient("PRÓXIMA MANOBRA","Em "+meters+" m · "+action,4200);speak("Em "+meters+" metros. "+action+".");
+        }
+        if(distance<=55&&distance>=-20&&!warnedManeuverNow.contains(key)){
+            warnedManeuverNow.add(key);String action=m.action();showTransient(m.title(),action,4800);speak(m.nowVoice());
         }
     }
 
@@ -156,7 +173,15 @@ public final class NavigationService extends Service implements LocationListener
 
     private void parseRoute(String json){route.clear();if(json==null)return;try{JSONArray a=new JSONArray(json);double total=0;RoutePoint prev=null;for(int i=0;i<a.length();i++){JSONArray c=a.optJSONArray(i);if(c==null||c.length()<2)continue;double lon=c.optDouble(0,Double.NaN),lat=c.optDouble(1,Double.NaN);if(Double.isNaN(lat)||Double.isNaN(lon))continue;RoutePoint rp=new RoutePoint(lat,lon,total);if(prev!=null){float[] d=new float[1];Location.distanceBetween(prev.lat,prev.lon,lat,lon,d);total+=d[0];rp.cumM=total;}route.add(rp);prev=rp;}}catch(Exception ignored){}}
     private void parseHazards(String json){hazards.clear();if(json==null)return;try{JSONArray a=new JSONArray(json);for(int i=0;i<a.length();i++){JSONObject o=a.optJSONObject(i);if(o==null)continue;double lat=o.optDouble("latitude",Double.NaN),lon=o.optDouble("longitude",Double.NaN);if(Double.isNaN(lat)||Double.isNaN(lon))continue;Projection p=project(lat,lon);double routeM=o.has("route_m")?o.optDouble("route_m",p.routeM):p.routeM;if(Double.isNaN(routeM))routeM=p.routeM;Hazard h=new Hazard();h.lat=lat;h.lon=lon;h.routeM=routeM;h.routeDistanceM=p.offRouteM;h.routeBearing=routeBearingAt(routeM);h.key=safe(o.optString("external_id",""),"p-"+i+"-"+lat+"-"+lon);h.type=o.optString("tipo","RADAR");h.source=o.optString("fonte","");h.speed=o.optInt("velocidade",0);h.heading=o.has("heading")?(float)o.optDouble("heading",Double.NaN):Float.NaN;hazards.add(h);}}catch(Exception ignored){}hazards.sort((a,b)->Double.compare(a.routeM,b.routeM));}
-    private void parseLimits(String json){limits.clear();if(json==null)return;try{JSONArray a=new JSONArray(json);for(int i=0;i<a.length();i++){JSONObject o=a.optJSONObject(i);if(o==null)continue;int speed=o.optInt("velocidade",0);if(speed<10||speed>180)continue;double routeM=o.optDouble("route_m",Double.NaN);if(Double.isNaN(routeM)){double lat=o.optDouble("latitude",Double.NaN),lon=o.optDouble("longitude",Double.NaN);if(Double.isNaN(lat)||Double.isNaN(lon))continue;routeM=project(lat,lon).routeM;}limits.add(new SpeedLimit(routeM,speed));}}catch(Exception ignored){}limits.sort((a,b)->Double.compare(a.routeM,b.routeM));}
+    private void parseLimits(String json){
+        limits.clear();maneuvers.clear();if(json==null)return;
+        try{JSONArray a=new JSONArray(json);for(int i=0;i<a.length();i++){JSONObject o=a.optJSONObject(i);if(o==null)continue;
+            if("maneuver".equalsIgnoreCase(o.optString("nav_type",""))){
+                double routeM=o.optDouble("route_m",Double.NaN);if(Double.isNaN(routeM))continue;Maneuver m=new Maneuver();m.routeM=routeM;m.key=safe(o.optString("key",""),"nav-"+i+"-"+routeM);m.type=o.optString("type","turn");m.modifier=o.optString("modifier","");m.name=o.optString("name","");m.destinations=o.optString("destinations","");m.exit=o.optInt("exit",0);maneuvers.add(m);continue;
+            }
+            int speed=o.optInt("velocidade",0);if(speed<10||speed>180)continue;double routeM=o.optDouble("route_m",Double.NaN);if(Double.isNaN(routeM)){double lat=o.optDouble("latitude",Double.NaN),lon=o.optDouble("longitude",Double.NaN);if(Double.isNaN(lat)||Double.isNaN(lon))continue;routeM=project(lat,lon).routeM;}limits.add(new SpeedLimit(routeM,speed));
+        }}catch(Exception ignored){}limits.sort((a,b)->Double.compare(a.routeM,b.routeM));maneuvers.sort((a,b)->Double.compare(a.routeM,b.routeM));
+    }
 
     private Projection project(double lat,double lon){Projection best=new Projection();best.offRouteM=Double.MAX_VALUE;best.routeM=0;if(route.size()<2)return best;double latScale=110540.0;double lonScale=111320.0*Math.max(.2,Math.cos(Math.toRadians(lat)));for(int i=1;i<route.size();i++){RoutePoint a=route.get(i-1),b=route.get(i);double ax=(a.lon-lon)*lonScale,ay=(a.lat-lat)*latScale,bx=(b.lon-lon)*lonScale,by=(b.lat-lat)*latScale,vx=bx-ax,vy=by-ay,den=vx*vx+vy*vy,t=den>0?-(ax*vx+ay*vy)/den:0;t=Math.max(0,Math.min(1,t));double x=ax+t*vx,y=ay+t*vy,d=Math.sqrt(x*x+y*y);if(d<best.offRouteM){best.offRouteM=d;best.routeM=a.cumM+(b.cumM-a.cumM)*t;}}return best;}
     private float routeBearingAt(double routeM){if(route.size()<2)return Float.NaN;int idx=0;for(int i=1;i<route.size();i++){if(route.get(i).cumM>=routeM){idx=i-1;break;}idx=i-1;}RoutePoint a=route.get(Math.max(0,Math.min(idx,route.size()-2))),b=route.get(Math.max(1,Math.min(idx+1,route.size()-1)));float[] res=new float[2];Location.distanceBetween(a.lat,a.lon,b.lat,b.lon,res);return res.length>1?res[1]:Float.NaN;}
@@ -168,7 +193,7 @@ public final class NavigationService extends Service implements LocationListener
     private boolean restoreState(){try{SharedPreferences p=getSharedPreferences(PREFS,MODE_PRIVATE);parseRoute(p.getString("route",null));parseHazards(p.getString("hazards","[]"));parseLimits(p.getString("limits","[]"));destination=p.getString("destination","Destino");return route.size()>1;}catch(Exception e){return false;}}
     private String routeToJson(){JSONArray a=new JSONArray();for(RoutePoint p:route){try{JSONArray c=new JSONArray();c.put(p.lon);c.put(p.lat);a.put(c);}catch(Exception ignored){}}return a.toString();}
     private String hazardsToJson(){JSONArray a=new JSONArray();for(Hazard h:hazards){JSONObject o=new JSONObject();try{o.put("external_id",h.key);o.put("latitude",h.lat);o.put("longitude",h.lon);o.put("route_m",h.routeM);o.put("velocidade",h.speed);o.put("tipo",h.type);o.put("fonte",h.source);o.put("alert_radius_m",300);if(!Float.isNaN(h.heading))o.put("heading",h.heading);}catch(Exception ignored){}a.put(o);}return a.toString();}
-    private String limitsToJson(){JSONArray a=new JSONArray();for(SpeedLimit s:limits){JSONObject o=new JSONObject();try{o.put("route_m",s.routeM);o.put("velocidade",s.speed);}catch(Exception ignored){}a.put(o);}return a.toString();}
+    private String limitsToJson(){JSONArray a=new JSONArray();for(SpeedLimit s:limits){JSONObject o=new JSONObject();try{o.put("route_m",s.routeM);o.put("velocidade",s.speed);}catch(Exception ignored){}a.put(o);}for(Maneuver m:maneuvers){JSONObject o=new JSONObject();try{o.put("nav_type","maneuver");o.put("route_m",m.routeM);o.put("key",m.key);o.put("type",m.type);o.put("modifier",m.modifier);o.put("name",m.name);o.put("destinations",m.destinations);o.put("exit",m.exit);}catch(Exception ignored){}a.put(o);}return a.toString();}
 
     private void stopNavigation(){try{if(locationManager!=null)locationManager.removeUpdates(this);}catch(Exception ignored){}handler.removeCallbacksAndMessages(null);if(notificationManager!=null)notificationManager.cancel(NOTIF_ALERT);getSharedPreferences(PREFS,MODE_PRIVATE).edit().clear().apply();if(Build.VERSION.SDK_INT>=24)stopForeground(STOP_FOREGROUND_REMOVE);else stopForeground(true);stopSelf();}
     @Override public void onProviderEnabled(String provider){}
@@ -180,6 +205,21 @@ public final class NavigationService extends Service implements LocationListener
     private static final class RoutePoint{double lat,lon,cumM;RoutePoint(double lat,double lon,double cumM){this.lat=lat;this.lon=lon;this.cumM=cumM;}}
     private static final class Projection{double offRouteM,routeM;}
     private static final class SpeedLimit{double routeM;int speed;SpeedLimit(double routeM,int speed){this.routeM=routeM;this.speed=speed;}}
+    private static final class Maneuver{
+        String key,type,modifier,name,destinations;double routeM;int exit;
+        private String road(){String n=name==null?"":name.trim();return n.isEmpty()?"":" na "+n;}
+        String action(){String t=type==null?"turn":type.toLowerCase(Locale.ROOT),m=modifier==null?"":modifier.toLowerCase(Locale.ROOT),r=road();
+            if(t.equals("arrive"))return"Destino à frente";
+            if(t.contains("roundabout")||t.contains("rotary"))return exit>0?"Na rotatória, pegue a saída número "+exit+r:"Entre na rotatória"+r;
+            if(t.equals("off ramp")||t.equals("exit roundabout")||t.equals("exit rotary"))return"Pegue a saída"+(m.contains("left")?" à esquerda":m.contains("right")?" à direita":"")+r;
+            if(t.equals("on ramp"))return"Pegue o acesso"+(m.contains("left")?" à esquerda":m.contains("right")?" à direita":"")+r;
+            if(t.equals("fork"))return"Mantenha-se "+(m.contains("left")?"à esquerda":m.contains("right")?"à direita":"em frente")+r;
+            if(t.equals("merge"))return"Entre "+(m.contains("left")?"à esquerda":m.contains("right")?"à direita":"na via")+r;
+            if(m.equals("uturn"))return"Faça o retorno";if(m.contains("left"))return"Vire à esquerda"+r;if(m.contains("right"))return"Vire à direita"+r;return"Siga em frente"+r;
+        }
+        String title(){String a=action().toUpperCase(Locale.ROOT);if(a.startsWith("VIRE À DIREITA"))return"VIRE À DIREITA";if(a.startsWith("VIRE À ESQUERDA"))return"VIRE À ESQUERDA";if(a.startsWith("FAÇA O RETORNO"))return"FAÇA O RETORNO";if(a.startsWith("NA ROTATÓRIA"))return"ROTATÓRIA";if(a.startsWith("PEGUE A SAÍDA"))return"PEGUE A SAÍDA";if(a.startsWith("PEGUE O ACESSO"))return"PEGUE O ACESSO";if(a.startsWith("DESTINO"))return"CHEGANDO AO DESTINO";return"SIGA EM FRENTE";}
+        String nowVoice(){String a=action();return type!=null&&type.equalsIgnoreCase("arrive")?"Você chegou ao destino.":a+" agora.";}
+    }
     private static final class Hazard{
         String key,type,source;double lat,lon,routeM,routeDistanceM;int speed;float heading,routeBearing;
         String kind(){String t=type==null?"":type.toUpperCase(Locale.ROOT);if(t.contains("VIDEO")||t.contains("OCR")||t.contains("MONITOR"))return"video";if(t.contains("QUEBRA")||t.contains("LOMBADA")||t.contains("BUMP")||t.contains("HUMP")||t.contains("CALMING"))return"bump";if(t.contains("SEMAFOR")||t.contains("SEMÁFOR")||t.contains("SIGNAL")||t.contains("AVAN"))return"signal";if(t.contains("PORTAT")||t.contains("MOVEL")||t.contains("MÓVEL"))return"portable";return"radar";}
@@ -188,5 +228,8 @@ public final class NavigationService extends Service implements LocationListener
         String title(){String k=kind();if(k.equals("video"))return"ÁREA MONITORADA";if(k.equals("bump"))return"QUEBRA-MOLA À FRENTE";if(k.equals("signal"))return label().toUpperCase(Locale.ROOT);if(k.equals("portable"))return"FISCALIZAÇÃO PORTÁTIL";return"RADAR À FRENTE";}
         String text(int meters){return label()+" · "+meters+" m"+(isSpeedEnforcement()&&speed>0?" · limite "+speed+" km/h":"");}
         String voice(int meters){String base="Atenção. "+label()+" em "+meters+" metros.";if(isSpeedEnforcement()&&speed>0)base+=" Limite de "+speed+" quilômetros por hora.";return base;}
+        String frontTitle(){return (label()+" NA SUA FRENTE").toUpperCase(Locale.ROOT);}
+        String frontText(){return label()+" · agora"+(isSpeedEnforcement()&&speed>0?" · limite "+speed+" km/h":"");}
+        String frontVoice(){String base="Atenção. "+label()+" na sua frente.";if(isSpeedEnforcement()&&speed>0)base+=" Limite de "+speed+" quilômetros por hora.";return base;}
     }
 }
