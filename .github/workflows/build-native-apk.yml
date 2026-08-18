@@ -62,6 +62,9 @@ jobs:
           fi
           keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | grep -E "SHA256:|Owner:|Valid from:" || true
 
+      - name: Apply MusicRoad v4.6 source patch
+        run: python android-app/tools/apply_v460.py
+
       - name: Build debug APK
         working-directory: android-app
         run: gradle --no-daemon clean assembleDebug
