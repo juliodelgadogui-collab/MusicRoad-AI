@@ -1,10 +1,12 @@
 package com.musicroad.ai;
 
+import android.Manifest;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -28,7 +30,6 @@ public final class NativeBridge {
     @JavascriptInterface public boolean hasAudioPermission(){return NativeMusicRepository.hasPermission(activity);}
     @JavascriptInterface public void requestAudioPermission(){activity.runOnUiThread(activity::requestAudioPermission);}
     @JavascriptInterface public String getMusicLibrary(){return NativeMusicRepository.scanAsJson(activity).toString();}
-
     @JavascriptInterface public void scanMusicLibraryAsync(){dispatchLibraryAsync(0);}
 
     private WebView findWebView(){
@@ -57,7 +58,7 @@ public final class NativeBridge {
             DownloadManager.Request req=new DownloadManager.Request(Uri.parse(url));
             if(!mt.isEmpty())req.setMimeType(mimeType);
             String cookie=CookieManager.getInstance().getCookie(url);if(cookie!=null&&!cookie.isEmpty())req.addRequestHeader("Cookie",cookie);
-            req.addRequestHeader("User-Agent","MusicRoadAndroid/4.2");
+            req.addRequestHeader("User-Agent","MusicRoadAndroid/4.3");
             req.setTitle(safe);req.setDescription("MusicRoad · música offline");req.setAllowedOverMetered(true);req.setAllowedOverRoaming(true);
             req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
             req.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC,"MusicRoad/"+safe);
@@ -77,6 +78,20 @@ public final class NativeBridge {
             return id;
         }catch(Exception e){activity.runOnUiThread(()->Toast.makeText(activity,"Não foi possível iniciar o download.",Toast.LENGTH_SHORT).show());return -1;}
     }
+
+    @JavascriptInterface public boolean startNavigation(String routeJson,String hazardsJson,String speedLimitsJson,String destination){
+        if(Build.VERSION.SDK_INT>=23 && activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED && activity.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED){
+            activity.runOnUiThread(()->Toast.makeText(activity,"Permita o GPS para ativar o motor de bordo.",Toast.LENGTH_LONG).show());
+            return false;
+        }
+        try{
+            Intent i=NavigationService.startIntent(activity,routeJson,hazardsJson,speedLimitsJson,destination);
+            if(Build.VERSION.SDK_INT>=26)activity.startForegroundService(i);else activity.startService(i);
+            return true;
+        }catch(Exception e){activity.runOnUiThread(()->Toast.makeText(activity,"Não foi possível iniciar o motor de bordo.",Toast.LENGTH_SHORT).show());return false;}
+    }
+    @JavascriptInterface public void updateNavigation(String hazardsJson,String speedLimitsJson){try{activity.startService(NavigationService.updateIntent(activity,hazardsJson,speedLimitsJson));}catch(Exception ignored){}}
+    @JavascriptInterface public void stopNavigation(){try{activity.startService(NavigationService.stopIntent(activity));}catch(Exception ignored){activity.stopService(new Intent(activity,NavigationService.class));}}
 
     @JavascriptInterface public void requestAppUpdate(String url,String version){activity.runOnUiThread(()->activity.requestAppUpdate(url,version));}
     @JavascriptInterface public void haptic(){activity.runOnUiThread(() -> {try{activity.getWindow().getDecorView().performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);}catch(Exception ignored){}});}
