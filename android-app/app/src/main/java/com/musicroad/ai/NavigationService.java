@@ -41,6 +41,8 @@ public final class NavigationService extends Service implements LocationListener
     private static final int NOTIF_TRIP=7101;
     private static final int NOTIF_ALERT=7102;
     private static final int[] ALERT_MILESTONES={300,200,100,50};
+    private static final int[] BUMP_SEQUENCE_MILESTONES={300,200,100};
+    private static final double BUMP_SEQUENCE_GAP_M=170.0;
 
     private final ArrayList<RoutePoint> route=new ArrayList<>();
     private final ArrayList<Hazard> hazards=new ArrayList<>();
@@ -48,6 +50,8 @@ public final class NavigationService extends Service implements LocationListener
     private final ArrayList<Maneuver> maneuvers=new ArrayList<>();
     private final Set<String> warnedMilestones=new HashSet<>();
     private final Set<String> warnedNow=new HashSet<>();
+    private final Set<String> warnedBumpSequenceMilestones=new HashSet<>();
+    private final Set<String> warnedBumpNear=new HashSet<>();
     private final Set<String> warnedManeuverPrepare=new HashSet<>();
     private final Set<String> warnedManeuverNow=new HashSet<>();
     private final Handler handler=new Handler(Looper.getMainLooper());
@@ -75,7 +79,7 @@ public final class NavigationService extends Service implements LocationListener
         if(ACTION_START.equals(action)){
             destination=safe(intent.getStringExtra(EXTRA_DEST),"Destino");
             parseRoute(intent.getStringExtra(EXTRA_ROUTE));parseHazards(intent.getStringExtra(EXTRA_HAZARDS));parseLimits(intent.getStringExtra(EXTRA_LIMITS));
-            warnedMilestones.clear();warnedNow.clear();warnedManeuverPrepare.clear();warnedManeuverNow.clear();lastProgressM=0;offRouteSamples=0;suspendedOffRoute=false;persistState();
+            warnedMilestones.clear();warnedNow.clear();warnedBumpSequenceMilestones.clear();warnedBumpNear.clear();warnedManeuverPrepare.clear();warnedManeuverNow.clear();lastProgressM=0;offRouteSamples=0;suspendedOffRoute=false;persistState();
             startForeground(NOTIF_TRIP,tripNotification("GPS ativo · monitorando a rota"));startLocation();return START_STICKY;
         }
         if(ACTION_UPDATE.equals(action)){
@@ -89,7 +93,7 @@ public final class NavigationService extends Service implements LocationListener
     private void createChannels(){
         if(Build.VERSION.SDK_INT<26)return;
         NotificationChannel trip=new NotificationChannel(CH_TRIP,"Viagem MusicRoad",NotificationManager.IMPORTANCE_LOW);trip.setDescription("Mantém GPS e alertas de bordo ativos durante a viagem");trip.setSound(null,null);trip.enableVibration(false);
-        NotificationChannel alert=new NotificationChannel(CH_ALERT,"Alertas de fiscalização",NotificationManager.IMPORTANCE_HIGH);alert.setDescription("Avisos temporários em 300, 200, 100 e 50 metros");alert.setSound(null,null);alert.enableVibration(true);alert.setVibrationPattern(new long[]{0,120,80,120});
+        NotificationChannel alert=new NotificationChannel(CH_ALERT,"Alertas de fiscalização",NotificationManager.IMPORTANCE_HIGH);alert.setDescription("Avisos temporários de fiscalização e segurança viária");alert.setSound(null,null);alert.enableVibration(true);alert.setVibrationPattern(new long[]{0,120,80,120});
         notificationManager.createNotificationChannel(trip);notificationManager.createNotificationChannel(alert);
     }
 
@@ -120,10 +124,16 @@ public final class NavigationService extends Service implements LocationListener
         double progress=lastProgressM;
         int currentLimit=currentSpeedLimit(progress);
         Hazard next=nextHazard(progress,loc);
-        if(next!=null)handleHazard(next,progress);
+        if(next!=null){if("bump".equals(next.kind()))handleBumpHazard(next,progress);else handleHazard(next,progress);}
         handleManeuver(progress);
         if(currentLimit>0&&loc.hasSpeed())handleSpeeding(Math.round(loc.getSpeed()*3.6f),currentLimit);
-        String status=next==null?"GPS ativo · sem fiscalização próxima":next.label()+" · "+formatDistance(Math.max(0,next.routeM-progress));
+        String status;
+        if(next==null)status="GPS ativo · sem fiscalização próxima";
+        else{
+            String label=next.label();
+            if("bump".equals(next.kind())){ArrayList<Hazard> seq=bumpSequenceFor(next);if(seq.size()>1){int idx=bumpIndex(seq,next);label="Quebra-mola "+(idx+1)+"/"+seq.size();}}
+            status=label+" · "+formatDistance(Math.max(0,next.routeM-progress));
+        }
         if(currentLimit>0)status+=" · limite "+currentLimit;updateTripNotification(status);
     }
 
@@ -152,6 +162,49 @@ public final class NavigationService extends Service implements LocationListener
         }
         if(distance<=22&&!warnedNow.contains(key)){
             warnedNow.add(key);String text=h.frontText();showTransient(h.frontTitle(),text,4600);speak(h.frontVoice());lastHazardVoiceAt=System.currentTimeMillis();
+        }
+    }
+
+    private ArrayList<Hazard> bumpSequenceFor(Hazard target){
+        ArrayList<Hazard> bumps=new ArrayList<>();
+        for(Hazard h:hazards)if("bump".equals(h.kind())&&h.routeDistanceM<=360)bumps.add(h);
+        int center=-1;
+        for(int i=0;i<bumps.size();i++)if(bumps.get(i).key.equals(target.key)){center=i;break;}
+        ArrayList<Hazard> seq=new ArrayList<>();if(center<0){seq.add(target);return seq;}
+        int left=center,right=center;
+        while(left>0&&bumps.get(left).routeM-bumps.get(left-1).routeM<=BUMP_SEQUENCE_GAP_M)left--;
+        while(right+1<bumps.size()&&bumps.get(right+1).routeM-bumps.get(right).routeM<=BUMP_SEQUENCE_GAP_M)right++;
+        for(int i=left;i<=right;i++)seq.add(bumps.get(i));
+        return seq;
+    }
+    private int bumpIndex(ArrayList<Hazard> seq,Hazard h){for(int i=0;i<seq.size();i++)if(seq.get(i).key.equals(h.key))return i;return 0;}
+    private String bumpSequenceKey(ArrayList<Hazard> seq){if(seq.isEmpty())return"bump-seq";return"bump-seq:"+seq.get(0).key+":"+seq.get(seq.size()-1).key;}
+    private void markBumpSequenceMilestones(String key,int milestone){for(int m:BUMP_SEQUENCE_MILESTONES)if(m>=milestone)warnedBumpSequenceMilestones.add(key+"@"+m);}
+    private void handleBumpHazard(Hazard h,double progress){
+        ArrayList<Hazard> seq=bumpSequenceFor(h);if(seq.size()<2){handleHazard(h,progress);return;}
+        double distance=Math.max(0,h.routeM-progress);int idx=bumpIndex(seq,h),total=seq.size(),remaining=Math.max(1,total-idx);String seqKey=bumpSequenceKey(seq);int milestone=milestoneFor(distance);
+        if(milestone>=100){
+            String mk=seqKey+"@"+milestone;
+            if(!warnedBumpSequenceMilestones.contains(mk)){
+                markBumpSequenceMilestones(seqKey,milestone);
+                String countText=remaining==total?"Sequência de "+total+" quebra-molas":remaining+" quebra-molas ainda na sequência";
+                showTransient("SEQUÊNCIA DE QUEBRA-MOLAS",countText+" · próximo em "+milestone+" m",5000);
+                speak("Atenção. "+countText+". Próximo quebra-mola em "+milestone+" metros.");lastHazardVoiceAt=System.currentTimeMillis();
+            }
+        }
+        if(distance<=50&&distance>22){
+            String nearKey=h.key+"@bump50";long now=System.currentTimeMillis();
+            if(!warnedBumpNear.contains(nearKey)&&now-lastHazardVoiceAt>=1200){
+                warnedBumpNear.add(nearKey);showTransient("QUEBRA-MOLA "+(idx+1)+" DE "+total,"50 m · sequência de "+total,4000);
+                speak("Quebra-mola "+(idx+1)+" de "+total+" em 50 metros.");lastHazardVoiceAt=now;
+            }
+        }
+        if(distance<=22&&!warnedNow.contains(h.key)){
+            warnedNow.add(h.key);boolean last=idx==total-1;
+            String title=last?"ÚLTIMO QUEBRA-MOLA":"QUEBRA-MOLA "+(idx+1)+" DE "+total;
+            String text=last?"Último da sequência · na sua frente":"Na sua frente · sequência de "+total;
+            String voice=last?"Atenção. Último quebra-mola da sequência na sua frente.":"Atenção. Quebra-mola "+(idx+1)+" de "+total+" na sua frente.";
+            showTransient(title,text,4600);speak(voice);lastHazardVoiceAt=System.currentTimeMillis();
         }
     }
 
@@ -228,7 +281,7 @@ public final class NavigationService extends Service implements LocationListener
         String title(){String k=kind();if(k.equals("video"))return"ÁREA MONITORADA";if(k.equals("bump"))return"QUEBRA-MOLA À FRENTE";if(k.equals("signal"))return label().toUpperCase(Locale.ROOT);if(k.equals("portable"))return"FISCALIZAÇÃO PORTÁTIL";return"RADAR À FRENTE";}
         String text(int meters){return label()+" · "+meters+" m"+(isSpeedEnforcement()&&speed>0?" · limite "+speed+" km/h":"");}
         String voice(int meters){String base="Atenção. "+label()+" em "+meters+" metros.";if(isSpeedEnforcement()&&speed>0)base+=" Limite de "+speed+" quilômetros por hora.";return base;}
-        String frontTitle(){return (label()+" NA SUA FRENTE").toUpperCase(Locale.ROOT);}
+        String frontTitle(){return(label()+" NA SUA FRENTE").toUpperCase(Locale.ROOT);}
         String frontText(){return label()+" · agora"+(isSpeedEnforcement()&&speed>0?" · limite "+speed+" km/h":"");}
         String frontVoice(){String base="Atenção. "+label()+" na sua frente.";if(isSpeedEnforcement()&&speed>0)base+=" Limite de "+speed+" quilômetros por hora.";return base;}
     }
