@@ -1,7 +1,10 @@
 package com.musicroad.ai;
 
 import android.content.Intent;
+import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
 
 public final class NativeBridge {
     private final MainActivity activity;
@@ -11,7 +14,31 @@ public final class NativeBridge {
     @JavascriptInterface public String version(){return BuildConfig.VERSION_NAME;}
     @JavascriptInterface public boolean hasAudioPermission(){return NativeMusicRepository.hasPermission(activity);}
     @JavascriptInterface public void requestAudioPermission(){activity.runOnUiThread(activity::requestAudioPermission);}
+
+    // Compatibilidade com o frontend antigo.
     @JavascriptInterface public String getMusicLibrary(){return NativeMusicRepository.scanAsJson(activity).toString();}
+
+    // v3.2: não bloqueia a WebView enquanto o MediaStore é lido.
+    @JavascriptInterface public void scanMusicLibraryAsync(){
+        new Thread(() -> {
+            final String json=NativeMusicRepository.scanAsJson(activity).toString();
+            activity.runOnUiThread(() -> {
+                try{
+                    View content=activity.findViewById(android.R.id.content);
+                    if(!(content instanceof ViewGroup))return;
+                    ViewGroup group=(ViewGroup)content;
+                    WebView web=null;
+                    for(int i=0;i<group.getChildCount();i++){
+                        View child=group.getChildAt(i);
+                        if(child instanceof WebView){web=(WebView)child;break;}
+                    }
+                    if(web==null)return;
+                    String quoted=org.json.JSONObject.quote(json);
+                    web.evaluateJavascript("document.dispatchEvent(new CustomEvent('mr:native-library',{detail:JSON.parse("+quoted+")}));",null);
+                }catch(Exception ignored){}
+            });
+        },"MusicRoad-MediaStore").start();
+    }
 
     @JavascriptInterface public void playQueue(String queueJson,int startIndex){activity.startService(PlaybackService.intentSetQueue(activity,queueJson,startIndex,true));}
     @JavascriptInterface public void togglePlay(){activity.startService(PlaybackService.intentAction(activity,PlaybackService.ACTION_TOGGLE));}
