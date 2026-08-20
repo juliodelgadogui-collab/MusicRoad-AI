@@ -87,7 +87,7 @@ echo json_encode([
     'token' => $ok ? $token : '',
     'style' => $style,
     'engine' => 'mapbox-android-native',
-    'version' => '1.5.0',
+    'version' => '1.5.1',
     'source' => $source,
     'fallback' => 'musicroad-native-offline'
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
