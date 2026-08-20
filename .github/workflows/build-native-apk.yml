@@ -1,4 +1,4 @@
-# MusicRoad 1.6.0 Mapbox Navigation + offline routing
+# MusicRoad 1.6.0A Mapbox Directions + Hazard Engine
 name: Build MusicRoad Native APK
 
 on:
@@ -17,8 +17,6 @@ on:
 jobs:
   build-debug-apk:
     runs-on: ubuntu-latest
-    env:
-      MAPBOX_DOWNLOADS_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,14 +60,6 @@ jobs:
               -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
           fi
 
-      - name: Verify Mapbox SDK download token
-        shell: bash
-        run: |
-          if [ -z "$MAPBOX_DOWNLOADS_TOKEN" ]; then
-            echo "::error::GitHub secret MAPBOX_DOWNLOADS_TOKEN is required (Mapbox token with Downloads:Read)."
-            exit 1
-          fi
-
       - name: Apply MusicRoad native patches
         shell: bash
         run: |
@@ -96,20 +86,18 @@ jobs:
           python android-app/tools/apply_v157_mapbox_runtime_fix.py
           python android-app/tools/apply_v158_mapbox_device_compat.py
           python android-app/tools/apply_v159_mapbox_lifecycle_owner.py
-          python android-app/tools/apply_v160_mapbox_navigation.py
+          python android-app/tools/apply_v160a_mapbox_directions.py
 
-      - name: Verify MusicRoad 1.6.0
+      - name: Verify MusicRoad 1.6.0A
         shell: bash
         run: |
-          grep -q "versionName '1.6.0'" android-app/app/build.gradle
+          grep -q "versionName '1.6.0A'" android-app/app/build.gradle
           grep -q 'versionCode 36' android-app/app/build.gradle
-          grep -q 'com.mapbox.navigationcore:android:3.27.0' android-app/app/build.gradle
-          grep -q 'MAPBOX_DOWNLOADS_TOKEN' android-app/settings.gradle
           grep -q 'extends ComponentActivity' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'mapboxNavigation.requestRoute' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'mapboxDirections.requestRoute' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           grep -q 'NavigationService.routeChangedIntent' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'MapboxMapsOptions.setTileStore' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
-          grep -q 'getTilesetDescriptorFactory().getLatest' android-app/app/src/main/java/com/musicroad/ai/MapboxOfflineRegionManager.java
+          grep -q 'api.mapbox.com/directions/v5/mapbox/' android-app/app/src/main/java/com/musicroad/ai/MapboxDirectionsEngine.java
+          grep -q 'api/native_app.php?action=geocode' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           if grep -q 'api/route.php?origin=' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
             echo 'OSRM/server route call still present in APK'; exit 1
           fi
@@ -124,6 +112,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-1.6.0-mapbox-navigation-apk
+          name: MusicRoad-AI-native-1.6.0A-mapbox-directions-apk
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
