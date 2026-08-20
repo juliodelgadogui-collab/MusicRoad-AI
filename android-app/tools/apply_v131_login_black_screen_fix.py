@@ -7,7 +7,7 @@ JAVA=ROOT/'app/src/main/java/com/musicroad/ai'
 p=JAVA/'MainActivity.java'
 s=p.read_text()
 old='shell.addView(main,new LinearLayout.LayoutParams(0,-1,1));'
-new='shell.addView(main,isLandscape()?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1));'
+new='shell.addView(main,landscape()?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1));'
 if old not in s:
     raise SystemExit('MusicRoad 1.3.1 fix failed: main shell layout anchor not found')
 s=s.replace(old,new,1)
