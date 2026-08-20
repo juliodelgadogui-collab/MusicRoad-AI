@@ -1,4 +1,4 @@
-# MusicRoad 1.6.0A Mapbox Directions + Hazard Engine
+# MusicRoad 1.6.1 unified Mapbox route + navigation layout fix
 name: Build MusicRoad Native APK
 
 on:
@@ -6,11 +6,13 @@ on:
     branches: [agent/native-apk-build]
     paths:
       - 'android-app/**'
+      - 'api/route.php'
       - '.github/workflows/build-native-apk.yml'
   pull_request:
     branches: [main]
     paths:
       - 'android-app/**'
+      - 'api/route.php'
       - '.github/workflows/build-native-apk.yml'
   workflow_dispatch:
 
@@ -87,19 +89,24 @@ jobs:
           python android-app/tools/apply_v158_mapbox_device_compat.py
           python android-app/tools/apply_v159_mapbox_lifecycle_owner.py
           python android-app/tools/apply_v160a_mapbox_directions.py
+          python android-app/tools/apply_v161_unified_mapbox_route.py
 
-      - name: Verify MusicRoad 1.6.0A
+      - name: Verify MusicRoad 1.6.1
         shell: bash
         run: |
-          grep -q "versionName '1.6.0A'" android-app/app/build.gradle
-          grep -q 'versionCode 36' android-app/app/build.gradle
+          grep -q "versionName '1.6.1'" android-app/app/build.gradle
+          grep -q 'versionCode 37' android-app/app/build.gradle
           grep -q 'extends ComponentActivity' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'mapboxDirections.requestRoute' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'ServerMapboxRouteEngine' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'api/route.php?origin=' android-app/app/src/main/java/com/musicroad/ai/ServerMapboxRouteEngine.java
+          grep -q 'router.startsWith("mapbox-directions")' android-app/app/src/main/java/com/musicroad/ai/ServerMapboxRouteEngine.java
+          grep -q 'api.mapbox.com/directions/v5/mapbox/driving/' api/route.php
+          grep -q "'router' => 'mapbox-directions-v5'" api/route.php
           grep -q 'NavigationService.routeChangedIntent' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'api.mapbox.com/directions/v5/mapbox/' android-app/app/src/main/java/com/musicroad/ai/MapboxDirectionsEngine.java
-          grep -q 'api/native_app.php?action=geocode' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          if grep -q 'api/route.php?origin=' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
-            echo 'OSRM/server route call still present in APK'; exit 1
+          grep -q 'if(screen!=MAP)main.addView(top()' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'mapLp.bottomMargin=dp(118)' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          if grep -q 'mapboxDirections.requestRoute' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
+            echo 'Old direct Mapbox Directions call still active in MainActivity'; exit 1
           fi
           if grep -R -q 'android.webkit.WebView\|new WebView' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
             echo 'WebView found in MainActivity'; exit 1
@@ -112,6 +119,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-1.6.0A-mapbox-directions-apk
+          name: MusicRoad-AI-native-1.6.1-unified-mapbox-apk
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
