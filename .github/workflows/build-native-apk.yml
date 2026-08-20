@@ -80,6 +80,9 @@ jobs:
       - name: Apply MusicRoad v4.6.5 trial device identity patch
         run: python android-app/tools/apply_v465_trial_device.py
 
+      - name: Apply MusicRoad v4.6.6 DriveOS landscape patch
+        run: python android-app/tools/apply_v466_driveos_landscape.py
+
       - name: Build debug APK
         working-directory: android-app
         run: gradle --no-daemon clean assembleDebug
