@@ -1,4 +1,4 @@
-# MusicRoad 1.5.6 native Mapbox + server geocoding build
+# MusicRoad 1.5.7 native Mapbox runtime fix
 name: Build MusicRoad Native APK
 
 on:
@@ -124,16 +124,21 @@ jobs:
       - name: Apply MusicRoad 1.5.6 Mapbox server geocoding
         run: python android-app/tools/apply_v156_mapbox_server_geocode.py
 
-      - name: Verify MusicRoad 1.5.6 Mapbox app
+      - name: Apply MusicRoad 1.5.7 Mapbox runtime fix
+        run: python android-app/tools/apply_v157_mapbox_runtime_fix.py
+
+      - name: Verify MusicRoad 1.5.7 Mapbox app
         shell: bash
         run: |
           grep -q 'Para onde você vai?' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           grep -q 'private void radio()' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q "versionName '1.5.6'" android-app/app/build.gradle
-          grep -q 'versionCode 32' android-app/app/build.gradle
+          grep -q "versionName '1.5.7'" android-app/app/build.gradle
+          grep -q 'versionCode 33' android-app/app/build.gradle
           grep -q 'com.mapbox.maps:android-ndk27:11.28.3' android-app/app/build.gradle
           grep -q 'com.mapbox.common.MapboxOptions' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
+          grep -q 'NativeApiClient client=new NativeApiClient' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'api/native_app.php?action=mapbox_config' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
+          grep -q 'mapbox://styles/mapbox/dark-v11' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'api/native_app.php?action=geocode' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           if grep -R -q 'android.webkit.WebView\|new WebView' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
             echo 'WebView found in MainActivity'; exit 1
@@ -146,6 +151,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-1.5.6-mapbox-apk
+          name: MusicRoad-AI-native-1.5.7-mapbox-apk
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
