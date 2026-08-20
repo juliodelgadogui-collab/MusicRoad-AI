@@ -1,1 +1,1 @@
-# MusicRoad AI - regras adicionais podem ser inseridas aqui.
+-keep class com.musicroad.ai.** { *; }
