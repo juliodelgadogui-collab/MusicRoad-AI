@@ -6,6 +6,8 @@ O projeto foi revisado como uma solução integrada: servidor PHP/MariaDB, PWA, 
 
 Os problemas de maior impacto foram corrigidos antes da entrega. A aplicação agora bloqueia instalação não autorizada, reduz exposição de dados internos, modera relatos comunitários, limita operações caras, evita downloads municipais em massa, preserva o índice CNEFE após limpeza de arquivos brutos e exige um APK de produção assinado e verificável.
 
+Uma segunda rodada ampliou a entrega com instalador assistido, integração Mapbox opcional e uma identidade visual premium consistente na PWA, no DriveOS e nas superfícies nativas do APK. A arquitetura de mapa existente foi preservada para não perder a operação offline.
+
 ## Escopo revisado
 
 - autenticação, sessão, CSRF, perfis e dispositivos registrados;
@@ -36,6 +38,9 @@ Os problemas de maior impacto foram corrigidos antes da entrega. A aplicação a
 | Média | Busca horizontal omitindo município não retornava sugestões | DriveOS usa o município preparado quando disponível e, caso contrário, orienta a digitação completa sem fazer uma chamada inútil |
 | Média | Clique de velocidade no DriveOS tinha dois listeners idênticos | Registro duplicado removido e protegido por teste de regressão |
 | Média | Observadores de GPS e anúncio de chegada podiam repetir | Um único watcher é mantido e o anúncio de chegada é controlado por estado da viagem |
+| Alta | Limite de 25 mil do Mapbox podia ser interpretado como aplicável à WebView | Documentação separa os 25 mil MAU dos SDKs móveis nativos dos 50 mil carregamentos do GL JS; Directions, Search e Navigation permanecem medidores separados |
+| Alta | Token Mapbox poderia ser inserido de forma insegura | Instalador e painel aceitam somente token público `pk.`, rejeitam `sk.`, cifram o valor no banco e orientam restrição por URL |
+| Média | Visual continuava próximo da edição anterior | Camada final premium redesenha hierarquia, superfícies, tipografia, cores, mapa, player, DriveOS, instalação e telas Android sem trocar IDs ou fluxos funcionais |
 
 ## Melhorias de precisão e operação
 
@@ -49,6 +54,7 @@ Os problemas de maior impacto foram corrigidos antes da entrega. A aplicação a
 - Offline Core restaura rota ativa, mapa, radares, limites e manobras salvas; nova rota ainda depende de internet.
 - WebView libera depuração somente no build de debug e restringe downloads à origem configurada.
 - Login executa verificação com hash fictício quando o usuário não existe, reduzindo enumeração por diferença de tempo.
+- Mapbox GL JS funciona como mapa-base opcional; uma falha de SDK, token, rede ou estilo devolve o controle ao OpenStreetMap e aos pacotes locais já existentes.
 
 ## Validação executada
 

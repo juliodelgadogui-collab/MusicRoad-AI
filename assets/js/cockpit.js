@@ -2,7 +2,7 @@
   'use strict';
   const screens=[...document.querySelectorAll('.cockpit-screen')];
   const navs=[...document.querySelectorAll('[data-nav]')];
-  let activeScreen='board', map=null, baseTileLayer=null, routeLayer=null, routeCasing=null, radarLayer=null, offlineRegionLayer=null, lightCityLayer=null, lightCityPack=null, lightCityLoadedCode='', lightMapPreparingCode='', baseTileErrors=0, userMarker=null, watchId=null, lastPos=null, currentRoute=null, currentRadars=[], currentSpeedLimits=[], currentManeuvers=[], currentGuidanceSteps=[];
+  let activeScreen='board', map=null, baseTileLayer=null, mapboxBase=null, routeLayer=null, routeCasing=null, radarLayer=null, offlineRegionLayer=null, lightCityLayer=null, lightCityPack=null, lightCityLoadedCode='', lightMapPreparingCode='', baseTileErrors=0, userMarker=null, watchId=null, lastPos=null, currentRoute=null, currentRadars=[], currentSpeedLimits=[], currentManeuvers=[], currentGuidanceSteps=[];
   let tripActive=false, followMap=true, routeLatLngs=[], routeCumM=[], lastRouteProgressM=0, alertTimer=null, lastSpeedVoiceAt=0;
   let tripDestinationCoords=null, tripDestinationLabel='', rerouteInFlight=false, offRouteSamples=0, lastRerouteAt=0, lastOfflineDeviationAlertAt=0;
   let nativeTripActive=false, nativeNavLastEventAt=0;
@@ -487,9 +487,12 @@
     if(!map)return;const localWanted=!navigator.onLine||baseTileErrors>=6;
     if(lightCityLayer){if(localWanted&&!map.hasLayer(lightCityLayer))lightCityLayer.addTo(map);if(!localWanted&&map.hasLayer(lightCityLayer))map.removeLayer(lightCityLayer);}
     const deviceLayer=offlineDetailLayer&&map.hasLayer(offlineDetailLayer),hasLocal=!!deviceLayer||!!lightCityLayer;
-    if(baseTileLayer)baseTileLayer.setOpacity(localWanted&&hasLocal?0:1);
+    const mapboxActive=!!(navigator.onLine&&!localWanted&&mapboxBase?.ready?.()&&mapboxBase.setVisible(true));
+    if(mapboxBase&&!mapboxActive)mapboxBase.setVisible(false);
+    if(baseTileLayer){const useOsm=!mapboxActive&&!(localWanted&&hasLocal);if(useOsm&&!map.hasLayer(baseTileLayer))baseTileLayer.addTo(map);if(!useOsm&&map.hasLayer(baseTileLayer))map.removeLayer(baseTileLayer);baseTileLayer.setOpacity(1);}
     if(localWanted&&deviceLayer)mapSourceBadge('MAPA NO DISPOSITIVO','local');
     else if(localWanted&&lightCityLayer)mapSourceBadge('OFFLINE LIGHT','local');
+    else if(mapboxActive)mapSourceBadge('MAPBOX PREMIUM','mapbox');
     else if(deviceLayer)mapSourceBadge('ONLINE · DEVICE PRONTO','ready');
     else if(lightCityPack)mapSourceBadge('ONLINE · LOCAL PRONTO','ready');
     else mapSourceBadge(navigator.onLine?'MAPA ONLINE':'SEM MAPA LOCAL',navigator.onLine?'online':'offline');
@@ -545,6 +548,7 @@
     }).addTo(map);
     baseTileLayer.on('tileerror',()=>{baseTileErrors=Math.min(20,baseTileErrors+1);if(baseTileErrors>=6)syncMapBaseMode();});
     baseTileLayer.on('tileload',()=>{if(baseTileErrors>0)baseTileErrors--;if(baseTileErrors===0)syncMapBaseMode();});
+    mapboxBase=window.MRMapboxBase?.mount({host:document.getElementById('map'),leafletMap:map,onReady:syncMapBaseMode,onFallback:syncMapBaseMode})||null;
     radarLayer=L.layerGroup().addTo(map);syncMapBaseMode();
     map.on('dragstart',()=>{followMap=false;document.getElementById('recenterMap').textContent='◎ Seguir';});
   }

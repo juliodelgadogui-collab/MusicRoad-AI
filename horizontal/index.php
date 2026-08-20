@@ -7,6 +7,7 @@ if (!$user) { header('Location: ../login.php'); exit; }
 if (($user['role'] ?? '') !== 'admin' && !user_has_access($user)) { header('Location: ../license.php'); exit; }
 $csrf = csrf_token();
 $isAdmin = (($user['role'] ?? '') === 'admin');
+$mapbox = mapbox_client_config();
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -17,10 +18,12 @@ $isAdmin = (($user['role'] ?? '') === 'admin');
   <meta name="mobile-web-app-capable" content="yes">
   <title>MusicRoad Drive · Central Multimídia</title>
   <link rel="stylesheet" href="../assets/vendor/leaflet/leaflet.css?v=1.9.4">
+  <?php if($mapbox['enabled']): ?><link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.26.0/mapbox-gl.css"><?php endif; ?>
   <link rel="stylesheet" href="assets/auto.css?v=1.2.0">
   <link rel="stylesheet" href="assets/driveos.css?v=1.2.0">
+  <link rel="stylesheet" href="assets/premium-driveos.css?v=1.2.0">
 <style id="mr-driveos-inline-css"><?php
-  foreach ([__DIR__.'/assets/auto.css', __DIR__.'/assets/driveos.css'] as $__css) { if (is_file($__css)) echo "\n" . file_get_contents($__css); }
+  foreach ([__DIR__.'/assets/auto.css', __DIR__.'/assets/driveos.css', __DIR__.'/assets/premium-driveos.css'] as $__css) { if (is_file($__css)) echo "\n" . file_get_contents($__css); }
 ?></style>
   <style id="mr-critical-fallback">html,body{margin:0;min-height:100%;background:#05070a;color:#f5f8fc;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,select,a{font:inherit}button{color:inherit;background:#101923;border:1px solid #273544;border-radius:12px}input,select{background:#09121c;color:#f5f8fc;border:1px solid #273544;border-radius:12px}.auto-screen{display:none}.auto-screen.active{display:block}.drive-screen.active{display:grid}.map-stage{min-height:1px}.auto-app{min-height:100vh}.rotate-lock{display:none}.boot-screen{display:none}.app-tile-form{margin:0}.app-tile-form .app-tile{width:100%}.settings-card form{margin:0}.settings-card form .settings-action{width:100%}</style>
 </head>
@@ -244,10 +247,13 @@ $isAdmin = (($user['role'] ?? '') === 'admin');
     window.MRA = <?= json_encode([
       'csrf' => $csrf,
       'user' => ['name' => $user['name'] ?? 'Motorista', 'role' => $user['role'] ?? 'user'],
+      'mapbox' => $mapbox,
       'version' => '1.2.0'
     ], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) ?>;
   </script>
   <script src="../assets/vendor/leaflet/leaflet.js?v=1.9.4"></script>
+  <?php if($mapbox['enabled']): ?><script nonce="<?=htmlspecialchars(csp_nonce(),ENT_QUOTES)?>" src="https://api.mapbox.com/mapbox-gl-js/v3.26.0/mapbox-gl.js"></script><?php endif; ?>
+  <script src="../assets/js/mapbox-base.js?v=1.2.0"></script>
   <script nonce="<?=htmlspecialchars(csp_nonce(),ENT_QUOTES)?>">try{if(window.MusicRoadAndroid){window.MusicRoadAndroid.saveAccountSnapshot?.(JSON.stringify(<?= json_encode(['id'=>$user['id']??0,'name'=>$user['name']??'Usuário','role'=>$user['role']??'client'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) ?>));window.MusicRoadAndroid.setSetupComplete?.(true);}}catch(_){}</script>
   <script src="assets/auto.js?v=1.2.0"></script>
 </body>

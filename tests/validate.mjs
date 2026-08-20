@@ -50,6 +50,13 @@ check(contains('api/bootstrap.php',/version_compare\(\$currentVersion,\s*MUSICRO
 check(contains('install/index.php',/storage\/install\.token/),'instalador sem token privado de autorização');
 check(contains('install/index.php',/install_authorized_at/),'autorização do instalador precisa expirar');
 check(contains('install/index.php',/install_atomic_write/),'instalador precisa gravar configuração e lock de forma atômica');
+check(contains('install/premium.php',/Servidor e banco de dados/),'instalador assistido precisa solicitar o banco');
+for(const field of ['db_host','db_port','db_name','db_user','db_password'])check(contains('install/premium.php',new RegExp(`name=["']${field}["']`)),`instalador sem o campo ${field}`);
+check(contains('install/premium.php',/admin_password_confirm/),'instalador precisa confirmar a senha administrativa');
+check(contains('install/index.php',/hash_equals\(\$adminPass,\$adminPassConfirm\)/),'instalador precisa validar a confirmação da senha');
+check(contains('install/index.php',/mapboxEnabled[\s\S]{0,500}token público válido iniciado por pk/),'instalador precisa rejeitar token Mapbox não público');
+const radarSchema=(read('database/schema.mysql.sql').match(/CREATE TABLE IF NOT EXISTS radars[\s\S]*?\) ENGINE=InnoDB/)||[])[0]||'';
+check((radarSchema.match(/\bativo\s+TINYINT/gi)||[]).length===1,'tabela radars precisa declarar a coluna ativo exatamente uma vez');
 check(contains('.htaccess',/install\\?\.token|install\.token/),'servidor Apache precisa bloquear o token de instalação');
 
 const bootstrap=read('api/bootstrap.php');
@@ -70,6 +77,22 @@ check(!/LAST_APP|last-auth|navigation-fallback/i.test(sw),'service worker não d
 check(!/unpkg\.com|cdn\.jsdelivr\.net/i.test(read('index.php')+read('horizontal/index.php')+sw),'Leaflet remoto voltou ao shell offline');
 check(fs.existsSync(path.join(root,'assets/vendor/leaflet/leaflet.js')),'Leaflet local ausente');
 check(fs.existsSync(path.join(root,'assets/vendor/leaflet/LICENSE')),'licença do Leaflet ausente');
+check(contains('api/bootstrap.php',/mapbox_public_token['"]?\], true/),'token público Mapbox precisa ser cifrado em repouso');
+check(contains('api/bootstrap.php',/function mapbox_client_config/),'bootstrap sem configuração cliente do Mapbox');
+check(contains('api/bootstrap.php',/https:\/\/api\.mapbox\.com[\s\S]{0,250}https:\/\/events\.mapbox\.com/),'CSP precisa permitir os endpoints oficiais do Mapbox');
+check(contains('assets/js/mapbox-base.js',/TOKEN_RX=\/\^pk\\\./),'cliente Mapbox precisa aceitar somente token público pk.');
+check(contains('assets/js/mapbox-base.js',/onFallback/),'Mapbox precisa ter fallback explícito');
+check(contains('assets/js/cockpit.js',/MAPBOX PREMIUM/),'cockpit vertical precisa indicar o mapa premium ativo');
+check(contains('horizontal/assets/auto.js',/Mapbox premium ativo/),'DriveOS precisa indicar o mapa premium ativo');
+for(const file of ['index.php','horizontal/index.php']){
+  check(contains(file,/mapbox-gl-js\/v3\.26\.0\/mapbox-gl\.js/),`${file} sem Mapbox GL JS versionado`);
+  check(contains(file,/mapbox-base\.js/),`${file} sem adaptador Mapbox`);
+}
+for(const file of ['assets/css/premium.css','horizontal/assets/premium-driveos.css','assets/css/premium-admin.css'])check(fs.existsSync(path.join(root,file)),`tema premium ausente: ${file}`);
+check(contains('index.php',/assets\/css\/premium\.css/),'interface vertical não carrega o tema premium');
+check(contains('horizontal/index.php',/premium-driveos\.css/),'DriveOS não carrega o tema premium');
+for(const asset of ['assets/css/premium.css','assets/js/mapbox-base.js','horizontal/assets/premium-driveos.css'])check(sw.includes(asset),`shell offline sem ${asset}`);
+check(contains('docs/MAPBOX.md',/25\.000 usuários ativos mensais[\s\S]{0,300}50\.000 carregamentos/),'documentação precisa distinguir MAU nativo de carregamentos GL JS');
 
 const workflow=read('.github/workflows/build-native-apk.yml');
 check(/assembleRelease/.test(workflow),'workflow sem build release');

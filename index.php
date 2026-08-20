@@ -5,6 +5,7 @@ require __DIR__ . '/api/bootstrap.php';
 $user = require_login();
 $csrf = csrf_token();
 $isAdmin = (($user['role'] ?? '') === 'admin');
+$mapbox = mapbox_client_config();
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -16,6 +17,7 @@ $isAdmin = (($user['role'] ?? '') === 'admin');
   <title>MusicRoad</title>
   <link rel="manifest" href="manifest.webmanifest?v=1.2.0">
   <link rel="stylesheet" href="assets/vendor/leaflet/leaflet.css?v=1.9.4">
+  <?php if($mapbox['enabled']): ?><link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.26.0/mapbox-gl.css"><?php endif; ?>
   <link rel="stylesheet" href="assets/css/cockpit.css?v=1.2.0">
   <link rel="stylesheet" href="assets/css/command.css?v=1.2.0">
   <link rel="stylesheet" href="assets/css/aurora.css?v=1.2.0">
@@ -23,8 +25,9 @@ $isAdmin = (($user['role'] ?? '') === 'admin');
 
 <link rel="stylesheet" href="assets/css/final-v15.css?v=1.2.0">
 <link rel="stylesheet" href="assets/css/one.css?v=1.2.0">
+<link rel="stylesheet" href="assets/css/premium.css?v=1.2.0">
 <style id="mr-inline-core-css"><?php
-  foreach ([__DIR__.'/assets/css/cockpit.css', __DIR__.'/assets/css/command.css', __DIR__.'/assets/css/final-v15.css', __DIR__.'/assets/css/one.css'] as $__css) { if (is_file($__css)) echo "\n" . file_get_contents($__css); }
+  foreach ([__DIR__.'/assets/css/cockpit.css', __DIR__.'/assets/css/command.css', __DIR__.'/assets/css/final-v15.css', __DIR__.'/assets/css/one.css', __DIR__.'/assets/css/premium.css'] as $__css) { if (is_file($__css)) echo "\n" . file_get_contents($__css); }
 ?></style>
 <script id="mr-ui-cache-reset" nonce="<?=htmlspecialchars(csp_nonce(),ENT_QUOTES)?>">
 (function(){
@@ -359,9 +362,11 @@ $isAdmin = (($user['role'] ?? '') === 'admin');
 
   </div>
   <audio id="webAudio" preload="metadata"></audio>
-  <script nonce="<?=htmlspecialchars(csp_nonce(),ENT_QUOTES)?>">window.MR_BOOTSTRAP={csrf:<?= json_encode($csrf) ?>,user:<?= json_encode(['id'=>$user['id']??0,'name'=>$user['name']??'Usuário','role'=>$user['role']??'client'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) ?>,version:'1.2.0'};</script>
+  <script nonce="<?=htmlspecialchars(csp_nonce(),ENT_QUOTES)?>">window.MR_BOOTSTRAP={csrf:<?= json_encode($csrf) ?>,user:<?= json_encode(['id'=>$user['id']??0,'name'=>$user['name']??'Usuário','role'=>$user['role']??'client'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) ?>,mapbox:<?=json_encode($mapbox,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>,version:'1.2.0'};</script>
 <script nonce="<?=htmlspecialchars(csp_nonce(),ENT_QUOTES)?>">try{if(window.MusicRoadAndroid){window.MusicRoadAndroid.saveAccountSnapshot?.(JSON.stringify(window.MR_BOOTSTRAP.user||{}));window.MusicRoadAndroid.setSetupComplete?.(true);}}catch(_){}</script>
   <script src="assets/vendor/leaflet/leaflet.js?v=1.9.4"></script>
+  <?php if($mapbox['enabled']): ?><script nonce="<?=htmlspecialchars(csp_nonce(),ENT_QUOTES)?>" src="https://api.mapbox.com/mapbox-gl-js/v3.26.0/mapbox-gl.js"></script><?php endif; ?>
+  <script src="assets/js/mapbox-base.js?v=1.2.0"></script>
   <script src="assets/js/cockpit-player.js?v=1.2.0"></script>
   <script src="assets/js/cockpit.js?v=1.2.0"></script>
 </body>

@@ -59,7 +59,7 @@ header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: geolocation=(self)');
-header("Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'nonce-{$cspNonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https://*.tile.openstreetmap.org https://servicodados.ibge.gov.br https://raw.githubusercontent.com; worker-src 'self' blob:; manifest-src 'self'");
+header("Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'nonce-{$cspNonce}'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https://*.tile.openstreetmap.org https://api.mapbox.com https://events.mapbox.com https://*.tiles.mapbox.com https://servicodados.ibge.gov.br https://raw.githubusercontent.com; worker-src 'self' blob:; manifest-src 'self'");
 if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
     header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
 }
@@ -327,7 +327,7 @@ function require_client(): array
 
 function secret_setting_key(string $key): bool
 {
-    return in_array($key, ['mercadopago_access_token','mercadopago_webhook_secret','trial_server_secret','google_api_key'], true);
+    return in_array($key, ['mercadopago_access_token','mercadopago_webhook_secret','trial_server_secret','google_api_key','mapbox_public_token'], true);
 }
 
 function app_crypto_key(): ?string
@@ -425,6 +425,36 @@ function google_api_key(): string
     global $config;
     $panelKey = trim((string)app_setting('google_api_key',''));
     return $panelKey !== '' ? $panelKey : trim((string)($config['google']['api_key'] ?? ''));
+}
+
+function mapbox_public_token_valid(string $token): bool
+{
+    return preg_match('/^pk\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/', trim($token)) === 1;
+}
+
+function mapbox_style_valid(string $style): bool
+{
+    return preg_match('~^mapbox://styles/[A-Za-z0-9_-]{1,64}/[A-Za-z0-9_-]{1,128}$~', trim($style)) === 1;
+}
+
+function mapbox_public_token(): string
+{
+    global $config;
+    $panelToken=trim((string)app_setting('mapbox_public_token',''));
+    $token=$panelToken!==''?$panelToken:trim((string)($config['mapbox']['public_token']??''));
+    return mapbox_public_token_valid($token)?$token:'';
+}
+
+function mapbox_client_config(): array
+{
+    global $config;
+    $token=mapbox_public_token();
+    $settingEnabled=(string)app_setting('mapbox_enabled','');
+    $enabled=$settingEnabled!==''?$settingEnabled==='1':!empty($config['mapbox']['enabled']);
+    $panelStyle=trim((string)app_setting('mapbox_style',''));
+    $style=$panelStyle!==''?$panelStyle:trim((string)($config['mapbox']['style']??'mapbox://styles/mapbox/navigation-night-v1'));
+    if(!mapbox_style_valid($style))$style='mapbox://styles/mapbox/navigation-night-v1';
+    return ['enabled'=>$enabled&&$token!=='','token'=>$enabled?$token:'','style'=>$style,'engine'=>'mapbox-gl-js'];
 }
 
 

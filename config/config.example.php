@@ -22,6 +22,13 @@ return [
         'redirect_uri' => 'https://seu-dominio.com/api/google_drive.php?action=callback',
         'scopes' => ['https://www.googleapis.com/auth/drive.readonly'],
     ],
+    'mapbox' => [
+        // Opcional. O token público também pode ser salvo pelo painel administrativo.
+        // Nunca coloque um token secreto (sk.) no aplicativo.
+        'enabled' => false,
+        'public_token' => '',
+        'style' => 'mapbox://styles/mapbox/navigation-night-v1',
+    ],
     'routing' => [
         'osrm_base_url' => 'https://router.project-osrm.org',
         'osrm_fallback_urls' => ['https://routing.openstreetmap.de/routed-car'],

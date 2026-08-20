@@ -13,6 +13,9 @@ MusicRoad reúne navegação, alertas viários, mapas offline por estado e repro
 - APK `release` exige chave de produção. O atualizador valida origem e SHA-256 antes de abrir o instalador.
 - PWA não guarda uma página autenticada globalmente como fallback offline.
 - Erros inesperados das APIs recebem um identificador de incidente sem expor SQL, caminhos locais ou respostas integrais de provedores.
+- Instalador assistido em três etapas solicita o banco MariaDB/MySQL, o Mapbox opcional e a conta administrativa, preservando somente campos não secretos quando há erro.
+- Mapa-base Mapbox GL JS opcional, com token público cifrado no banco e fallback automático para OpenStreetMap e mapas locais/offline.
+- Nova identidade premium em obsidiana, titânio, verde elétrico e violeta nas interfaces vertical, DriveOS, configuração e Offline Core Android.
 
 ## Instalação nova
 
@@ -20,7 +23,7 @@ MusicRoad reúne navegação, alertas viários, mapas offline por estado e repro
 2. Envie o conteúdo deste projeto para uma pasta servida somente por HTTPS.
 3. Dê permissão de escrita ao processo do PHP apenas em `config/`, `storage/` e `logs/`.
 4. Acesse `https://SEU-DOMINIO/SUA-PASTA/install/`. Leia `storage/install.token` pelo gerenciador de arquivos/SSH e use-o para autorizar o navegador.
-5. Conclua o instalador. O token é apagado e `storage/installed.lock` bloqueia novas instalações.
+5. Informe banco, administrador e, se desejar, um token público Mapbox `pk.`. O token do instalador é apagado e `storage/installed.lock` bloqueia novas instalações.
 6. Configure os planos e as integrações necessárias no painel administrativo.
 7. Configure o cron `cron/update_radars.php` para execução diária.
 8. Compile o APK assinado pelo workflow, publique-o como `downloads/MusicRoad-1.2.0.apk` e confira o SHA-256 retornado por `api/app_update.php`.
@@ -51,6 +54,11 @@ Instalações SQLite antigas não são apagadas. A migração opcional está em 
 - Cadastre o segredo do webhook do Mercado Pago e valide o endpoint antes de ativar cobrança real.
 - Conserve a chave Android fora do servidor e do repositório, com cópias criptografadas.
 - Revise periodicamente os relatos pendentes no painel e os resultados do cron.
+- Para Mapbox, crie um token público exclusivo, restrinja-o às URLs de produção e nunca use um token secreto `sk.` no app.
+
+## Mapbox e franquias
+
+A interface atual usa **Mapbox GL JS**, inclusive dentro da WebView Android. Portanto, aplica-se a franquia publicada de **50 mil carregamentos de mapa por mês**. A referência de **25 mil usuários ativos/mês** pertence aos SDKs móveis nativos para Android/iOS. Directions, Search e Navigation têm medidores próprios. Valores podem mudar; confirme a página oficial antes da produção. Consulte [docs/MAPBOX.md](docs/MAPBOX.md).
 
 ## Versões
 
@@ -61,4 +69,4 @@ Instalações SQLite antigas não são apagadas. A migração opcional está em 
 
 Relatório da revisão: [ANALISE-MELHORIAS-1.2.md](ANALISE-MELHORIAS-1.2.md).
 
-Mais detalhes: `docs/BANCO-SEGURO.md`, `docs/OFFLINE-DISPOSITIVO.md` e `docs/RADARES-BRASIL.md`.
+Mais detalhes: `docs/BANCO-SEGURO.md`, `docs/MAPBOX.md`, `docs/OFFLINE-DISPOSITIVO.md` e `docs/RADARES-BRASIL.md`.
