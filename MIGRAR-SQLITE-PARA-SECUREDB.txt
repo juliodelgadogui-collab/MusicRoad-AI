@@ -1,0 +1,19 @@
+MIGRAR MUSICROAD 1.0 SQLITE -> MARIADB/MYSQL SECUREDB
+
+IMPORTANTE: faça backup completo antes.
+
+CENÁRIO RECOMENDADO:
+1. Guarde uma cópia do banco antigo `musicroad.sqlite`.
+2. Crie um banco MariaDB/MySQL vazio e um usuário exclusivo.
+3. Instale esta edição SecureDB em uma pasta de teste usando /install/.
+4. Copie o SQLite antigo para uma pasta fora do acesso público.
+5. Via terminal/SSH, execute:
+
+   php tools/migrate_sqlite_to_mysql.php /caminho/seguro/musicroad.sqlite
+
+6. Entre no painel e confira clientes, licenças, planos, pagamentos, radares e configurações.
+7. Só depois troque a pasta de produção.
+
+A migração NÃO apaga o SQLite original.
+
+Se sua hospedagem não oferece terminal/SSH, a opção mais segura é instalar o SecureDB limpo e importar novamente apenas os dados necessários, ou solicitar ao provedor a importação assistida do banco.

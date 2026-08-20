@@ -1,22 +1,19 @@
-# Roadmap MusicRoad AI
+# Estado e próximos passos após a 1.2
 
-## Versão 1.0.0 — atual
+## Entregue
 
-- Dois perfis: ADM e Cliente.
-- Gestão de clientes pelo ADM.
-- Primeiro acesso do Cliente com solicitação de pasta de músicas e localização.
-- Uma ou mais pastas de música do dispositivo, com leitura de subpastas.
-- Player local via File System Access API ou modo compatível com IndexedDB.
-- Biblioteca pública do Google Drive administrada pelo ADM.
-- Smart Mix local.
-- GPS, rotas, radares e alertas por voz.
-- PWA instalável.
-- SQLite e instalador.
+- Autorização e moderação das APIs críticas.
+- Migração de esquema idempotente com marcador posterior ao sucesso.
+- Sincronização e ciclo de vida de radares.
+- Melhor correspondência entre ponto, segmento e direção da rota.
+- Base estadual leve retomável, detalhe municipal sob demanda e Offline Core com navegação em segundo plano.
+- Build Android direto do código-fonte, debug para teste e release obrigatoriamente assinado.
+- Verificações estáticas e lint no CI.
 
-## Próximas versões
+## Evoluções possíveis
 
-- Leitura avançada de tags ID3 e capas locais.
-- Sincronização opcional de playlists entre dispositivos.
-- Relatos colaborativos de trânsito.
-- Integrações adicionais de armazenamento em nuvem.
-- Aplicativo Android nativo opcional para acesso mais amplo à biblioteca de mídia.
+- Motor de roteamento totalmente local para criar destinos novos sem internet.
+- Cobertura oficial adicional para estados que publiquem dados abertos estruturados.
+- Testes de integração com MariaDB e um dispositivo/emulador Android no CI.
+- Publicação automatizada do APK assinado no servidor, condicionada a ambiente protegido e aprovação humana.
+- Política de retenção e exportação de auditoria definida para a operação real.

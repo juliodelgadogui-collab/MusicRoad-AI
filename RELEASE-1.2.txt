@@ -1,0 +1,18 @@
+MUSICROAD 1.2.0 — SEGURANÇA, RADARES E OFFLINE CORE
+
+- Instalador exige HTTPS e token privado antes de aceitar credenciais ou criar o administrador.
+- APIs privadas exigem sessão, perfil adequado e CSRF em gravações.
+- Operações caras têm limites de uso, corpo máximo e escrita atômica de cache.
+- Erros inesperados usam identificador de incidente sem revelar SQL ou caminhos locais.
+- Relatos comunitários aguardam aprovação administrativa.
+- Motor de rota usa corredores, direção, expiração e deduplicação espacial.
+- Importações oficiais têm atualização transacional e ciclo de vida.
+- Mapa offline usa uma base estadual e apenas o detalhe da cidade escolhida.
+- Índices CNEFE sobrevivem à limpeza do arquivo bruto e evitam novo download desnecessário.
+- Offline Core retoma a última viagem e o serviço de alertas sem internet.
+- DriveOS elimina observadores duplicados de GPS, envio duplicado de relato e avisos repetidos de chegada.
+- APK público é release assinado; não há fallback de produção para chave debug.
+- Atualizador Android verifica origem e SHA-256 do APK.
+- PWA não reutiliza página autenticada como fallback global.
+
+Limite conhecido: calcular uma rota totalmente nova ainda precisa de internet. A última rota salva continua disponível offline.

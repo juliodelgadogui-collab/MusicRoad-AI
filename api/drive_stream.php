@@ -23,6 +23,7 @@ try {
 } catch (Throwable $e) {
     // O streaming não depende do banco para funcionar.
 }
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
 if (isset($_GET['check'])) {
     $resolved = resolve_drive_source($fileId);
@@ -46,10 +47,6 @@ if (!$resolved['ok'] || empty($resolved['url'])) {
 if (!function_exists('curl_init')) {
     header('Location: ' . $resolved['url']);
     exit;
-}
-
-if (session_status() === PHP_SESSION_ACTIVE) {
-    session_write_close();
 }
 
 stream_remote_audio((string)$resolved['url'], $knownMime, $knownTitle, !empty($_GET['download']));
