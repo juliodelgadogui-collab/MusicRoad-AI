@@ -114,9 +114,13 @@ jobs:
                   q.write_text(x)
           PY
 
-      - name: Verify no WebView UI in native core
+      - name: Apply MusicRoad 1.3.1 login black screen fix
+        run: python android-app/tools/apply_v131_login_black_screen_fix.py
+
+      - name: Verify native portrait shell layout
         shell: bash
         run: |
+          grep -q 'isLandscape()?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1)' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           if grep -q 'android.webkit.WebView\|new WebView' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
             echo 'WebView found in MainActivity'; exit 1
           fi
@@ -129,6 +133,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-1.3-apk
+          name: MusicRoad-AI-native-1.3.1-apk
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
