@@ -86,6 +86,9 @@ jobs:
       - name: Apply MusicRoad 1.0 public release patch
         run: python android-app/tools/apply_v100_release.py
 
+      - name: Apply MusicRoad 1.1 offline core and device binding
+        run: python android-app/tools/apply_v110_offline_core.py
+
       - name: Build debug APK
         working-directory: android-app
         run: gradle --no-daemon clean assembleDebug
