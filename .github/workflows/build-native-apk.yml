@@ -1,16 +1,14 @@
-# MusicRoad 1.5.8 native Mapbox device compatibility build
+# MusicRoad 1.5.9 Mapbox LifecycleOwner fix
 name: Build MusicRoad Native APK
 
 on:
   push:
-    branches:
-      - agent/native-apk-build
+    branches: [agent/native-apk-build]
     paths:
       - 'android-app/**'
       - '.github/workflows/build-native-apk.yml'
   pull_request:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'android-app/**'
       - '.github/workflows/build-native-apk.yml'
@@ -62,87 +60,42 @@ jobs:
               -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
           fi
 
-      - name: Apply MusicRoad v4.6 source patch
-        run: python android-app/tools/apply_v460.py
-
-      - name: Apply MusicRoad v4.6.1 GPS precision patch
-        run: python android-app/tools/apply_v461_precision.py
-
-      - name: Apply MusicRoad v4.6.2 radar speed voice patch
-        run: python android-app/tools/apply_v462_radar_speed_voice.py
-
-      - name: Apply MusicRoad v4.6.3 route cleanup patch
-        run: python android-app/tools/apply_v463_route_ui.py
-
-      - name: Apply MusicRoad v4.6.4 bump sequence patch
-        run: python android-app/tools/apply_v464_bump_sequence.py
-
-      - name: Apply MusicRoad v4.6.5 trial device identity patch
-        run: python android-app/tools/apply_v465_trial_device.py
-
-      - name: Apply MusicRoad v4.6.6 DriveOS landscape patch
-        run: python android-app/tools/apply_v466_driveos_landscape.py
-
-      - name: Apply MusicRoad 1.0 public release patch
-        run: python android-app/tools/apply_v100_release.py
-
-      - name: Apply MusicRoad 1.1 offline core and device binding
-        run: python android-app/tools/apply_v110_offline_core.py
-
-      - name: Keep MusicRoad device token compatible
-        run: python android-app/tools/apply_v110_token_compat.py
-
-      - name: Apply MusicRoad 1.3 fully native core
+      - name: Apply MusicRoad native patches
         shell: bash
         run: |
+          set -e
+          python android-app/tools/apply_v460.py
+          python android-app/tools/apply_v461_precision.py
+          python android-app/tools/apply_v462_radar_speed_voice.py
+          python android-app/tools/apply_v463_route_ui.py
+          python android-app/tools/apply_v464_bump_sequence.py
+          python android-app/tools/apply_v465_trial_device.py
+          python android-app/tools/apply_v466_driveos_landscape.py
+          python android-app/tools/apply_v100_release.py
+          python android-app/tools/apply_v110_offline_core.py
+          python android-app/tools/apply_v110_token_compat.py
           cp android-app/native-v130/MainActivity.java android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           cp android-app/native-v130/NativeApiClient.java android-app/app/src/main/java/com/musicroad/ai/NativeApiClient.java
           cp android-app/native-v130/NativeMapView.java android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
           cp android-app/native-v130/NativeBridge.java android-app/app/src/main/java/com/musicroad/ai/NativeBridge.java
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          p=Path('android-app/app/build.gradle')
-          s=p.read_text()
-          s=re.sub(r'versionCode\s+\d+','versionCode 27',s,count=1)
-          s=re.sub(r"versionName\s+'[^']+'","versionName '1.3.0'",s,count=1)
-          p.write_text(s)
-          PY
+          python android-app/tools/apply_v131_login_black_screen_fix.py
+          python android-app/tools/fix_v140_generator_escape.py
+          python android-app/tools/apply_v140_native_full_design.py
+          python android-app/tools/apply_v150_mapbox_native.py
+          python android-app/tools/apply_v156_mapbox_server_geocode.py
+          python android-app/tools/apply_v157_mapbox_runtime_fix.py
+          python android-app/tools/apply_v158_mapbox_device_compat.py
+          python android-app/tools/apply_v159_mapbox_lifecycle_owner.py
 
-      - name: Apply MusicRoad 1.3.1 login black screen fix
-        run: python android-app/tools/apply_v131_login_black_screen_fix.py
-
-      - name: Fix MusicRoad 1.4 generator escaping
-        run: python android-app/tools/fix_v140_generator_escape.py
-
-      - name: Apply MusicRoad 1.4 native full design
-        run: python android-app/tools/apply_v140_native_full_design.py
-
-      - name: Apply MusicRoad 1.5.1 Mapbox native map
-        run: python android-app/tools/apply_v150_mapbox_native.py
-
-      - name: Apply MusicRoad 1.5.6 Mapbox server geocoding
-        run: python android-app/tools/apply_v156_mapbox_server_geocode.py
-
-      - name: Apply MusicRoad 1.5.7 Mapbox runtime fix
-        run: python android-app/tools/apply_v157_mapbox_runtime_fix.py
-
-      - name: Apply MusicRoad 1.5.8 Mapbox device compatibility
-        run: python android-app/tools/apply_v158_mapbox_device_compat.py
-
-      - name: Verify MusicRoad 1.5.8 Mapbox app
+      - name: Verify MusicRoad 1.5.9
         shell: bash
         run: |
-          grep -q 'Para onde você vai?' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'private void radio()' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q "versionName '1.5.8'" android-app/app/build.gradle
-          grep -q 'versionCode 34' android-app/app/build.gradle
+          grep -q "versionName '1.5.9'" android-app/app/build.gradle
+          grep -q 'versionCode 35' android-app/app/build.gradle
+          grep -q "androidx.activity:activity:1.10.1" android-app/app/build.gradle
+          grep -q 'extends ComponentActivity' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           grep -q 'com.mapbox.maps:android:11.28.3' android-app/app/build.gradle
-          if grep -q 'com.mapbox.maps:android-ndk27:11.28.3' android-app/app/build.gradle; then echo 'NDK27 artifact still present'; exit 1; fi
-          grep -q 'com.mapbox.common.MapboxOptions' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
-          grep -q 'MapInitOptions initOptions' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'setTextureView(true)' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
-          grep -q 'NativeApiClient client=new NativeApiClient' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'api/native_app.php?action=mapbox_config' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'api/native_app.php?action=geocode' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           if grep -R -q 'android.webkit.WebView\|new WebView' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
@@ -156,6 +109,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-1.5.8-mapbox-apk
+          name: MusicRoad-AI-native-1.5.9-mapbox-apk
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
