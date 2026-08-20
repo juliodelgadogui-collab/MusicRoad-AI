@@ -37,6 +37,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.core.content.ContextCompat;
+
 import java.io.File;
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -308,8 +310,8 @@ public class MainActivity extends Activity {
     private void clearUpdateDownload(){updateDownloadId=-1;getPreferencesStore().edit().remove(PREF_UPDATE_ID).remove(PREF_UPDATE_SHA256).apply();}
     private void dispatchWebEvent(String name){if(webView!=null)webView.evaluateJavascript("document.dispatchEvent(new CustomEvent('"+name+"'));",null);}
 
-    private void registerPlaybackReceiver(){IntentFilter f=new IntentFilter(PlaybackService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(playbackReceiver,f,RECEIVER_NOT_EXPORTED);else registerReceiver(playbackReceiver,f);}
-    private void registerUpdateReceiver(){IntentFilter f=new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);if(Build.VERSION.SDK_INT>=33)registerReceiver(updateReceiver,f,RECEIVER_EXPORTED);else registerReceiver(updateReceiver,f);}
+    private void registerPlaybackReceiver(){IntentFilter f=new IntentFilter(PlaybackService.ACTION_STATE);ContextCompat.registerReceiver(this,playbackReceiver,f,ContextCompat.RECEIVER_NOT_EXPORTED);}
+    private void registerUpdateReceiver(){IntentFilter f=new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);ContextCompat.registerReceiver(this,updateReceiver,f,ContextCompat.RECEIVER_EXPORTED);}
     @Override protected void onSaveInstanceState(Bundle outState){webView.saveState(outState);super.onSaveInstanceState(outState);}
     @Override protected void onResume(){
         super.onResume();if(webView!=null)startService(PlaybackService.intentAction(this,PlaybackService.ACTION_BROADCAST_STATE));

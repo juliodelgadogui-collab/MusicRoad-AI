@@ -24,6 +24,8 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.widget.Toast;
 
+import androidx.core.content.ContextCompat;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -180,7 +182,7 @@ public final class NativeBridge {
                 }
             };
             IntentFilter filter=new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
-            if(Build.VERSION.SDK_INT>=33)activity.registerReceiver(receiver,filter,Context.RECEIVER_EXPORTED);else activity.registerReceiver(receiver,filter);
+            ContextCompat.registerReceiver(activity,receiver,filter,ContextCompat.RECEIVER_EXPORTED);
             activity.runOnUiThread(()->Toast.makeText(activity,"Baixando para Música/MusicRoad...",Toast.LENGTH_SHORT).show());
             return id;
         }catch(Exception e){activity.runOnUiThread(()->Toast.makeText(activity,"Não foi possível iniciar o download.",Toast.LENGTH_SHORT).show());return -1;}

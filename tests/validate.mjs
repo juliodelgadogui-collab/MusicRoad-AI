@@ -90,6 +90,10 @@ check(contains('android-app/app/src/main/java/com/musicroad/ai/NativeBridge.java
 check(contains('android-app/app/src/main/AndroidManifest.xml',/android\.permission\.VIBRATE/),'serviço de navegação precisa declarar permissão de vibração');
 check(contains('android-app/app/src/main/java/com/musicroad/ai/NavigationService.java',/canPostNotifications\(\)/),'notificações precisam respeitar a permissão em Android 13+');
 check(contains('android-app/app/src/main/java/com/musicroad/ai/NativeBridge.java',/setDestinationInExternalFilesDir/),'download legado precisa evitar escrita pública sem permissão');
+check(contains('android-app/app/build.gradle',/androidx\.core:core:1\.15\.0/),'Android precisa usar o registro compatível de broadcasts');
+check(contains('android-app/app/src/main/java/com/musicroad/ai/MainActivity.java',/playbackReceiver,f,ContextCompat\.RECEIVER_NOT_EXPORTED/),'broadcast interno do player não pode ser exportado');
+check(contains('android-app/app/src/main/java/com/musicroad/ai/MainActivity.java',/updateReceiver,f,ContextCompat\.RECEIVER_EXPORTED/),'evento do DownloadManager precisa aceitar o emissor do sistema');
+check(contains('android-app/app/src/main/java/com/musicroad/ai/NativeBridge.java',/receiver,filter,ContextCompat\.RECEIVER_EXPORTED/),'download offline precisa registrar o receptor com estado explícito');
 check(!fs.existsSync(path.join(root,'downloads/MusicRoad-1.1.0.apk')),'APK debug legado não deve ser distribuído');
 
 check(contains('android-app/app/src/main/assets/offline_core.html',/startNavigation/),'Offline Core não retoma o motor Android');
