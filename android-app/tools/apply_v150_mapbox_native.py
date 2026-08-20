@@ -14,6 +14,8 @@ shutil.copyfile(SRC, DST)
 # Mapbox 11 exposes MapboxOptions from the common module.
 map_src = DST.read_text()
 map_src = map_src.replace('import com.mapbox.maps.MapboxOptions;', 'import com.mapbox.common.MapboxOptions;')
+# Some LiteSpeed hosts block direct HTTP access to /api. Use the root compatibility endpoint.
+map_src = map_src.replace('base+"api/mapbox_config.php"', 'base+"mapbox_config.php"')
 DST.write_text(map_src)
 
 settings = ROOT / 'settings.gradle'
@@ -29,8 +31,8 @@ settings.write_text(s)
 
 build = APP / 'build.gradle'
 b = build.read_text()
-b = re.sub(r'versionCode\s+\d+', 'versionCode 30', b, count=1)
-b = re.sub(r"versionName\s+'[^']+'", "versionName '1.5.0'", b, count=1)
+b = re.sub(r'versionCode\s+\d+', 'versionCode 31', b, count=1)
+b = re.sub(r"versionName\s+'[^']+'", "versionName '1.5.1'", b, count=1)
 if 'com.mapbox.maps:android-ndk27:11.28.3' not in b:
     b += "\n\ndependencies {\n    implementation 'com.mapbox.maps:android-ndk27:11.28.3'\n}\n"
 build.write_text(b)
@@ -43,4 +45,4 @@ m = m.replace('Button route=btn(currentRouteCoords.length()>1?"RECALCULAR":"IR",
 m = m.replace('b.setText("RECALCULAR")', 'b.setText("↻")')
 main.write_text(m)
 
-print('MusicRoad 1.5.0 Mapbox native map applied')
+print('MusicRoad 1.5.1 Mapbox native map applied')
