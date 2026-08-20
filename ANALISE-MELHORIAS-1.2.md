@@ -53,11 +53,14 @@ Os problemas de maior impacto foram corrigidos antes da entrega. A aplicação a
 ## Validação executada
 
 - suíte estática `node tests/validate.mjs`, incluindo sintaxe JavaScript e regressões de segurança, offline, pagamentos, Android e DriveOS;
-- validação de YAML do workflow, JSON do manifesto e XML Android;
-- análise sintática Java das fontes Android com o compilador Java disponível, filtrando apenas erros de sintaxe; as referências ao SDK Android ausente no ambiente local foram desconsideradas;
-- inspeção de arquivos de distribuição, regras de acesso e ausência do APK de debug legado.
+- validação de YAML do workflow e de todos os XML Android;
+- lint de sintaxe de todos os arquivos PHP no GitHub Actions;
+- `lintDebug` e `assembleDebug` das fontes Android com JDK 17, Gradle 8.9 e SDK Android 35 no GitHub Actions;
+- geração do APK de debug apenas como artefato temporário de teste;
+- inspeção de arquivos de distribuição, regras de acesso e ausência do APK de debug legado;
+- comparação por hash dos 134 arquivos publicados e conferência do ZIP final contra a árvore validada.
 
-O workflow de CI está preparado para executar lint PHP, validações web, build/lint Android, verificação de assinatura e SHA-256. O build Android completo e o lint PHP precisam rodar nesse workflow porque o ambiente local desta análise não possui PHP, Gradle nem Android SDK.
+O workflow do pull request concluiu com sucesso as validações web, o lint Android e a montagem do APK de teste. O job de produção permanece intencionalmente restrito a tag ou execução manual: ele exige a chave privada configurada nos segredos, monta o APK release, verifica a assinatura e publica o SHA-256.
 
 ## Limites conhecidos
 
@@ -79,4 +82,4 @@ O workflow de CI está preparado para executar lint PHP, validações web, build
 
 ## Estado do GitHub
 
-Nenhuma alteração remota faz parte desta análise até haver autorização explícita para preparar o stage, criar commit, enviar uma branch e abrir o pull request.
+As alterações estão publicadas na branch `codex/musicroad-1.2.0-security-offline` e na [PR rascunho #3](https://github.com/juliobji6-ship-it/MusicRoad-AI/pull/3). A branch `main` permanece intacta; merge e publicação de produção dependem de revisão, configuração dos segredos e testes de homologação/aparelho físico.
