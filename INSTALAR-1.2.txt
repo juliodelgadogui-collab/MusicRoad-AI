@@ -1,0 +1,27 @@
+MUSICROAD 1.2.0 — INSTALAÇÃO
+
+1. Crie um banco MariaDB 10.5+ ou MySQL 8.0+ vazio.
+2. Crie um usuário exclusivo; não use root.
+3. Publique esta pasta em um servidor HTTPS.
+4. Permita escrita pelo PHP somente em config/, storage/ e logs/.
+5. Abra https://SEU-DOMINIO/SUA-PASTA/install/.
+6. Leia storage/install.token no gerenciador de arquivos/SSH e autorize o navegador.
+7. No assistente em três etapas, informe banco, Mapbox opcional e administrador.
+8. Se usar Mapbox, informe somente um token público pk. e restrinja-o às URLs de produção.
+9. Conclua o assistente; o token será apagado quando storage/installed.lock for criado.
+10. Configure o cron diário cron/update_radars.php.
+11. Compile o APK release no GitHub com os segredos de assinatura.
+12. Publique o artefato assinado como downloads/MusicRoad-1.2.0.apk.
+13. Instale o APK e informe a URL HTTPS do servidor no primeiro acesso.
+
+VERSÕES
+Servidor/esquema: 1.2.0
+Android: versionName 1.2.0 / versionCode 26
+DriveOS: 1.2.0
+
+IMPORTANTE
+- O projeto não inclui APK de debug.
+- Faça backup antes de atualizar uma instalação existente.
+- Use a mesma chave Android de produção em todas as atualizações.
+- Consulte README.md e android-app/SIGNING-STABILITY.md.
+- A integração atual usa Mapbox GL JS (franquia publicada de 50 mil carregamentos/mês). Os 25 mil MAU valem para SDK móvel nativo. Consulte docs/MAPBOX.md.

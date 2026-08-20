@@ -1,0 +1,96 @@
+/* MusicRoad DriveOS 1.2.0 — interface dedicada a centrais multimídia horizontais */
+:root{
+  --mr-bg:#05070a;--mr-surface:#0a0f14;--mr-surface-2:#0f161d;--mr-surface-3:#151e27;
+  --mr-line:#26313d;--mr-line-strong:#344250;--mr-text:#f6f8fa;--mr-muted:#7f8d9d;
+  --mr-orange:#ff7a1a;--mr-orange-2:#ff9b47;--mr-cyan:#55cfff;--mr-green:#4ddd95;--mr-red:#ff5c65;
+  --mr-glow:0 0 0 1px #ff7a1a33,0 12px 36px #0009;--top:62px;--dock:84px;--footer:64px;
+}
+html,body{background:#030507;color:var(--mr-text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(115deg,#ff7a1a09,transparent 22%,transparent 78%,#55cfff08),repeating-linear-gradient(90deg,#ffffff05 0 1px,transparent 1px 88px);mix-blend-mode:screen;z-index:0}
+.auto-app{position:relative;z-index:1;background:radial-gradient(circle at 15% 0,#38200f55,transparent 25%),radial-gradient(circle at 100% 20%,#0c314455,transparent 32%),linear-gradient(180deg,#070b0f,#040608 55%);grid-template-columns:var(--dock) minmax(0,1fr);grid-template-rows:var(--top) minmax(0,1fr) var(--footer)}
+.auto-app:before{content:"";position:absolute;left:0;right:0;top:var(--top);height:1px;background:linear-gradient(90deg,var(--mr-orange),transparent 34%,transparent 66%,var(--mr-cyan));z-index:60;opacity:.65}
+
+/* boot / orientação */
+.boot-screen{background:radial-gradient(circle at 50% 35%,#2b160a 0,#0a0d11 38%,#030405 74%)}
+.boot-mark{border-radius:18px;background:linear-gradient(145deg,#ff9a43,#ff6d0a);color:#160b03;box-shadow:0 0 0 1px #ffb67788,0 0 60px #ff7a1a3b,0 24px 60px #000a}
+.boot-screen strong em{color:var(--mr-orange-2);letter-spacing:4px}.boot-screen>span{color:#7d8a99}.boot-line{background:#19120d}.boot-line i{background:linear-gradient(90deg,var(--mr-orange),#ffd0a4)}
+.rotate-lock{background:radial-gradient(circle at 50% 30%,#34200f,#05070a 62%)}.rotate-icon{background:var(--mr-orange);color:#140a02;box-shadow:0 0 45px #ff7a1a55}
+
+/* cabeçalho tipo painel automotivo */
+.auto-topbar{padding:0 14px 0 12px;background:linear-gradient(180deg,#0c1117f7,#080c10f0);border-bottom:1px solid #202932;backdrop-filter:blur(18px);box-shadow:0 10px 30px #0006}
+.brand{width:230px;gap:11px}.brand-mark{width:40px;height:40px;border-radius:11px;background:linear-gradient(145deg,var(--mr-orange-2),var(--mr-orange));color:#160b04;box-shadow:0 0 0 1px #ffb36e55,0 8px 22px #0008;font-size:12px;letter-spacing:-.5px}.brand-copy{flex-direction:column;gap:0;align-items:flex-start}.brand-copy b{font-size:15px;letter-spacing:-.3px}.brand-copy small{font-size:7px;letter-spacing:2.5px;color:var(--mr-orange-2);margin-top:1px}
+.top-guidance{justify-content:flex-start;max-width:650px}.guidance-arrow{width:42px;height:42px;border-radius:12px;background:#111820;border:1px solid #35424d;color:var(--mr-cyan);box-shadow:inset 0 0 18px #55cfff0d}.top-guidance small{color:#68798a}.top-guidance b{font-size:13px;color:#eaf0f4}.top-status{width:auto;min-width:330px}.cockpit-pill{height:27px;padding:0 9px;border-radius:7px;background:#2a160a;color:#ffac6d;border:1px solid #6e3817;display:flex;align-items:center;font-size:7px;font-weight:950;letter-spacing:1.5px}.status-chip{height:27px;border-radius:7px;background:#0d141a;border-color:#293641}.status-chip.online{color:#7df0ad;border-color:#28563c}.top-icon{width:38px;height:38px;border-radius:10px;background:#10171d;border-color:#2a3641}.top-icon:active{transform:scale(.95);background:#19232c}#clock{font-size:21px;color:#fff;font-variant-numeric:tabular-nums}
+
+/* dock lateral: launcher automotivo */
+.auto-dock{padding:9px 7px 8px;background:linear-gradient(180deg,#070a0e,#050709);border-right:1px solid #212a32;gap:5px;box-shadow:10px 0 30px #0005}.auto-dock:after{content:"DRIVE OS";margin-top:auto;color:#4d5864;font-size:6px;letter-spacing:2px;writing-mode:vertical-rl;transform:rotate(180deg);padding:4px 0}.dock-btn{width:68px;height:61px;border-radius:15px;color:#7b8998;position:relative;transition:.15s ease;border:1px solid transparent}.dock-btn>span{font-size:21px}.dock-btn small{font-size:7px;letter-spacing:1.05px;font-weight:900}.dock-btn.active{background:linear-gradient(145deg,#ff9138,#ff6b08);color:#160b04;border-color:#ffaf6b;box-shadow:0 0 0 1px #ff7a1a33,0 8px 24px #ff7a1a26}.dock-btn.active:before{content:"";position:absolute;left:-7px;width:3px;height:30px;border-radius:999px;background:#ffd2ad;box-shadow:0 0 10px #ff8a2c}.dock-btn:active{transform:scale(.96)}
+
+/* área principal */
+.auto-main{background:linear-gradient(180deg,#06090c,#040608)}.drive-screen.active{grid-template-columns:minmax(0,1.92fr) minmax(320px,.72fr);gap:9px;padding:9px 10px 9px 9px}.map-stage{border-radius:17px;border:1px solid #26313b;background:#080d11;box-shadow:0 20px 50px #000b, inset 0 0 0 1px #ffffff05}.map-stage:after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;box-shadow:inset 0 0 80px #0009;z-index:400}.leaflet-tile{filter:brightness(.48) saturate(.52) contrast(1.28) hue-rotate(2deg)}
+.leaflet-control-attribution{display:block!important;opacity:.62;font-size:8px!important;background:rgba(5,8,12,.78)!important;color:#b9c4cd!important}.leaflet-control-attribution a{color:#dbe3e9!important}
+.vehicle-pin{background:var(--mr-orange);border-color:#1d120b;box-shadow:0 0 0 3px #ff9a4a66,0 0 28px #ff7a1a88}.vehicle-pin i{border-bottom-color:#1a0b02}
+.nav-cue{left:14px;top:14px;border-radius:15px;background:#071019ee;border:1px solid #365060;box-shadow:0 16px 36px #000c}.nav-cue-arrow{border-radius:11px;background:var(--mr-cyan);color:#04121a}.nav-cue strong{color:#fff}.nav-cue small{color:#a8bac8}
+.route-progress-card{right:14px;top:14px;border-radius:13px;background:#071018e9;border-color:#2f3e49}.route-progress-card:before{content:"";position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:999px;background:var(--mr-cyan)}
+
+/* velocímetro */
+.speed-cluster{left:14px;bottom:14px;width:124px;height:124px;border-radius:50%;background:radial-gradient(circle,#0c151c 0,#071016 62%,#05080b 100%);border:2px solid #31414d;box-shadow:0 0 0 5px #05090cb8,0 14px 40px #000c,inset 0 0 36px #55cfff0e}.speed-cluster:before{content:"";position:absolute;inset:7px;border:1px dashed #52606c;border-radius:50%;opacity:.55}.speed-cluster>small{color:#6f8291;letter-spacing:1.4px}.speed-cluster>strong{font-size:48px;color:#f8fbfd;text-shadow:0 0 24px #55cfff3d}.speed-cluster.danger{border-color:#ff5d65;box-shadow:0 0 0 5px #2c080a99,0 0 34px #ff5c6538,0 14px 40px #000c}.speed-limit{right:-12px;top:-9px;width:54px;height:54px;border-width:5px;box-shadow:0 8px 22px #000b}.map-actions{right:13px;bottom:13px}.map-actions button{width:48px;height:48px;border-radius:13px;background:#071018e8;border-color:#344653}.map-actions button:active{transform:scale(.94)}.map-actions .report{background:linear-gradient(145deg,#ff943c,#ff700c);color:#170a02;border-color:#ffb06c;box-shadow:0 8px 28px #ff7a1a28}
+
+/* painel lateral / cartões OEM */
+.drive-panel{padding:0;gap:5px}.drive-panel-head{height:50px;flex-basis:50px;padding:0 5px 0 8px;border-bottom:1px solid #171f26}.drive-panel-head small{color:#7d8c9a;letter-spacing:1.5px}.drive-panel-head h1{font-size:21px;letter-spacing:-.7px}.vehicle-dot{height:24px;padding:0 8px;border:1px solid #264234;border-radius:7px;background:#0c1a13;color:#69d99a}.vehicle-dot i{background:#55dc91;box-shadow:0 0 10px #55dc91}
+.home-cards,.nav-panel{gap:7px}.home-cards{grid-template-rows:1.18fr .75fr .91fr}.nav-panel{grid-template-rows:1.32fr .9fr}.auto-card{border-radius:15px;border:1px solid #25313b;background:linear-gradient(155deg,#111820,#0a0f14 60%);box-shadow:0 12px 28px #0006,inset 0 1px 0 #ffffff05;position:relative}.auto-card:before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:2px;border-radius:999px;background:#ffffff0b}.home-cards .auto-card,.nav-panel .auto-card{padding:13px}.destination-card:before,.nav-search-card:before{background:var(--mr-orange)}.now-card:before{background:var(--mr-cyan)}.assist-card:before{background:var(--mr-green)}.trip-card:before{background:#8897a5}.card-label>span{background:#1c2731;color:var(--mr-orange-2)}.card-label small{color:#7d8c99}.destination-card h2,.nav-search-card h2{font-size:17px;margin:7px 0 9px}.address-box{height:42px}.address-box input{border-radius:10px;background:#060a0d;border-color:#2b3944;color:#f7fafc}.address-box input:focus{border-color:#ff8c35;box-shadow:0 0 0 2px #ff7a1a1c;outline:none}.address-box button{border-radius:9px;background:linear-gradient(145deg,#ff923a,#ff6f0c);color:#160a02;box-shadow:0 7px 18px #ff7a1a20}.suggestions{border:1px solid #34424d;background:#0b1116}.suggestion{background:#101820;border-color:#26333d;color:#e7edf2}.suggestion:hover{background:#19242d}.favorite-row button,.nav-favorites button{border-color:#293640;background:#0a0f14}.favorite-row button:active,.nav-favorites button:active{background:#151e26}.cover,.big-cover{background:radial-gradient(circle at 30% 20%,#4a2b17,#181d22 54%,#080b0e);border-color:#53331e}.round-play,.large-controls .primary-play,.footer-controls .footer-play,.radio-play{background:linear-gradient(145deg,#ff9a46,#ff710e);color:#190b02;box-shadow:0 7px 20px #ff7a1a22}.assist-main>b{color:#b9f3d1}.assist-stats span{background:#080d11;border-color:#21303a}.assist-stats b{color:#fff}.trip-grid>div{background:#070b0e;border-color:#202b33}.danger-btn{border-color:#6c3035;background:#260e11;color:#ff8e95}
+
+/* alertas em camada */
+.road-alert{top:13px;border-radius:14px;background:#0c1319f7;border-color:#46535d;box-shadow:0 20px 50px #000d}.road-alert-icon{border-radius:11px}.road-alert.radar,.road-alert.portable,.road-alert.danger{border-color:#8d343a}.road-alert.bump{border-color:#846126}.road-alert.info{border-color:#296281}.road-alert.info .road-alert-icon{background:#0e3f57;color:#82d9ff}
+
+/* telas internas */
+.page-screen{padding:17px 19px 14px;background:radial-gradient(circle at 100% 0,#15324433,transparent 30%),linear-gradient(180deg,#080c10,#05070a);scrollbar-color:#34414b transparent}.page-head{margin-bottom:13px;padding-bottom:10px;border-bottom:1px solid #1f2931}.page-head small{color:var(--mr-orange-2);font-weight:900}.page-head h1{font-size:28px;letter-spacing:-1px}.page-head p{color:#778795}.page-actions>button,.primary-action{border-radius:9px;background:#111820;border-color:#2d3943}.primary-action{background:linear-gradient(145deg,#ff933c,#ff710d)!important;color:#160a02!important;border-color:#ffa057!important}.search-mini{border-radius:9px;background:#070c10;border-color:#2a3741}.search-mini input{font-size:11px}
+
+.music-layout{grid-template-columns:minmax(245px,.72fr) minmax(0,1.75fr);gap:9px}.music-now{border-color:#3b2b21}.big-cover{border-radius:20px;box-shadow:0 0 0 1px #ff7a1a20,0 22px 52px #000b}.music-now input[type=range]{accent-color:var(--mr-orange)}.large-controls button{background:#121a21}.library-pane{border-radius:15px;border-color:#24313a;background:#080d11}.library-head{border-color:#202b33}.track-row{border-radius:9px}.track-row:hover,.track-row.playing{background:#111b22}.track-row.playing{box-shadow:inset 3px 0 0 var(--mr-orange)}.track-row.playing .track-index{background:var(--mr-orange);color:#160a02}.track-row>button{background:#162029}
+
+.alert-summary{gap:7px}.summary-card{border-radius:14px;background:linear-gradient(145deg,#10171e,#090e12);border-color:#24313a}.summary-icon{border-radius:11px}.alerts-layout{gap:8px}.hazard-row{border-radius:9px}.alert-config-card{border-color:#25313b}.switch-row input{accent-color:var(--mr-orange)}.distance-pills label span{border-radius:8px}.distance-pills input:checked+span{background:var(--mr-orange);color:#160a02;border-color:#ff9a4a}
+
+.app-grid{grid-template-columns:repeat(4,1fr);gap:9px}.app-tile{height:146px;border-radius:16px;border-color:#28353f;background:linear-gradient(145deg,#111820,#090d11);box-shadow:0 12px 30px #0005}.app-tile:before{width:145px;height:145px;background:radial-gradient(circle,#ff7a1a1d,transparent 67%);right:-48px;top:-55px}.app-tile:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--mr-orange),transparent 55%);opacity:.55}.app-tile>span{width:46px;height:46px;border-radius:12px;background:#17222b;color:#ff9c55;border:1px solid #34414b}.app-tile b{font-size:14px}.app-tile small{color:#7b8a98}.app-tile:active{transform:scale(.98);background:#151f27}.danger-tile:after{background:linear-gradient(90deg,var(--mr-red),transparent)}
+
+.settings-grid{gap:8px}.settings-card{border-radius:14px;background:linear-gradient(145deg,#10171d,#090d11)}.settings-action{border-radius:8px;background:#141e26;border-color:#34414b}.settings-action:active{background:#1e2b34}.big-switch input:checked+span{background:var(--mr-orange)}.big-switch input:checked+span:after{background:#190b02}.version-badge{border-color:#673916;color:#ffad70;background:#241409}
+
+/* rádio */
+.radio-layout{gap:8px}.radio-fm-card,.radio-online-card{border-radius:15px}.radio-wave{background:radial-gradient(circle at 30% 20%,#5a2d11,#171d22 64%);border-color:#5a351f;color:#ff9f57}.radio-form input{background:#070c10;border-color:#293640}.radio-form button{background:var(--mr-orange);color:#160a02}.radio-station{border-radius:13px;background:#0b1116;border-color:#26333d}
+
+/* rodapé media bar */
+.auto-playerbar{padding:0 15px;background:linear-gradient(180deg,#080c10,#050709);border-top:1px solid #202a32;box-shadow:0 -12px 30px #0006;grid-template-columns:1fr 1.25fr auto .65fr}.pulse-dot{background:var(--mr-green);box-shadow:0 0 0 5px #4ddd9515,0 0 14px #4ddd9566}.footer-cover{border-radius:9px;background:linear-gradient(145deg,#3c2415,#151b20);color:#ff9d56}.footer-status small{color:#667888}.footer-now small{color:#778794}.footer-controls button{border-radius:10px}.footer-controls .footer-play{border-radius:12px}.footer-date b{color:var(--mr-orange-2);letter-spacing:1.4px}
+
+/* modal de reporte */
+.modal-panel{border-radius:18px;background:#0a1015;border-color:#35434e;box-shadow:0 30px 90px #000e}.point-type-grid>button{border-radius:13px;background:#10171d;border-color:#293640}.point-type-grid>button:active{transform:scale(.97);border-color:#ff8330}.point-type-grid>button>span{border-radius:10px}.speed-choice-grid button{box-shadow:0 8px 18px #0006}
+
+/* condução: menos distrações e mais mapa */
+body.is-driving .drive-screen{grid-template-columns:minmax(0,2.35fr) minmax(290px,.56fr)}
+body.is-driving .drive-panel-head{height:42px;flex-basis:42px}
+body.is-driving .favorite-row{display:none}
+body.is-driving .destination-card h2{display:none}
+body.is-driving .home-cards{grid-template-rows:.92fr .68fr .82fr}
+body.is-driving .home-cards .auto-card{padding:10px 12px}
+body.is-driving .page-head p{display:none}
+body.is-driving .speed-cluster{transform:scale(1.04);transform-origin:left bottom}
+
+/* telas típicas de centrais 1024x600 / 1280x720 */
+@media(max-width:1180px){:root{--dock:78px}.brand{width:190px}.top-status{min-width:270px}.cockpit-pill{display:none}.drive-screen.active{grid-template-columns:minmax(0,1.72fr) minmax(295px,.78fr)}.dock-btn{width:63px}.page-head h1{font-size:25px}.app-tile{height:128px}.settings-card{min-height:105px}}
+@media(max-height:610px){:root{--top:56px;--footer:56px}.brand-mark{width:35px;height:35px}.brand-copy b{font-size:13px}.top-guidance .guidance-arrow{width:35px;height:35px}.dock-btn{height:50px;border-radius:12px}.auto-dock{gap:3px}.drive-screen.active{padding:6px;gap:6px}.map-stage{border-radius:14px}.drive-panel-head{height:38px;flex-basis:38px}.drive-panel-head h1{font-size:16px}.home-cards,.nav-panel{gap:5px}.home-cards .auto-card,.nav-panel .auto-card{padding:8px 10px;border-radius:12px}.destination-card h2,.nav-search-card h2{font-size:13px;margin:3px 0 5px}.address-box{height:34px}.favorite-row{margin-top:4px}.favorite-row button{height:23px}.speed-cluster{width:92px;height:92px}.speed-cluster>strong{font-size:35px;line-height:36px}.speed-limit{width:44px;height:44px}.map-actions button{width:41px;height:41px}.page-screen{padding:10px 13px}.page-head{margin-bottom:7px;padding-bottom:6px}.page-head h1{font-size:20px}.page-head p{display:none}.music-layout{height:calc(100% - 47px)}.big-cover{width:112px}.alert-summary{margin-bottom:5px}.summary-card{height:66px}.alerts-layout{height:calc(100% - 118px)}.app-grid{gap:6px}.app-tile{height:98px;padding:9px}.app-tile>span{width:36px;height:36px;top:9px;left:9px}.settings-card{min-height:78px;padding:10px}.settings-card p{display:none}.radio-fm-card,.radio-online-card{min-height:104px;padding:9px}.radio-wave{width:54px;height:54px}.auto-playerbar{padding:0 10px}}
+@media(max-width:920px){.top-guidance{max-width:none}.top-status{min-width:215px}.status-chip{display:none}.brand{width:155px}.brand-copy small{letter-spacing:1.8px}.drive-screen.active{grid-template-columns:minmax(0,1.48fr) minmax(285px,.92fr)}.app-grid{grid-template-columns:repeat(3,1fr)}.radio-form{grid-template-columns:1fr 1fr}.radio-form input:nth-child(3){grid-column:1/2}.radio-form button{grid-column:2}.alert-summary{grid-template-columns:repeat(2,1fr)}}
+@media(orientation:portrait){.auto-app,.boot-screen{display:none}.rotate-lock{display:flex;position:fixed;inset:0;z-index:99999;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:30px}.rotate-lock:after{content:"Interface automotiva exclusiva para landscape";font-size:9px;letter-spacing:1px;color:#596978;margin-top:16px}.rotate-lock strong{font-size:25px}.rotate-lock span{font-size:12px;color:#8493a5;margin-top:6px}}
+
+
+/* v1.2.0 — mapa sempre visível no DriveOS
+   O fallback crítico do HTML não pode transformar a tela de navegação em bloco. */
+.drive-screen.active{display:grid!important}
+.drive-screen.active>.map-stage{display:block!important;min-width:0!important;min-height:0!important}
+.drive-screen.active>.drive-panel{min-width:0!important}
+#map{display:block!important;width:100%!important;height:100%!important;min-width:1px;min-height:1px}
+@media(max-width:760px) and (orientation:landscape){
+  .drive-screen.active{grid-template-columns:minmax(160px,1fr) minmax(210px,.76fr)!important}
+  .drive-panel-head h1{max-width:135px}
+}
+
+.brand-mark img{width:100%;height:100%;display:block;border-radius:inherit}.brand-mark:has(img){padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important}
+
+/* Busca local: botões ocupam a largura e mensagens não parecem clicáveis. */
+.suggestion{display:block;width:100%;border:0;text-align:left}
+.suggestion.info{color:#aab8c6;cursor:default}.suggestion.info:hover{background:#161e27}

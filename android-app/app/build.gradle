@@ -1,0 +1,74 @@
+plugins {
+    id 'com.android.application'
+}
+
+def musicRoadUrl = project.findProperty('MUSICROAD_URL') ?: System.getenv('MUSICROAD_URL') ?: 'https://musicroad1.gestao2.store/'
+try {
+    def parsedMusicRoadUrl = new URI(musicRoadUrl.toString())
+    if (!'https'.equalsIgnoreCase(parsedMusicRoadUrl.scheme) || !parsedMusicRoadUrl.host || parsedMusicRoadUrl.userInfo || parsedMusicRoadUrl.query || parsedMusicRoadUrl.fragment) {
+        throw new GradleException('MUSICROAD_URL must be an absolute HTTPS URL without credentials, query or fragment.')
+    }
+} catch (GradleException error) {
+    throw error
+} catch (Exception error) {
+    throw new GradleException('MUSICROAD_URL is invalid.', error)
+}
+def releaseStoreFile = System.getenv('MUSICROAD_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('MUSICROAD_STORE_PASSWORD')
+def releaseKeyAlias = System.getenv('MUSICROAD_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('MUSICROAD_KEY_PASSWORD')
+def releaseSigningReady = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it != null && !it.trim().isEmpty() }
+def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+
+if (releaseRequested && !releaseSigningReady) {
+    throw new GradleException('Release signing is required. Configure MUSICROAD_KEYSTORE_PATH, MUSICROAD_STORE_PASSWORD, MUSICROAD_KEY_ALIAS and MUSICROAD_KEY_PASSWORD.')
+}
+
+android {
+    namespace 'com.musicroad.ai'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.musicroad.ai'
+        minSdk 24
+        targetSdk 35
+        versionCode 26
+        versionName '1.2.0'
+        buildConfigField 'String', 'MUSICROAD_URL', '"' + musicRoadUrl.replace('"', '\\"') + '"'
+    }
+
+    buildFeatures { buildConfig true }
+
+    signingConfigs {
+        release {
+            if (releaseSigningReady) {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            debuggable false
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.15.0'
+}

@@ -1,0 +1,158 @@
+name: Validate and build MusicRoad
+
+on:
+  push:
+    branches: [main, 'agent/**']
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Build the signed production APK
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: musicroad-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-web:
+    name: Validate PHP and web assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Environment
+        run: |
+          php --version
+          node --version
+
+      - name: PHP syntax
+        shell: bash
+        run: |
+          while IFS= read -r -d '' file; do
+            php -l "$file"
+          done < <(find . -type f -name '*.php' -not -path './vendor/*' -print0)
+
+      - name: JavaScript syntax and security regression checks
+        run: node tests/validate.mjs
+
+  android-debug:
+    name: Android debug verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Lint and build directly from source
+        working-directory: android-app
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon clean lintDebug assembleDebug
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            find app/build -type f -name 'lint-results*.txt' -print -exec cat {} \; || true
+          fi
+          exit "$status"
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicRoad-1.2.0-debug-test-only
+          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  android-release:
+    name: Signed Android production APK
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)
+    needs: [validate-web, android-debug]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore production signing key
+        shell: bash
+        env:
+          MUSICROAD_KEYSTORE_BASE64: ${{ secrets.MUSICROAD_KEYSTORE_BASE64 }}
+          MUSICROAD_STORE_PASSWORD: ${{ secrets.MUSICROAD_STORE_PASSWORD }}
+          MUSICROAD_KEY_ALIAS: ${{ secrets.MUSICROAD_KEY_ALIAS }}
+          MUSICROAD_KEY_PASSWORD: ${{ secrets.MUSICROAD_KEY_PASSWORD }}
+        run: |
+          test -n "$MUSICROAD_KEYSTORE_BASE64"
+          test -n "$MUSICROAD_STORE_PASSWORD"
+          test -n "$MUSICROAD_KEY_ALIAS"
+          test -n "$MUSICROAD_KEY_PASSWORD"
+          printf '%s' "$MUSICROAD_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/musicroad-release.jks"
+          keytool -list -keystore "$RUNNER_TEMP/musicroad-release.jks" -storepass "$MUSICROAD_STORE_PASSWORD" -alias "$MUSICROAD_KEY_ALIAS" >/dev/null
+
+      - name: Build signed release
+        working-directory: android-app
+        env:
+          MUSICROAD_URL: ${{ vars.MUSICROAD_URL }}
+          MUSICROAD_KEYSTORE_PATH: ${{ runner.temp }}/musicroad-release.jks
+          MUSICROAD_STORE_PASSWORD: ${{ secrets.MUSICROAD_STORE_PASSWORD }}
+          MUSICROAD_KEY_ALIAS: ${{ secrets.MUSICROAD_KEY_ALIAS }}
+          MUSICROAD_KEY_PASSWORD: ${{ secrets.MUSICROAD_KEY_PASSWORD }}
+        run: gradle --no-daemon clean lintRelease assembleRelease
+
+      - name: Verify production signature
+        run: |
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs android-app/app/build/outputs/apk/release/app-release.apk
+          mkdir -p "$RUNNER_TEMP/musicroad-release"
+          cp android-app/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/musicroad-release/MusicRoad-1.2.0.apk"
+          cd "$RUNNER_TEMP/musicroad-release"
+          sha256sum MusicRoad-1.2.0.apk > MusicRoad-1.2.0.apk.sha256
+
+      - name: Upload signed production APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicRoad-1.2.0-signed-release
+          path: ${{ runner.temp }}/musicroad-release/
+          if-no-files-found: error
+          retention-days: 30

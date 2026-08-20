@@ -1,0 +1,157 @@
+/* MusicRoad Premium Surface · final override */
+:root{
+  --premium-bg:#04060a;
+  --premium-panel:rgba(12,17,27,.88);
+  --premium-panel-strong:#0d1420;
+  --premium-line:rgba(188,207,244,.14);
+  --premium-text:#f3f7ff;
+  --premium-muted:#8f9db4;
+  --premium-teal:#72f3d6;
+  --premium-violet:#9387ff;
+  --premium-blue:#69a8ff;
+  --premium-danger:#ff7789;
+  --premium-shadow:0 24px 70px rgba(0,0,0,.42);
+  --accent:var(--premium-teal)!important;
+  --orange:var(--premium-teal)!important;
+}
+
+html,body{background:#04060a!important;color:var(--premium-text)!important}
+body.cockpit-body{
+  background:
+    radial-gradient(circle at 82% -12%,rgba(147,135,255,.20),transparent 31%),
+    radial-gradient(circle at -8% 80%,rgba(40,220,184,.10),transparent 27%),
+    var(--premium-bg)!important;
+  font-family:Inter,SFProDisplay,"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;
+}
+.cockpit-app{background:transparent!important}
+button,input,select{font-family:inherit}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--premium-teal)!important;outline-offset:3px}
+
+/* Header and brand */
+.one-topbar{
+  top:max(10px,env(safe-area-inset-top))!important;
+  left:clamp(10px,2vw,28px)!important;
+  right:clamp(10px,2vw,28px)!important;
+  width:auto!important;
+  height:68px!important;
+  padding:9px 13px!important;
+  border:1px solid var(--premium-line)!important;
+  border-radius:21px!important;
+  background:linear-gradient(115deg,rgba(18,25,39,.91),rgba(7,11,18,.84))!important;
+  box-shadow:0 18px 55px rgba(0,0,0,.38),inset 0 1px rgba(255,255,255,.08)!important;
+  backdrop-filter:blur(24px) saturate(125%);
+  -webkit-backdrop-filter:blur(24px) saturate(125%);
+}
+.one-menu{
+  width:47px!important;height:47px!important;border-radius:15px!important;
+  border:1px solid rgba(255,255,255,.13)!important;
+  background:linear-gradient(145deg,#1b2534,#0a0f18)!important;
+  box-shadow:inset 0 1px rgba(255,255,255,.09),0 12px 32px rgba(0,0,0,.3)!important;
+}
+.one-menu img,.one-drawer-head img,.brand-mark img{filter:hue-rotate(115deg) saturate(.75) brightness(1.35)}
+.one-brand strong{font-size:15px!important;letter-spacing:-.02em!important}.one-brand small{color:var(--premium-muted)!important;font-size:9px!important;letter-spacing:.08em!important;text-transform:uppercase}
+.one-top-status{gap:8px!important}.one-net,.user-chip{border:1px solid var(--premium-line)!important;background:rgba(4,8,14,.62)!important;color:#cbd5e5!important;box-shadow:none!important}
+.one-net:before{background:var(--premium-teal)!important;box-shadow:0 0 12px var(--premium-teal)}
+.one-favorite{border:1px solid rgba(147,135,255,.26)!important;background:rgba(110,91,246,.09)!important;color:#c9c2ff!important}
+
+/* Screens and premium cards */
+.cockpit-screen:not(.map-screen){padding-top:104px!important;background:transparent!important}
+.one-home{background:transparent!important}
+.one-home-head{margin-bottom:20px!important}
+.one-home-head h1,.screen-heading h2,.music-head h2{letter-spacing:-.045em!important;color:#f7f9ff!important}
+.one-home-head h1{font-size:clamp(31px,6vw,54px)!important;line-height:1!important;max-width:680px}
+.one-home-head p,.screen-heading p{color:var(--premium-muted)!important}
+.one-mode{color:var(--premium-teal)!important;border:1px solid rgba(114,243,214,.2)!important;background:rgba(114,243,214,.055)!important;letter-spacing:.16em!important}
+.one-destination-card,.one-now-card,.one-trip-glance,.card,.offline-card,.settings-card,.voice-card,.radio-fm-card,.radio-online-card,.notification-card,.radar-import-card,.device-map-card,.state-download-card,.empty-library-card{
+  border:1px solid var(--premium-line)!important;
+  background:linear-gradient(145deg,rgba(17,24,38,.92),rgba(7,11,18,.9))!important;
+  box-shadow:var(--premium-shadow),inset 0 1px rgba(255,255,255,.055)!important;
+  border-radius:24px!important;
+}
+.one-destination-card{position:relative;overflow:hidden;padding:clamp(18px,3vw,28px)!important}
+.one-destination-card:before{content:"";position:absolute;width:210px;height:210px;right:-125px;top:-125px;border:28px solid rgba(147,135,255,.07);border-radius:50%;pointer-events:none}
+.one-origin,.one-destination-fields,.field,.setting-field,.search-box,.radio-station-form{
+  border-color:rgba(190,207,244,.15)!important;
+  background:rgba(3,7,13,.67)!important;
+  border-radius:15px!important;
+}
+input,select{color:#f4f7ff!important;background:rgba(3,7,13,.72)!important;border-color:rgba(190,207,244,.16)!important}
+input::placeholder{color:#536178!important}
+.one-origin:focus-within,.one-destination-fields:focus-within,.field:focus-within{border-color:rgba(114,243,214,.58)!important;box-shadow:0 0 0 4px rgba(114,243,214,.065)!important}
+.one-go,.primary-action,.primary,.compact-action,.offline-download-bar button,.state-download-actions button{
+  border:0!important;color:#07100f!important;
+  background:linear-gradient(112deg,var(--premium-teal),#aaa2ff)!important;
+  box-shadow:0 15px 38px rgba(66,225,193,.18)!important;
+  border-radius:15px!important;font-weight:900!important;
+}
+.one-go:hover,.primary-action:hover{filter:brightness(1.07);transform:translateY(-1px)}
+.ghost-button,.icon-button,.round-control,.map-icon-button,.settings-link,.source-tabs button,.source-tabs-v2 button{
+  border-color:var(--premium-line)!important;background:rgba(9,14,23,.78)!important;color:#dce4f2!important;box-shadow:none!important
+}
+.source-tabs button.active,.source-tabs-v2 button.active{background:rgba(114,243,214,.11)!important;border-color:rgba(114,243,214,.36)!important;color:var(--premium-teal)!important}
+.one-section-title,.facet-title,.settings-subtitle{color:#aeb8ca!important;letter-spacing:.14em!important}
+.one-section-title:after{background:linear-gradient(90deg,rgba(114,243,214,.4),transparent)!important}
+.hud-speed,.v15-stat strong,.one-trip-summary strong{color:#fff!important}.hud-metric,.v15-stat,.trip-card{border-color:var(--premium-line)!important;background:rgba(4,8,14,.6)!important}
+.cover-placeholder,.dock-cover{background:linear-gradient(145deg,rgba(114,243,214,.18),rgba(147,135,255,.2))!important;color:var(--premium-teal)!important;border-color:rgba(255,255,255,.1)!important}
+
+/* Drawer */
+.main-drawer-backdrop{background:rgba(1,3,6,.72)!important;backdrop-filter:blur(8px)}
+.one-drawer-panel{
+  margin:10px!important;height:calc(100% - 20px)!important;border-radius:26px!important;
+  border:1px solid var(--premium-line)!important;
+  background:linear-gradient(155deg,rgba(18,25,39,.98),rgba(5,8,13,.98))!important;
+  box-shadow:38px 0 100px rgba(0,0,0,.55)!important;
+}
+.one-drawer-head{border-bottom:1px solid var(--premium-line)!important}.one-drawer-head img{background:linear-gradient(145deg,#202b3b,#0b1018)!important;border-color:rgba(255,255,255,.12)!important}
+.one-launcher button{border:1px solid transparent!important;border-radius:14px!important;color:#9ba8bb!important;background:transparent!important}
+.one-launcher button:hover,.one-launcher button.active{color:#f4f8ff!important;border-color:rgba(114,243,214,.14)!important;background:linear-gradient(100deg,rgba(114,243,214,.11),rgba(147,135,255,.07))!important}
+.one-launcher button span{color:var(--premium-teal)!important}.one-driveos{border-color:rgba(147,135,255,.28)!important;background:rgba(147,135,255,.08)!important}
+
+/* Map composition */
+.map-screen,.map-stage{position:relative!important;isolation:isolate;background:#05080d!important;overflow:hidden}
+.map-screen #map,.map-stage #map{position:absolute!important;inset:0!important;z-index:2!important;background:transparent!important}
+.leaflet-container{background:transparent!important}
+.mapbox-base{position:absolute;inset:0;z-index:1;opacity:0;visibility:hidden;pointer-events:none;background:#071018;transition:opacity .28s ease}
+.mapbox-base.is-visible{opacity:1;visibility:visible}
+.mapbox-base .mapboxgl-canvas{outline:0}
+.mr-mapbox-controls{position:absolute;inset:0;z-index:950;display:none;pointer-events:none}
+.mr-mapbox-controls.is-visible{display:block}.mr-mapbox-controls>div{pointer-events:auto}
+.mr-mapbox-controls .mapboxgl-ctrl-logo{opacity:.72;transform:scale(.82);transform-origin:bottom left}
+.mr-mapbox-controls .mapboxgl-ctrl-attrib{background:rgba(4,8,14,.72)!important;color:#9ea9ba!important;backdrop-filter:blur(10px)}
+.mr-mapbox-controls .mapboxgl-ctrl-attrib a{color:#c5cedd!important}
+.map-toolbar,.map-driving-hud,.aurora-turn-card,.map-fiscal-panel{
+  z-index:600!important;border:1px solid var(--premium-line)!important;
+  background:rgba(8,13,21,.82)!important;box-shadow:0 18px 54px rgba(0,0,0,.36)!important;
+  backdrop-filter:blur(18px) saturate(125%);-webkit-backdrop-filter:blur(18px) saturate(125%)
+}
+.map-toolbar{border-radius:18px!important}.map-driving-hud,.aurora-turn-card{border-radius:20px!important}.map-source-badge{z-index:700!important;border-color:var(--premium-line)!important;background:rgba(5,9,15,.8)!important;color:#c8d2df!important;backdrop-filter:blur(12px)}
+.map-source-badge.mapbox{color:var(--premium-teal)!important;border-color:rgba(114,243,214,.32)!important;background:rgba(8,34,30,.76)!important}
+.vehicle-pin{filter:hue-rotate(110deg) saturate(.75) brightness(1.25)}
+.road-alert{z-index:1000!important;border-radius:20px!important;background:rgba(9,13,21,.94)!important;border-color:rgba(255,119,137,.35)!important;box-shadow:0 24px 70px rgba(0,0,0,.5)!important}
+
+/* Player */
+.dock-player{
+  left:50%!important;right:auto!important;bottom:max(10px,env(safe-area-inset-bottom))!important;
+  transform:translateX(-50%)!important;width:min(680px,calc(100% - 24px))!important;
+  border:1px solid var(--premium-line)!important;border-radius:21px!important;
+  background:linear-gradient(105deg,rgba(18,25,38,.93),rgba(7,11,18,.92))!important;
+  box-shadow:0 24px 70px rgba(0,0,0,.48),inset 0 1px rgba(255,255,255,.055)!important;
+  backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)
+}
+.dock-controls button{background:transparent!important;border-color:transparent!important;color:#e8edf8!important}.dock-controls .play-toggle{background:linear-gradient(135deg,var(--premium-teal),#aaa2ff)!important;color:#06100e!important;box-shadow:0 10px 28px rgba(114,243,214,.18)!important}
+.progress{accent-color:var(--premium-teal)!important}
+
+/* Sheets, lists and feedback */
+.point-sheet-backdrop,.app-update-backdrop{background:rgba(1,3,7,.76)!important;backdrop-filter:blur(10px)}
+.point-sheet-panel,.app-update-panel{border:1px solid var(--premium-line)!important;background:linear-gradient(145deg,#121a28,#070b12)!important;border-radius:28px 28px 0 0!important;box-shadow:0 -28px 80px rgba(0,0,0,.52)!important}
+.point-type-grid button,.speed-choice-grid button,.distance-choice-grid button{background:rgba(8,13,22,.86)!important;border-color:var(--premium-line)!important;color:#e8edf7!important;border-radius:14px!important}
+.point-type-grid button:hover,.speed-choice-grid button:hover{border-color:rgba(114,243,214,.38)!important;background:rgba(114,243,214,.08)!important}
+.track-list-v2 button,.place-suggestions button,.radio-stations button{border-color:var(--premium-line)!important;background:rgba(7,11,18,.72)!important}
+.inline-status,.state-offline-progress,.radar-coverage{border-color:var(--premium-line)!important;background:rgba(5,9,15,.64)!important;color:#9aa8bc!important}
+.kind-icon.radar,.road-alert-icon.radar{background:var(--premium-danger)!important}.kind-icon.signal{background:var(--premium-teal)!important}.kind-icon.video{background:var(--premium-violet)!important}
+
+@media(max-width:720px){
+  .one-topbar{height:62px!important;border-radius:18px!important;top:max(7px,env(safe-area-inset-top))!important}.one-menu{width:43px!important;height:43px!important}.one-brand small,.user-chip{display:none!important}.cockpit-screen:not(.map-screen){padding-top:86px!important}.one-home-head h1{font-size:34px!important}.one-destination-card,.one-now-card,.one-trip-glance,.card,.offline-card,.settings-card{border-radius:20px!important}.dock-player{border-radius:18px!important}.map-toolbar{top:79px!important}.map-source-badge{font-size:8px!important}.mr-mapbox-controls .mapboxgl-ctrl-attrib{font-size:9px!important;max-width:200px}
+}
+
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
