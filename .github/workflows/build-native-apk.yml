@@ -72,7 +72,15 @@ jobs:
 
       - name: Lint and build directly from source
         working-directory: android-app
-        run: gradle --no-daemon clean lintDebug assembleDebug
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon clean lintDebug assembleDebug
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            find app/build -type f -name 'lint-results*.txt' -print -exec cat {} \; || true
+          fi
+          exit "$status"
 
       - name: Upload test APK
         uses: actions/upload-artifact@v4

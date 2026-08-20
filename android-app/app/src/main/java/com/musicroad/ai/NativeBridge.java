@@ -158,7 +158,8 @@ public final class NativeBridge {
             req.addRequestHeader("User-Agent","MusicRoadAndroid/"+BuildConfig.VERSION_NAME);
             req.setTitle(safe);req.setDescription("MusicRoad · música offline");req.setAllowedOverMetered(true);req.setAllowedOverRoaming(true);
             req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC,"MusicRoad/"+safe);
+            if(Build.VERSION.SDK_INT>=29)req.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC,"MusicRoad/"+safe);
+            else req.setDestinationInExternalFilesDir(activity,Environment.DIRECTORY_MUSIC,"MusicRoad/"+safe);
             DownloadManager dm=(DownloadManager)activity.getSystemService(Context.DOWNLOAD_SERVICE);long id=dm.enqueue(req);
             if(offlineKey!=null&&!offlineKey.isEmpty())downloadPrefs().edit().putLong(pkey("id:",offlineKey),id).putBoolean(pkey("done:",offlineKey),false).putString(pkey("file:",offlineKey),safe).apply();
             final long target=id;final String targetKey=offlineKey;

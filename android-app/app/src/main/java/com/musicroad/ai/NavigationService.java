@@ -104,13 +104,14 @@ public final class NavigationService extends Service implements LocationListener
     private Notification.Builder builder(String channel){return Build.VERSION.SDK_INT>=26?new Notification.Builder(this,channel):new Notification.Builder(this);}
     private PendingIntent openAppIntent(){Intent i=new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP);int f=PendingIntent.FLAG_UPDATE_CURRENT;if(Build.VERSION.SDK_INT>=23)f|=PendingIntent.FLAG_IMMUTABLE;return PendingIntent.getActivity(this,91,i,f);}
     private Notification tripNotification(String text){Notification.Builder b=builder(CH_TRIP).setSmallIcon(R.drawable.ic_notification).setContentTitle("MusicRoad · viagem ativa").setContentText(text).setContentIntent(openAppIntent()).setOngoing(true).setCategory(Notification.CATEGORY_NAVIGATION).setOnlyAlertOnce(true);if(Build.VERSION.SDK_INT<26)b.setPriority(Notification.PRIORITY_LOW);return b.build();}
-    private void updateTripNotification(String text){if(notificationManager!=null)notificationManager.notify(NOTIF_TRIP,tripNotification(text));}
+    private boolean canPostNotifications(){return Build.VERSION.SDK_INT<33||checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED;}
+    private void updateTripNotification(String text){if(notificationManager!=null&&canPostNotifications())notificationManager.notify(NOTIF_TRIP,tripNotification(text));}
     private SharedPreferences alertPrefs(){return getSharedPreferences(ALERT_PREFS,MODE_PRIVATE);}
     private boolean pref(String key,boolean def){return alertPrefs().getBoolean(key,def);}
     private boolean milestoneEnabled(int meters){return pref("m"+meters,true);}
     private boolean kindEnabled(Hazard h){return h!=null&&pref(h.kind(),true);}
     private void vibrateAlert(){if(!pref("vibrate",true))return;try{Vibrator v=(Vibrator)getSystemService(VIBRATOR_SERVICE);if(v==null||!v.hasVibrator())return;if(Build.VERSION.SDK_INT>=26)v.vibrate(VibrationEffect.createWaveform(new long[]{0,110,70,110},-1));else v.vibrate(new long[]{0,110,70,110},-1);}catch(Exception ignored){}}
-    private void showTransient(String title,String text,long durationMs){vibrateAlert();if(!pref("system",true))return;Notification.Builder b=builder(CH_ALERT).setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(text).setStyle(new Notification.BigTextStyle().bigText(text)).setContentIntent(openAppIntent()).setAutoCancel(true).setCategory(Notification.CATEGORY_NAVIGATION).setOnlyAlertOnce(false);if(Build.VERSION.SDK_INT>=26)b.setTimeoutAfter(durationMs);else b.setPriority(Notification.PRIORITY_HIGH);notificationManager.notify(NOTIF_ALERT,b.build());handler.removeCallbacksAndMessages("road-alert");handler.postAtTime(()->notificationManager.cancel(NOTIF_ALERT),"road-alert",System.currentTimeMillis()+durationMs);}
+    private void showTransient(String title,String text,long durationMs){vibrateAlert();if(!pref("system",true)||!canPostNotifications())return;Notification.Builder b=builder(CH_ALERT).setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(text).setStyle(new Notification.BigTextStyle().bigText(text)).setContentIntent(openAppIntent()).setAutoCancel(true).setCategory(Notification.CATEGORY_NAVIGATION).setOnlyAlertOnce(false);if(Build.VERSION.SDK_INT>=26)b.setTimeoutAfter(durationMs);else b.setPriority(Notification.PRIORITY_HIGH);notificationManager.notify(NOTIF_ALERT,b.build());handler.removeCallbacksAndMessages("road-alert");handler.postAtTime(()->notificationManager.cancel(NOTIF_ALERT),"road-alert",System.currentTimeMillis()+durationMs);}
 
     private void startLocation(){
         if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED){showTransient("GPS necessário","Abra o MusicRoad e permita acesso à localização.",6000);stopNavigation();return;}
@@ -303,4 +304,3 @@ public final class NavigationService extends Service implements LocationListener
         String frontVoice(){if(isSpeedEnforcement()&&speed>0)return label()+" de "+speed+" quilômetros por hora na sua frente.";return "Atenção. "+label()+" na sua frente.";}
     }
 }
-
