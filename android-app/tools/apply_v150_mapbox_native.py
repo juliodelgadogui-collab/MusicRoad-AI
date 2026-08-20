@@ -11,6 +11,11 @@ if not SRC.exists():
     raise SystemExit('MusicRoad 1.5 Mapbox source missing')
 shutil.copyfile(SRC, DST)
 
+# Mapbox 11 exposes MapboxOptions from the common module.
+map_src = DST.read_text()
+map_src = map_src.replace('import com.mapbox.maps.MapboxOptions;', 'import com.mapbox.common.MapboxOptions;')
+DST.write_text(map_src)
+
 settings = ROOT / 'settings.gradle'
 s = settings.read_text()
 repo_url = 'https://api.mapbox.com/downloads/v2/releases/maven'
