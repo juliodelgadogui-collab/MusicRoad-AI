@@ -55,6 +55,7 @@ for(const field of ['db_host','db_port','db_name','db_user','db_password'])check
 check(contains('install/premium.php',/admin_password_confirm/),'instalador precisa confirmar a senha administrativa');
 check(contains('install/index.php',/hash_equals\(\$adminPass,\$adminPassConfirm\)/),'instalador precisa validar a confirmação da senha');
 check(contains('install/index.php',/mapboxEnabled[\s\S]{0,500}token público válido iniciado por pk/),'instalador precisa rejeitar token Mapbox não público');
+check(contains('install/index.php',/mapbox_public_token['"]?\s*=>\s*install_secret_encrypt\(\$mapboxToken,\$appKey\)/),'instalador precisa cifrar o token Mapbox antes do primeiro acesso');
 const radarSchema=(read('database/schema.mysql.sql').match(/CREATE TABLE IF NOT EXISTS radars[\s\S]*?\) ENGINE=InnoDB/)||[])[0]||'';
 check((radarSchema.match(/\bativo\s+TINYINT/gi)||[]).length===1,'tabela radars precisa declarar a coluna ativo exatamente uma vez');
 check(contains('.htaccess',/install\\?\.token|install\.token/),'servidor Apache precisa bloquear o token de instalação');
