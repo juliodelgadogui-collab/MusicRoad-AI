@@ -99,6 +99,46 @@ function mr_route_geocode(string $value): ?array
     return $geo;
 }
 
+function mr_route_mapbox_directions(float $olat,float $olon,float $dlat,float $dlon): ?array
+{
+    $token=mr_route_mapbox_token();
+    if ($token==='') return null;
+    $coords=sprintf('%.7F,%.7F;%.7F,%.7F',$olon,$olat,$dlon,$dlat);
+    $params=[
+        'access_token'=>$token,
+        'alternatives'=>'true',
+        'geometries'=>'geojson',
+        'overview'=>'full',
+        'steps'=>'true',
+        'language'=>'pt-BR',
+        'continue_straight'=>'true',
+    ];
+    $url='https://api.mapbox.com/directions/v5/mapbox/driving/'.$coords.'?'.http_build_query($params,'','&',PHP_QUERY_RFC3986);
+    $data=http_json($url);
+    $routes=is_array($data) && is_array($data['routes'] ?? null) ? $data['routes'] : [];
+    if (!$routes) return null;
+
+    // Prefer a route that is both reasonably fast and geographically direct. This
+    // avoids surprising detours when an alternative saves only a small amount of time.
+    $fastest=INF;
+    foreach ($routes as $candidate) {
+        $dur=(float)($candidate['duration'] ?? INF);
+        if ($dur>0 && $dur<$fastest) $fastest=$dur;
+    }
+    $eligible=[];
+    foreach ($routes as $candidate) {
+        $dur=(float)($candidate['duration'] ?? INF);
+        $dist=(float)($candidate['distance'] ?? INF);
+        if ($dist<=0 || !is_finite($dist)) continue;
+        if (is_finite($fastest) && $dur>0 && $dur<=$fastest*1.35) $eligible[]=$candidate;
+    }
+    if (!$eligible) $eligible=$routes;
+    usort($eligible,static fn($a,$b)=>((float)($a['distance'] ?? INF))<=>((float)($b['distance'] ?? INF)));
+    $route=$eligible[0] ?? null;
+    if (!is_array($route)) return null;
+    return $route;
+}
+
 $originGeo = mr_route_geocode($origin);
 $destinationGeo = mr_route_geocode($destination);
 if (!$originGeo || !$destinationGeo) {
@@ -107,14 +147,12 @@ if (!$originGeo || !$destinationGeo) {
 
 $olat = (float)$originGeo['lat']; $olon = (float)$originGeo['lon'];
 $dlat = (float)$destinationGeo['lat']; $dlon = (float)$destinationGeo['lon'];
-$url = rtrim($config['routing']['osrm_base_url'], '/') . "/route/v1/driving/$olon,$olat;$dlon,$dlat?overview=full&geometries=geojson&steps=true";
-$routeData = http_json($url);
-if (!$routeData || empty($routeData['routes'][0])) {
-    json_response(['ok' => false, 'error' => 'Não foi possível calcular a rota agora.'], 502);
+$route = mr_route_mapbox_directions($olat,$olon,$dlat,$dlon);
+if (!$route) {
+    json_response(['ok' => false, 'error' => 'A Mapbox não conseguiu calcular uma rota para este destino agora.'], 502);
 }
-$route = $routeData['routes'][0];
 $coords = $route['geometry']['coordinates'] ?? [];
-if (count($coords) < 2) json_response(['ok' => false, 'error' => 'A rota retornou sem geometria.'], 502);
+if (!is_array($coords) || count($coords) < 2) json_response(['ok' => false, 'error' => 'A rota Mapbox retornou sem geometria.'], 502);
 
 $lats = array_column($coords, 1); $lons = array_column($coords, 0);
 $pad = 0.025;
@@ -153,6 +191,9 @@ json_response([
     'route' => $route,
     'radars' => $onRoute,
     'geocoder' => 'mapbox-geocoding-v6',
+    'router' => 'mapbox-directions-v5',
+    'route_profile' => 'driving',
+    'route_selection' => 'shortest-within-35pct-fastest',
     'coverage' => [
         'local_candidates' => count($local),
         'osm_candidates' => count($osm),
@@ -161,5 +202,5 @@ json_response([
         'corridor_m' => 900,
         'osm_ok' => (bool)($osmResult['ok'] ?? false),
     ],
-    'message' => count($onRoute) . ' radares encontrados no corredor da rota usando base local + OpenStreetMap.',
+    'message' => count($onRoute) . ' alertas encontrados no corredor da rota Mapbox usando base local + OpenStreetMap.',
 ]);
