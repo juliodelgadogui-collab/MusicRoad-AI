@@ -1,6 +1,10 @@
 MUSICROAD 1.2.0 — SEGURANÇA, RADARES E OFFLINE CORE
 
 - Instalador exige HTTPS e token privado antes de aceitar credenciais ou criar o administrador.
+- Assistente premium organiza servidor/banco, Mapbox opcional e administrador em três etapas.
+- Mapbox GL JS pode ser ativado com token público pk., cifra no banco e fallback para OSM/offline.
+- A interface vertical carrega o Mapbox somente quando a tela de mapa é aberta, reduzindo consumo da franquia.
+- PWA, login, painel, DriveOS e superfícies Android recebem a nova identidade premium.
 - APIs privadas exigem sessão, perfil adequado e CSRF em gravações.
 - Operações caras têm limites de uso, corpo máximo e escrita atômica de cache.
 - Erros inesperados usam identificador de incidente sem revelar SQL ou caminhos locais.
@@ -16,3 +20,4 @@ MUSICROAD 1.2.0 — SEGURANÇA, RADARES E OFFLINE CORE
 - PWA não reutiliza página autenticada como fallback global.
 
 Limite conhecido: calcular uma rota totalmente nova ainda precisa de internet. A última rota salva continua disponível offline.
+Mapbox: a integração WebView usa a franquia do GL JS (50 mil carregamentos/mês na tabela pesquisada), não os 25 mil MAU dos SDKs móveis nativos. Directions, Search e Navigation têm medidores separados.
