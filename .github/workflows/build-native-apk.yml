@@ -89,6 +89,9 @@ jobs:
       - name: Apply MusicRoad 1.1 offline core and device binding
         run: python android-app/tools/apply_v110_offline_core.py
 
+      - name: Keep MusicRoad device token compatible
+        run: python android-app/tools/apply_v110_token_compat.py
+
       - name: Build debug APK
         working-directory: android-app
         run: gradle --no-daemon clean assembleDebug
