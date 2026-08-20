@@ -13,9 +13,13 @@ shutil.copyfile(SRC, DST)
 
 settings = ROOT / 'settings.gradle'
 s = settings.read_text()
-repo = "maven { url = uri('https://api.mapbox.com/downloads/v2/releases/maven') }"
-if 'api.mapbox.com/downloads/v2/releases/maven' not in s:
-    s = s.replace('mavenCentral() }', 'mavenCentral(); ' + repo + ' }')
+repo_url = 'https://api.mapbox.com/downloads/v2/releases/maven'
+if repo_url not in s:
+    marker = "        mavenCentral()\n    }\n}\nrootProject.name"
+    replacement = "        mavenCentral()\n        maven { url = uri('" + repo_url + "') }\n    }\n}\nrootProject.name"
+    if marker not in s:
+        raise SystemExit('MusicRoad 1.5 Mapbox repository insertion point not found')
+    s = s.replace(marker, replacement, 1)
 settings.write_text(s)
 
 build = APP / 'build.gradle'
