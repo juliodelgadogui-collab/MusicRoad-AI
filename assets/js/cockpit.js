@@ -2,7 +2,7 @@
   'use strict';
   const screens=[...document.querySelectorAll('.cockpit-screen')];
   const navs=[...document.querySelectorAll('[data-nav]')];
-  let activeScreen='board', map=null, baseTileLayer=null, mapboxBase=null, routeLayer=null, routeCasing=null, radarLayer=null, offlineRegionLayer=null, lightCityLayer=null, lightCityPack=null, lightCityLoadedCode='', lightMapPreparingCode='', baseTileErrors=0, userMarker=null, watchId=null, lastPos=null, currentRoute=null, currentRadars=[], currentSpeedLimits=[], currentManeuvers=[], currentGuidanceSteps=[];
+  let activeScreen='board', map=null, baseTileLayer=null, mapboxBase=null, mapboxAttempted=false, routeLayer=null, routeCasing=null, radarLayer=null, offlineRegionLayer=null, lightCityLayer=null, lightCityPack=null, lightCityLoadedCode='', lightMapPreparingCode='', baseTileErrors=0, userMarker=null, watchId=null, lastPos=null, currentRoute=null, currentRadars=[], currentSpeedLimits=[], currentManeuvers=[], currentGuidanceSteps=[];
   let tripActive=false, followMap=true, routeLatLngs=[], routeCumM=[], lastRouteProgressM=0, alertTimer=null, lastSpeedVoiceAt=0;
   let tripDestinationCoords=null, tripDestinationLabel='', rerouteInFlight=false, offRouteSamples=0, lastRerouteAt=0, lastOfflineDeviationAlertAt=0;
   let nativeTripActive=false, nativeNavLastEventAt=0;
@@ -26,7 +26,7 @@
     activeScreen=name;document.body.dataset.screen=name;
     screens.forEach(s=>{const active=s.dataset.screen===name;s.classList.toggle('active',active);if(active&&name!=='map')s.scrollTop=0;});
     navs.forEach(n=>n.classList.toggle('active',n.dataset.nav===name));
-    if(name==='map'){[50,220,650].forEach(ms=>setTimeout(()=>map?.invalidateSize({pan:false}),ms));}
+    if(name==='map'){ensureMapboxBase();[50,220,650].forEach(ms=>setTimeout(()=>{map?.invalidateSize({pan:false});mapboxBase?.resize?.();},ms));}
     history.replaceState({screen:name},'',location.pathname+location.search+'#'+name);
   }
   document.body.dataset.screen=activeScreen;
@@ -483,6 +483,12 @@
     if(rank===4)return{weight:2.2,opacity:.78};
     return{weight:1.35,opacity:.60};
   }
+  function ensureMapboxBase(){
+    if(mapboxAttempted||!map||!navigator.onLine||window.MR_BOOTSTRAP?.mapbox?.enabled!==true)return mapboxBase;
+    mapboxAttempted=true;
+    mapboxBase=window.MRMapboxBase?.mount({host:document.getElementById('map'),leafletMap:map,onReady:syncMapBaseMode,onFallback:syncMapBaseMode})||null;
+    return mapboxBase;
+  }
   function syncMapBaseMode(){
     if(!map)return;const localWanted=!navigator.onLine||baseTileErrors>=6;
     if(lightCityLayer){if(localWanted&&!map.hasLayer(lightCityLayer))lightCityLayer.addTo(map);if(!localWanted&&map.hasLayer(lightCityLayer))map.removeLayer(lightCityLayer);}
@@ -548,7 +554,6 @@
     }).addTo(map);
     baseTileLayer.on('tileerror',()=>{baseTileErrors=Math.min(20,baseTileErrors+1);if(baseTileErrors>=6)syncMapBaseMode();});
     baseTileLayer.on('tileload',()=>{if(baseTileErrors>0)baseTileErrors--;if(baseTileErrors===0)syncMapBaseMode();});
-    mapboxBase=window.MRMapboxBase?.mount({host:document.getElementById('map'),leafletMap:map,onReady:syncMapBaseMode,onFallback:syncMapBaseMode})||null;
     radarLayer=L.layerGroup().addTo(map);syncMapBaseMode();
     map.on('dragstart',()=>{followMap=false;document.getElementById('recenterMap').textContent='◎ Seguir';});
   }
@@ -1288,7 +1293,7 @@
   document.getElementById('downloadStateMap')?.addEventListener('click',downloadFullStateMap);
   document.getElementById('prepareLightCityMap')?.addEventListener('click',()=>prepareSelectedLightMap(true,false));
   document.getElementById('refreshLightMapStats')?.addEventListener('click',refreshLightMapStats);
-  addEventListener('online',()=>{baseTileErrors=0;syncMapBaseMode();queueSelectedLightMap();});
+  addEventListener('online',()=>{baseTileErrors=0;if(activeScreen==='map')ensureMapboxBase();syncMapBaseMode();queueSelectedLightMap();});
   addEventListener('offline',syncMapBaseMode);
 
 

@@ -83,6 +83,7 @@ check(contains('api/bootstrap.php',/https:\/\/api\.mapbox\.com[\s\S]{0,250}https
 check(contains('assets/js/mapbox-base.js',/TOKEN_RX=\/\^pk\\\./),'cliente Mapbox precisa aceitar somente token público pk.');
 check(contains('assets/js/mapbox-base.js',/onFallback/),'Mapbox precisa ter fallback explícito');
 check(contains('assets/js/cockpit.js',/MAPBOX PREMIUM/),'cockpit vertical precisa indicar o mapa premium ativo');
+check(contains('assets/js/cockpit.js',/name===['"]map['"]\)\{ensureMapboxBase\(\)/),'cockpit vertical precisa inicializar Mapbox somente ao abrir o mapa');
 check(contains('horizontal/assets/auto.js',/Mapbox premium ativo/),'DriveOS precisa indicar o mapa premium ativo');
 for(const file of ['index.php','horizontal/index.php']){
   check(contains(file,/mapbox-gl-js\/v3\.26\.0\/mapbox-gl\.js/),`${file} sem Mapbox GL JS versionado`);

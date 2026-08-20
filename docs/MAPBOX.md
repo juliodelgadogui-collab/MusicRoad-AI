@@ -10,6 +10,8 @@ O Mapbox é opcional. Sem token, com token inválido, sem internet ou se o carre
 
 Um carregamento é contabilizado quando uma nova instância do mapa GL é inicializada. Consulte sempre a página oficial de preços antes de publicar em grande escala, pois as franquias e tarifas podem mudar.
 
+Na interface vertical, o MusicRoad inicializa o Mapbox somente quando a tela de mapa é aberta, evitando consumo da franquia por quem entra apenas para música ou configurações. No DriveOS, o mapa faz parte da tela principal e é inicializado ao abrir esse modo.
+
 ## Configuração segura
 
 1. Crie um token público dedicado no painel do Mapbox.
