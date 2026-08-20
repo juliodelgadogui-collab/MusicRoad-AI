@@ -120,7 +120,7 @@ jobs:
       - name: Verify native portrait shell layout
         shell: bash
         run: |
-          grep -q 'isLandscape()?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1)' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'landscape()?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1)' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           if grep -q 'android.webkit.WebView\|new WebView' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
             echo 'WebView found in MainActivity'; exit 1
           fi
