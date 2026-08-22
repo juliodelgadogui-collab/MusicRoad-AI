@@ -1,4 +1,4 @@
-# MusicRoad 1.6.2 fast Mapbox route + async hazards + native route layer
+# MusicRoad 1.7.0 DriveOS landscape automotive UI
 name: Build MusicRoad Native APK
 
 on:
@@ -95,14 +95,20 @@ jobs:
           python android-app/tools/apply_v160a_mapbox_directions.py
           python android-app/tools/apply_v161_unified_mapbox_route.py
           python android-app/tools/apply_v162_fast_route_native_layer.py
+          python android-app/tools/apply_v170_driveos_landscape.py
 
-      - name: Verify MusicRoad 1.6.2
+      - name: Verify MusicRoad 1.7.0 DriveOS
         shell: bash
         run: |
-          grep -q "versionName '1.6.2'" android-app/app/build.gradle
-          grep -q 'versionCode 38' android-app/app/build.gradle
+          grep -q "versionName '1.7.0'" android-app/app/build.gradle
+          grep -q 'versionCode 39' android-app/app/build.gradle
           grep -q 'extends ComponentActivity' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
           grep -q 'FastMapboxRouteEngine' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'showLandscapeShell' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'landscapeMap' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'DRIVE OS' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'setDrivingMode' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
+          grep -q 'userBearing' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'api/route_fast.php' android-app/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
           grep -q 'api/route_hazards.php' android-app/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
           grep -q 'route_selection.*mapbox-recommended' api/route_fast.php
@@ -124,6 +130,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-1.6.2-fast-mapbox-route-apk
+          name: MusicRoad-AI-native-1.7.0-DriveOS-landscape-apk
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
