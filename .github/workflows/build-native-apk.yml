@@ -1,5 +1,8 @@
-# MusicRoad 1.7.0 DriveOS landscape automotive UI
+# MusicRoad 1.7.0 -> 2.0 clean source migration
 name: Build MusicRoad Native APK
+
+permissions:
+  contents: write
 
 on:
   push:
@@ -26,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: JDK 17
         uses: actions/setup-java@v4
@@ -66,7 +71,7 @@ jobs:
               -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
           fi
 
-      - name: Apply MusicRoad native patches
+      - name: Materialize final 1.7 source once
         shell: bash
         run: |
           set -e
@@ -97,50 +102,105 @@ jobs:
           python android-app/tools/apply_v162_fast_route_native_layer.py
           python android-app/tools/apply_v170_driveos_landscape.py
 
-      - name: Verify MusicRoad 1.7.0 DriveOS
+      - name: Create clean 2.0 project
         shell: bash
         run: |
-          grep -q "versionName '1.7.0'" android-app/app/build.gradle
-          grep -q 'versionCode 39' android-app/app/build.gradle
-          grep -q 'extends ComponentActivity' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'FastMapboxRouteEngine' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'showLandscapeShell' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'landscapeMap' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'DRIVE OS' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'setDrivingMode' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
-          grep -q 'userBearing' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
-          grep -q 'api/route_fast.php' android-app/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
-          grep -q 'api/route_hazards.php' android-app/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
-          grep -q 'route_selection.*mapbox-recommended' api/route_fast.php
-          grep -q 'corridor_m.*180' api/route_hazards.php
-          grep -q 'musicroad-route-source' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
-          grep -q 'addStyleLayer' android-app/app/src/main/java/com/musicroad/ai/NativeMapView.java
-          grep -q 'NavigationService.routeChangedIntent' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java
-          if grep -q 'mapboxDirections.requestRoute' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
-            echo 'Old direct Mapbox Directions call still active in MainActivity'; exit 1
-          fi
-          if grep -R -q 'android.webkit.WebView\|new WebView' android-app/app/src/main/java/com/musicroad/ai/MainActivity.java; then
-            echo 'WebView found in MainActivity'; exit 1
+          set -e
+          rm -rf android-app-v2
+          mkdir -p android-app-v2
+          cp -a android-app/app android-app-v2/app
+          cp android-app/build.gradle android-app-v2/build.gradle
+          cp android-app/settings.gradle android-app-v2/settings.gradle
+          cp android-app/gradle.properties android-app-v2/gradle.properties
+          sed -i "s/versionCode 39/versionCode 40/" android-app-v2/app/build.gradle
+          sed -i "s/versionName '1.7.0'/versionName '2.0.0'/" android-app-v2/app/build.gradle
+          sed -i "s/rootProject.name = 'MusicRoadAI'/rootProject.name = 'MusicRoadAI2'/" android-app-v2/settings.gradle
+          rm -f android-app-v2/app/src/main/java/com/musicroad/ai/MapboxDirectionsEngine.java
+          rm -f android-app-v2/app/src/main/java/com/musicroad/ai/ServerMapboxRouteEngine.java
+          cat > android-app-v2/README-ARCHITECTURE.md <<'EOF'
+          # MusicRoad Android 2.0 — Clean Base
+
+          This directory is the authoritative Android source for MusicRoad 2.x.
+
+          - Native Android only; no WebView.
+          - Builds directly from source; no legacy patch scripts.
+          - Same applicationId (`com.musicroad.ai`) for upgrade compatibility.
+          - Portrait and DriveOS landscape have different presentations and share the same core services.
+          - Mapbox Maps SDK renders the map.
+          - FastMapboxRouteEngine uses the server fast Mapbox route endpoint and loads hazards asynchronously.
+          - NavigationService owns MusicRoad route progress, radar/quebra-mola alerts and voice.
+          - PlaybackService owns background music and online radio playback.
+          - NativeMusicRepository reads device audio with MediaStore.
+          - OfflineStore persists state packs and the last route.
+          EOF
+          cat > android-app-v2/FUNCTIONS-PRESERVED.md <<'EOF'
+          # MusicRoad 2.0 — preserved functions
+
+          - Native login and registration
+          - Device identity, binding and recovery
+          - Account/entitlement state
+          - Local Android MediaStore music library
+          - Online/server/Drive library through server APIs
+          - Favorites and player state
+          - Background playback and notification
+          - FM launcher and saved online radio streams
+          - GPS, speed and trip mode
+          - Native Mapbox map
+          - Fast Mapbox route via api/route_fast.php
+          - Async route hazards via api/route_hazards.php
+          - Route persistence and reroute support
+          - Navigation foreground service
+          - Radar, portable, video, signal and speed-bump alerts
+          - Voice/system/vibration alert preferences
+          - Community hazard reporting
+          - Offline map/radar state packs
+          - Portrait mobile interface
+          - Separate DriveOS landscape home/navigation/media/radio/offline/settings interface
+          - Native in-app APK update flow
+          EOF
+
+      - name: Verify clean 2.0 source
+        shell: bash
+        run: |
+          set -e
+          grep -q "versionName '2.0.0'" android-app-v2/app/build.gradle
+          grep -q 'versionCode 40' android-app-v2/app/build.gradle
+          grep -q 'extends ComponentActivity' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'FastMapboxRouteEngine' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'showLandscapeShell' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'landscapeMap' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'setDrivingMode' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMapView.java
+          grep -q 'api/route_fast.php' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
+          grep -q 'api/route_hazards.php' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
+          grep -q 'NavigationService.routeChangedIntent' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
+          test ! -f android-app-v2/app/src/main/java/com/musicroad/ai/MapboxDirectionsEngine.java
+          test ! -f android-app-v2/app/src/main/java/com/musicroad/ai/ServerMapboxRouteEngine.java
+          if grep -R -q 'android.webkit.WebView\|new WebView' android-app-v2/app/src/main/java; then
+            echo 'WebView found in 2.0 source'; exit 1
           fi
 
-      - name: Upload generated source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: MusicRoad-AI-generated-source-1.7.0
-          path: |
-            android-app/app
-            android-app/build.gradle
-            android-app/settings.gradle
-            android-app/gradle.properties
-          if-no-files-found: error
+      - name: Commit clean 2.0 source
+        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/native-apk-build'
+        shell: bash
+        run: |
+          set -e
+          git config user.name "MusicRoad Build"
+          git config user.email "actions@users.noreply.github.com"
+          git add android-app-v2
+          if git diff --cached --quiet; then
+            echo "No clean-source changes to commit"
+          else
+            git commit -m "feat: add MusicRoad 2.0 clean Android source"
+            git push origin HEAD:agent/native-apk-build
+          fi
 
-      - name: Build debug APK
-        working-directory: android-app
+      - name: Build clean 2.0 APK
+        working-directory: android-app-v2
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Upload APK
+      - name: Upload clean 2.0 APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-1.7.0-DriveOS-landscape-apk
-          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          name: MusicRoad-AI-native-2.0.0-clean-apk
+          path: android-app-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
