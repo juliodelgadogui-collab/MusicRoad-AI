@@ -1,4 +1,4 @@
-# MusicRoad 2.2.3 DriveOS Automotive — direct clean native build
+# MusicRoad 2.2.4 DriveOS Automotive — direct clean native build
 name: Build MusicRoad Native APK
 
 on:
@@ -64,19 +64,24 @@ jobs:
               -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
           fi
 
-      - name: Verify MusicRoad 2.2.3 clean native architecture
+      - name: Verify MusicRoad 2.2.4 clean native architecture
         shell: bash
         run: |
           set -e
-          grep -q "versionName '2.2.3'" android-app-v2/app/build.gradle
-          grep -q 'versionCode 45' android-app-v2/app/build.gradle
+          grep -q "versionName '2.2.4'" android-app-v2/app/build.gradle
+          grep -q 'versionCode 46' android-app-v2/app/build.gradle
           grep -q "applicationId 'com.musicroad.ai'" android-app-v2/app/build.gradle
           grep -q 'extends ComponentActivity' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
           grep -q 'android:name=".MusicRoadApplication"' android-app-v2/app/src/main/AndroidManifest.xml
           grep -q 'DriveOsShell.init' android-app-v2/app/src/main/java/com/musicroad/ai/MusicRoadApplication.java
+          grep -q 'MusicOfflineStore.init' android-app-v2/app/src/main/java/com/musicroad/ai/MusicRoadApplication.java
           grep -q 'NativeAppGuard.start' android-app-v2/app/src/main/java/com/musicroad/ai/MusicRoadApplication.java
           grep -q 'repairContentLayers' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
           grep -q 'syncNativeSessionCookie' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
+          grep -q 'Offline integrado' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
+          grep -q 'class MusicOfflineStore' android-app-v2/app/src/main/java/com/musicroad/ai/MusicOfflineStore.java
+          grep -q 'MusicRoadOffline' android-app-v2/app/src/main/java/com/musicroad/ai/MusicOfflineStore.java
+          grep -q 'preferLocal' android-app-v2/app/src/main/java/com/musicroad/ai/MusicTrack.java
           grep -q 'static void install(MainActivity a)' android-app-v2/app/src/main/java/com/musicroad/ai/DriveOsShell.java
           grep -q 'FastMapboxRouteEngine' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
           grep -q 'api/route_fast.php' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
@@ -86,7 +91,7 @@ jobs:
           grep -q 'setDrivingMode' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'musicroad-route-source' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'MediaStore' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java
-          grep -q 'mediastore-audio-v2' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java
+          grep -q 'mediastore-audio-v3-offline-library' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java
           if grep -q 'String selection = MediaStore.Audio.Media.IS_MUSIC' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java; then
             echo 'Legacy IS_MUSIC hard filter found'; exit 1
           fi
@@ -97,16 +102,16 @@ jobs:
           grep -q 'BUMP_SEQUENCE_MILESTONES' android-app-v2/app/src/main/java/com/musicroad/ai/NavigationService.java
           grep -q 'routeChangedIntent' android-app-v2/app/src/main/java/com/musicroad/ai/NavigationService.java
           if grep -R -q 'android.webkit.WebView\|new WebView' android-app-v2/app/src/main/java; then
-            echo 'WebView found in MusicRoad 2.2.3 source'; exit 1
+            echo 'WebView found in MusicRoad 2.2.4 source'; exit 1
           fi
 
-      - name: Build MusicRoad 2.2.3 APK
+      - name: Build MusicRoad 2.2.4 APK
         working-directory: android-app-v2
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Upload MusicRoad 2.2.3 APK
+      - name: Upload MusicRoad 2.2.4 APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-2.2.3-DriveOS-Automotive-apk
+          name: MusicRoad-AI-native-2.2.4-DriveOS-Automotive-apk
           path: android-app-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
