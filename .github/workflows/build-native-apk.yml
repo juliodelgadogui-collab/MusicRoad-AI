@@ -82,7 +82,7 @@ jobs:
           grep -q 'musicroad-route-source' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'MediaStore' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java
           grep -q 'ACTION_SPEAK' android-app-v2/app/src/main/java/com/musicroad/ai/PlaybackService.java
-          grep -q 'QUEBRA_MOLA' android-app-v2/app/src/main/java/com/musicroad/ai/NavigationService.java
+          grep -q 'BUMP_SEQUENCE_MILESTONES' android-app-v2/app/src/main/java/com/musicroad/ai/NavigationService.java
           grep -q 'routeChangedIntent' android-app-v2/app/src/main/java/com/musicroad/ai/NavigationService.java
           test ! -f android-app-v2/app/src/main/java/com/musicroad/ai/MapboxDirectionsEngine.java
           test ! -f android-app-v2/app/src/main/java/com/musicroad/ai/ServerMapboxRouteEngine.java
