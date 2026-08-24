@@ -123,6 +123,17 @@ jobs:
             echo 'WebView found in MainActivity'; exit 1
           fi
 
+      - name: Upload generated source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicRoad-AI-generated-source-1.7.0
+          path: |
+            android-app/app
+            android-app/build.gradle
+            android-app/settings.gradle
+            android-app/gradle.properties
+          if-no-files-found: error
+
       - name: Build debug APK
         working-directory: android-app
         run: gradle --no-daemon clean assembleDebug
