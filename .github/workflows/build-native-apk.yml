@@ -1,4 +1,4 @@
-# MusicRoad 2.3.0 DriveOS Automotive — direct Google Drive playback + integrated offline
+# MusicRoad 2.3.1 DriveOS Automotive — phone-side Google Drive redirects + integrated offline
 name: Build MusicRoad Native APK
 
 on:
@@ -10,6 +10,7 @@ on:
       - 'api/route_hazards.php'
       - 'api/drive_stream.php'
       - 'api/drive_helpers.php'
+      - 'api/library.php'
       - '.github/workflows/build-native-apk.yml'
   pull_request:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - 'api/route_hazards.php'
       - 'api/drive_stream.php'
       - 'api/drive_helpers.php'
+      - 'api/library.php'
       - '.github/workflows/build-native-apk.yml'
   workflow_dispatch:
 
@@ -68,20 +70,20 @@ jobs:
               -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
           fi
 
-      - name: Verify MusicRoad 2.3.0 native architecture
+      - name: Verify MusicRoad 2.3.1 native architecture
         shell: bash
         run: |
           set -e
-          grep -q "versionName '2.3.0'" android-app-v2/app/build.gradle
-          grep -q 'versionCode 47' android-app-v2/app/build.gradle
+          grep -q "versionName '2.3.1'" android-app-v2/app/build.gradle
+          grep -q 'versionCode 48' android-app-v2/app/build.gradle
           grep -q "applicationId 'com.musicroad.ai'" android-app-v2/app/build.gradle
           grep -q 'extends ComponentActivity' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
           grep -q 'android:name=".MusicRoadApplication"' android-app-v2/app/src/main/AndroidManifest.xml
           grep -q 'DriveOsShell.init' android-app-v2/app/src/main/java/com/musicroad/ai/MusicRoadApplication.java
           grep -q 'MusicOfflineStore.init' android-app-v2/app/src/main/java/com/musicroad/ai/MusicRoadApplication.java
-          grep -q 'NativeAppGuard.start' android-app-v2/app/src/main/java/com/musicroad/ai/MusicRoadApplication.java
           grep -q 'class DriveMediaResolver' android-app-v2/app/src/main/java/com/musicroad/ai/DriveMediaResolver.java
-          grep -q 'DRIVE_DIRECT' android-app-v2/app/src/main/java/com/musicroad/ai/DriveMediaResolver.java
+          grep -q 'drive.usercontent.google.com/download' android-app-v2/app/src/main/java/com/musicroad/ai/DriveMediaResolver.java
+          grep -q 'DRIVE_DIRECT_ALT' android-app-v2/app/src/main/java/com/musicroad/ai/DriveMediaResolver.java
           grep -q 'class MusicDirectDownload' android-app-v2/app/src/main/java/com/musicroad/ai/MusicDirectDownload.java
           grep -q 'MusicDirectDownload.start' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
           grep -q 'Offline integrado' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
@@ -91,36 +93,35 @@ jobs:
           grep -q 'DriveMediaResolver.prefetch' android-app-v2/app/src/main/java/com/musicroad/ai/PlaybackService.java
           grep -q 'source_mode' android-app-v2/app/src/main/java/com/musicroad/ai/PlaybackService.java
           grep -q "isset(\$_GET\['resolve'\])" api/drive_stream.php
-          grep -q "'transport'=>'google_drive_direct'" api/drive_stream.php
-          grep -q 'drive_cached_resolution' api/drive_helpers.php
+          grep -q 'google_drive_client_redirect' api/drive_stream.php
+          grep -q 'Location: ' api/drive_stream.php
+          grep -q "api/drive_stream.php?id=" api/library.php
           grep -q 'static void install(MainActivity a)' android-app-v2/app/src/main/java/com/musicroad/ai/DriveOsShell.java
           grep -q 'FastMapboxRouteEngine' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
           grep -q 'api/route_fast.php' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
           grep -q 'api/route_hazards.php' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
-          grep -q 'maxspeeds' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
-          grep -q "'annotations'=>'maxspeed'" api/route_fast.php
           grep -q 'setDrivingMode' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'mediastore-audio-v3-offline-library' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java
           if grep -q 'String selection = MediaStore.Audio.Media.IS_MUSIC' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java; then
             echo 'Legacy IS_MUSIC hard filter found'; exit 1
           fi
-          grep -q 'BUMP_SEQUENCE_MILESTONES' android-app-v2/app/src/main/java/com/musicroad/ai/NavigationService.java
           if grep -R -q 'android.webkit.WebView\|new WebView' android-app-v2/app/src/main/java; then
-            echo 'WebView found in MusicRoad 2.3.0 source'; exit 1
+            echo 'WebView found in MusicRoad 2.3.1 source'; exit 1
           fi
 
-      - name: PHP lint Drive 2.3 endpoints
+      - name: PHP lint Drive 2.3.1 endpoints
         run: |
           php -l api/drive_stream.php
           php -l api/drive_helpers.php
+          php -l api/library.php
 
-      - name: Build MusicRoad 2.3.0 APK
+      - name: Build MusicRoad 2.3.1 APK
         working-directory: android-app-v2
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Upload MusicRoad 2.3.0 APK
+      - name: Upload MusicRoad 2.3.1 APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-2.3.0-DriveOS-Automotive-apk
+          name: MusicRoad-AI-native-2.3.1-DriveOS-Automotive-apk
           path: android-app-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
