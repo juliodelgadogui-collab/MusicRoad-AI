@@ -16,6 +16,7 @@ public final class MusicRoadApplication extends Application implements Applicati
 
     @Override public void onCreate(){
         super.onCreate();
+        MusicOfflineStore.init(this);
         registerActivityLifecycleCallbacks(this);
         DriveOsShell.init(this);
     }
