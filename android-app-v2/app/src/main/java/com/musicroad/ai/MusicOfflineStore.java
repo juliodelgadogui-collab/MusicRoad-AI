@@ -81,7 +81,6 @@ final class MusicOfflineStore {
 
     static MusicTrack preferLocal(MusicTrack track) {
         if (track == null) return null;
-        init(app);
         File f = findLocal(track, true);
         if (f == null || !f.isFile() || f.length() <= 0) return track;
         return cloneWithSource(track, Uri.fromFile(f).toString());
@@ -239,7 +238,7 @@ final class MusicOfflineStore {
         File dir = new File(root, origin);
         String path = track.folderPath == null || track.folderPath.trim().isEmpty() ? track.folder : track.folderPath;
         if (path != null && !path.trim().isEmpty()) {
-            String normalized = path.replace(" \/ ", "/").replace('\\', '/');
+            String normalized = path.replace(" / ", "/").replace('\\', '/');
             for (String part : normalized.split("/+")) {
                 String s = safeSegment(part);
                 if (!s.isEmpty() && !"Google Drive".equalsIgnoreCase(s)) dir = new File(dir, s);
