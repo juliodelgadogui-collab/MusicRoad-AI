@@ -49,9 +49,9 @@ if(!$destinationGeo) json_response(['ok'=>false,'error'=>'Não encontrei esse de
 
 $token=mr_fast_token();if($token==='')json_response(['ok'=>false,'error'=>'Token público Mapbox indisponível.'],503);
 $coords=sprintf('%.7F,%.7F;%.7F,%.7F',(float)$originGeo['lon'],(float)$originGeo['lat'],(float)$destinationGeo['lon'],(float)$destinationGeo['lat']);
-$params=['access_token'=>$token,'alternatives'=>'false','geometries'=>'geojson','overview'=>'full','steps'=>'true','language'=>'pt-BR','continue_straight'=>'true'];
+$params=['access_token'=>$token,'alternatives'=>'false','geometries'=>'geojson','overview'=>'full','steps'=>'true','annotations'=>'maxspeed','language'=>'pt-BR','continue_straight'=>'true'];
 $url='https://api.mapbox.com/directions/v5/mapbox/driving/'.$coords.'?'.http_build_query($params,'','&',PHP_QUERY_RFC3986);
 $data=http_json($url);$route=is_array($data)?($data['routes'][0]??null):null;
 if(!is_array($route)||empty($route['geometry']['coordinates']))json_response(['ok'=>false,'error'=>'A Mapbox não encontrou uma rota dirigível para esse destino.'],502);
 
-json_response(['ok'=>true,'origin'=>$originGeo,'destination'=>$destinationGeo,'route'=>$route,'router'=>'mapbox-directions-v5-fast','route_profile'=>'driving','route_selection'=>'mapbox-recommended','version'=>'1.6.2']);
+json_response(['ok'=>true,'origin'=>$originGeo,'destination'=>$destinationGeo,'route'=>$route,'router'=>'mapbox-directions-v5-fast','route_profile'=>'driving','route_selection'=>'mapbox-recommended','version'=>'2.2.0']);
