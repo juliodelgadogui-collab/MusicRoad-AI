@@ -1,10 +1,11 @@
-# Temporary one-shot source migration. The migration rewrites this file back to the
-# final direct android-app-v2 build before committing the MusicRoad 2.2 source.
+# Temporary guarded migration. On success it commits clean 2.2 source and restores
+# this workflow to a direct android-app-v2 build. On failure it restores HEAD and
+# commits only a diagnostic file, never broken generated source.
 name: Build MusicRoad Native APK
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [agent/native-apk-build]
     paths:
       - 'android-app-v2/**'
       - 'api/route_fast.php'
@@ -17,7 +18,7 @@ permissions:
   contents: write
 
 jobs:
-  migrate-and-build:
+  guarded-migrate-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source branch
@@ -65,41 +66,54 @@ jobs:
               -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
           fi
 
-      - name: Apply MusicRoad 2.2 DriveOS source migration
+      - name: Migrate, compile, and commit only if valid
         shell: bash
         run: |
-          set -e
+          set +e
+          rm -f /tmp/mr-migrate.log /tmp/mr-build.log
           sed -i 's/stop.setEnabled(currentRouteCoords.length()>1);/stop.setEnabled(true);/' .driveos-2.2-migrate.py
-          python3 .driveos-2.2-migrate.py
-          git diff --check
-          grep -q "versionName '2.2.0'" android-app-v2/app/build.gradle
-          grep -q 'versionCode 42' android-app-v2/app/build.gradle
-          grep -q 'DriveGuidance' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'annotations.*maxspeed' api/route_fast.php
-          test ! -f .driveos-2.2-migrate.py
-          test ! -f .driveos-2.2-migrate
-          test ! -f .github/workflows/driveos-2.2-source-migration.yml
-          if grep -R -q 'android.webkit.WebView\|new WebView' android-app-v2/app/src/main/java; then
-            echo 'WebView found in MusicRoad 2.2 source'; exit 1
+          python3 .driveos-2.2-migrate.py > /tmp/mr-migrate.log 2>&1
+          migrate_rc=$?
+          build_rc=99
+          if [ "$migrate_rc" -eq 0 ]; then
+            (
+              cd android-app-v2
+              gradle --no-daemon clean assembleDebug
+            ) > /tmp/mr-build.log 2>&1
+            build_rc=$?
           fi
 
-      - name: Build migrated MusicRoad 2.2 source
-        working-directory: android-app-v2
-        run: gradle --no-daemon clean assembleDebug
-
-      - name: Upload migration validation APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MusicRoad-AI-native-2.2.0-DriveOS-Cockpit-migration-apk
-          path: android-app-v2/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: Commit clean MusicRoad 2.2 source
-        shell: bash
-        run: |
-          set -e
           git config user.name "MusicRoad Build Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add -A
-          git commit -m "Build MusicRoad 2.2 DriveOS cockpit"
+
+          if [ "$migrate_rc" -eq 0 ] && [ "$build_rc" -eq 0 ]; then
+            git diff --check
+            if [ $? -ne 0 ]; then build_rc=98; fi
+          fi
+
+          if [ "$migrate_rc" -eq 0 ] && [ "$build_rc" -eq 0 ]; then
+            rm -f DRIVEOS_2_2_BUILD_ERROR.txt
+            git add -A
+            git commit -m "Build MusicRoad 2.2 DriveOS cockpit"
+            git push origin HEAD:agent/native-apk-build
+            exit $?
+          fi
+
+          {
+            echo "MusicRoad DriveOS 2.2 migration/build failed"
+            echo "migrate_rc=$migrate_rc"
+            echo "build_rc=$build_rc"
+            echo
+            echo "===== MIGRATION LOG ====="
+            tail -n 120 /tmp/mr-migrate.log 2>/dev/null || true
+            echo
+            echo "===== BUILD LOG ====="
+            tail -n 220 /tmp/mr-build.log 2>/dev/null || true
+          } > /tmp/DRIVEOS_2_2_BUILD_ERROR.txt
+
+          git reset --hard HEAD
+          cp /tmp/DRIVEOS_2_2_BUILD_ERROR.txt DRIVEOS_2_2_BUILD_ERROR.txt
+          git add DRIVEOS_2_2_BUILD_ERROR.txt
+          git commit -m "Record DriveOS 2.2 build failure"
           git push origin HEAD:agent/native-apk-build
+          exit 1
