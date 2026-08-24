@@ -15,9 +15,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 1.6.2: route first, hazards second.
+ * Route first, hazards second.
  * The route is calculated by Mapbox immediately through route_fast.php.
  * Radar/speed-bump enrichment runs on a separate worker and never blocks drawing.
+ *
+ * DriveOS also keeps the route's normal Directions steps/maxspeed annotations in
+ * DriveRouteState so the horizontal cockpit can render useful guidance without
+ * pretending the full Mapbox Navigation SDK is installed.
  */
 final class FastMapboxRouteEngine {
     interface Listener {
@@ -48,7 +52,7 @@ final class FastMapboxRouteEngine {
         routeIo.execute(()->{
             try{
                 String origin=String.format(Locale.US,"%.7f,%.7f",originLat,originLon);
-                String path="api/route_fast.php?origin="+enc(origin)+"&destination="+enc(destinationQuery.trim())+"&v=162";
+                String path="api/route_fast.php?origin="+enc(origin)+"&destination="+enc(destinationQuery.trim())+"&v=220";
                 NativeApiClient.Response response=api.getLarge(server,path);
                 JSONObject json=response.json();
                 if(!response.ok()||!json.optBoolean("ok"))throw new IllegalStateException(json.optString("error","Falha ao calcular rota Mapbox."));
@@ -59,6 +63,17 @@ final class FastMapboxRouteEngine {
                 double dlat=dest==null?Double.NaN:dest.optDouble("lat",Double.NaN),dlon=dest==null?Double.NaN:dest.optDouble("lon",Double.NaN);
                 String label=dest==null?"":dest.optString("display_name","").trim();if(label.isEmpty())label=displayDestination==null?destinationQuery:displayDestination;
                 double distance=route.optDouble("distance",0d),duration=route.optDouble("duration",0d);
+
+                JSONArray steps=new JSONArray(),maxspeeds=new JSONArray();
+                JSONArray legs=route.optJSONArray("legs");
+                JSONObject leg=legs==null?null:legs.optJSONObject(0);
+                if(leg!=null){
+                    JSONArray s=leg.optJSONArray("steps");if(s!=null)steps=s;
+                    JSONObject annotation=leg.optJSONObject("annotation");
+                    JSONArray ms=annotation==null?null:annotation.optJSONArray("maxspeed");if(ms!=null)maxspeeds=ms;
+                }
+                DriveRouteState.update(coords,steps,maxspeeds,distance,duration,label);
+
                 JSONArray finalCoords=coords;String finalLabel=label;
                 main.post(()->{inFlight.set(false);if(listener!=null)listener.onRoute(finalCoords,distance,duration,finalLabel,dlat,dlon,reroute);});
                 fetchHazardsAsync(finalCoords);
@@ -71,7 +86,7 @@ final class FastMapboxRouteEngine {
         hazardIo.execute(()->{
             try{
                 JSONObject body=new JSONObject();body.put("coordinates",new JSONArray(geometry));
-                NativeApiClient.Response r=api.post(server,"api/route_hazards.php?v=162",body);JSONObject j=r.json();
+                NativeApiClient.Response r=api.post(server,"api/route_hazards.php?v=220",body);JSONObject j=r.json();
                 if(!r.ok()||!j.optBoolean("ok"))return;JSONArray hazards=j.optJSONArray("radars");if(hazards==null)hazards=new JSONArray();
                 JSONArray finalHazards=hazards;main.post(()->{if(listener!=null)listener.onHazards(finalHazards);});
             }catch(Exception ignored){}
