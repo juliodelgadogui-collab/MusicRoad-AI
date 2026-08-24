@@ -1,6 +1,4 @@
-# Temporary guarded migration. On success it commits clean 2.2 source and restores
-# this workflow to a direct android-app-v2 build. On failure it restores HEAD and
-# commits only a diagnostic file, never broken generated source.
+# MusicRoad native Android — direct clean build from android-app-v2
 name: Build MusicRoad Native APK
 
 on:
@@ -11,109 +9,63 @@ on:
       - 'api/route_fast.php'
       - 'api/route_hazards.php'
       - '.github/workflows/build-native-apk.yml'
-      - '.driveos-2.2-migrate.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android-app-v2/**'
+      - 'api/route_fast.php'
+      - 'api/route_hazards.php'
+      - '.github/workflows/build-native-apk.yml'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  guarded-migrate-build:
+  build-debug-apk:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source branch
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: agent/native-apk-build
-          fetch-depth: 0
-
       - name: JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Android SDK
         uses: android-actions/setup-android@v3
-
       - name: Install Android 35
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
       - name: Restore stable debug signing key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: musicroad-stable-debug-signing-v1
-
       - name: Ensure stable debug signing key
         shell: bash
         run: |
           mkdir -p "$HOME/.android"
           if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
+            keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
           fi
-
-      - name: Migrate, compile, and commit only if valid
+      - name: Verify clean native architecture
         shell: bash
         run: |
-          set +e
-          rm -f /tmp/mr-migrate.log /tmp/mr-build.log
-          sed -i 's/stop.setEnabled(currentRouteCoords.length()>1);/stop.setEnabled(true);/' .driveos-2.2-migrate.py
-          python3 .driveos-2.2-migrate.py > /tmp/mr-migrate.log 2>&1
-          migrate_rc=$?
-          build_rc=99
-          if [ "$migrate_rc" -eq 0 ]; then
-            (
-              cd android-app-v2
-              gradle --no-daemon clean assembleDebug
-            ) > /tmp/mr-build.log 2>&1
-            build_rc=$?
-          fi
-
-          git config user.name "MusicRoad Build Bot"
-          git config user.email "actions@users.noreply.github.com"
-
-          if [ "$migrate_rc" -eq 0 ] && [ "$build_rc" -eq 0 ]; then
-            git diff --check
-            if [ $? -ne 0 ]; then build_rc=98; fi
-          fi
-
-          if [ "$migrate_rc" -eq 0 ] && [ "$build_rc" -eq 0 ]; then
-            rm -f DRIVEOS_2_2_BUILD_ERROR.txt
-            git add -A
-            git commit -m "Build MusicRoad 2.2 DriveOS cockpit"
-            git push origin HEAD:agent/native-apk-build
-            exit $?
-          fi
-
-          {
-            echo "MusicRoad DriveOS 2.2 migration/build failed"
-            echo "migrate_rc=$migrate_rc"
-            echo "build_rc=$build_rc"
-            echo
-            echo "===== MIGRATION LOG ====="
-            tail -n 120 /tmp/mr-migrate.log 2>/dev/null || true
-            echo
-            echo "===== BUILD LOG ====="
-            tail -n 220 /tmp/mr-build.log 2>/dev/null || true
-          } > /tmp/DRIVEOS_2_2_BUILD_ERROR.txt
-
-          git reset --hard HEAD
-          cp /tmp/DRIVEOS_2_2_BUILD_ERROR.txt DRIVEOS_2_2_BUILD_ERROR.txt
-          git add DRIVEOS_2_2_BUILD_ERROR.txt
-          git commit -m "Record DriveOS 2.2 build failure"
-          git push origin HEAD:agent/native-apk-build
-          exit 1
+          set -e
+          grep -q "applicationId 'com.musicroad.ai'" android-app-v2/app/build.gradle
+          grep -q 'extends ComponentActivity' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'FastMapboxRouteEngine' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'setDrivingMode' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMapView.java
+          grep -q 'MediaStore' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java
+          grep -q 'BUMP_SEQUENCE_MILESTONES' android-app-v2/app/src/main/java/com/musicroad/ai/NavigationService.java
+          if grep -R -q 'android.webkit.WebView\|new WebView' android-app-v2/app/src/main/java; then echo 'WebView found'; exit 1; fi
+      - name: Build native APK
+        working-directory: android-app-v2
+        run: gradle --no-daemon clean assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicRoad-AI-native-current-apk
+          path: android-app-v2/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
