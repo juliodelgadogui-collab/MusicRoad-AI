@@ -4,14 +4,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 
-import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -19,19 +11,24 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Resolves MusicRoad Google Drive tracks to a short-lived Google media URL.
+ * Google Drive media resolver used by the native Android player.
  *
- * Audio bytes should normally travel Google Drive -> Android. The MusicRoad
- * server is only asked for a small JSON resolution response and never needs to
- * store the song. Resolutions are kept briefly in memory and the next queue
- * item can be resolved ahead of time.
+ * MusicRoad 2.3.1 deliberately does NOT ask the server to follow Google's
+ * download redirects and then reuse the server's final URL on the phone. Some
+ * Google download URLs/tokens are tied to the request that created them and can
+ * fail when reused from another network/client.
+ *
+ * Instead the phone builds a stable public Drive download URL from file_id +
+ * resourcekey and follows Google's redirects itself. Audio bytes therefore go
+ * Google Drive -> Android. The MusicRoad server remains only a compatibility
+ * rescue path and never stores the song.
  */
 final class DriveMediaResolver {
-    private static final long TTL_MS = 7 * 60 * 1000L;
-    private static final int MAX_CACHE = 48;
+    private static final long TTL_MS = 30 * 60 * 1000L;
+    private static final int MAX_CACHE = 96;
     private static final Object LOCK = new Object();
     private static final ExecutorService PREFETCH = Executors.newSingleThreadExecutor();
-    private static final LinkedHashMap<String, CacheEntry> CACHE = new LinkedHashMap<String, CacheEntry>(64, .75f, true) {
+    private static final LinkedHashMap<String, CacheEntry> CACHE = new LinkedHashMap<String, CacheEntry>(128, .75f, true) {
         @Override protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
             return size() > MAX_CACHE;
         }
@@ -67,16 +64,21 @@ final class DriveMediaResolver {
         if (track == null) return false;
         String origin = track.origin == null ? "" : track.origin.toLowerCase(Locale.ROOT);
         String source = track.source == null ? "" : track.source.toLowerCase(Locale.ROOT);
-        return origin.contains("drive") || source.contains("/api/drive_stream.php") || source.contains("drive.google.com") || source.contains("drive.usercontent.google.com");
+        return origin.contains("drive")
+                || source.contains("/api/drive_stream.php")
+                || source.contains("drive.google.com")
+                || source.contains("drive.usercontent.google.com")
+                || source.contains("googleusercontent.com");
     }
 
     static Result resolve(Context context, MusicTrack track, boolean forceRefresh) {
         if (track == null || track.source == null || track.source.trim().isEmpty()) {
             return new Result(false, "", "", "ERROR", "Fonte de áudio vazia.", false);
         }
+
         String source = track.source.trim();
-        Uri uri = Uri.parse(source);
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        Uri sourceUri = Uri.parse(source);
+        String scheme = sourceUri.getScheme() == null ? "" : sourceUri.getScheme().toLowerCase(Locale.ROOT);
 
         if ("file".equals(scheme) || "content".equals(scheme)) {
             return new Result(true, source, track.mimeType, "OFFLINE", "", false);
@@ -84,66 +86,49 @@ final class DriveMediaResolver {
         if (!("http".equals(scheme) || "https".equals(scheme))) {
             return new Result(true, source, track.mimeType, "DEVICE", "", false);
         }
-        if (isGoogleMediaHost(uri.getHost()) && !source.contains("/api/drive_stream.php")) {
-            return new Result(true, source, track.mimeType, "DRIVE_DIRECT", "", false);
-        }
-        if (!isDriveTrack(track) || !source.contains("/api/drive_stream.php")) {
+        if (!isDriveTrack(track)) {
             return new Result(true, source, track.mimeType, "HTTP", "", false);
         }
 
-        String key = source;
+        DriveRef ref = extractDriveRef(sourceUri, source);
+        if (ref.id.isEmpty()) {
+            // A genuine Google media URL may already be usable as-is. For a
+            // MusicRoad endpoint without an id, keep the server rescue source.
+            if (isGoogleMediaHost(sourceUri.getHost())) {
+                return new Result(true, source, track.mimeType, "DRIVE_DIRECT", "", false);
+            }
+            return new Result(false, "", track.mimeType, "DRIVE_REF", "ID do arquivo do Google Drive não encontrado.", false);
+        }
+
+        int candidate = forceRefresh ? 1 : 0;
+        String cacheKey = ref.id + "|" + ref.resourceKey + "|" + candidate;
         if (!forceRefresh) {
             synchronized (LOCK) {
-                CacheEntry e = CACHE.get(key);
+                CacheEntry e = CACHE.get(cacheKey);
                 if (e != null && System.currentTimeMillis() - e.savedAt < TTL_MS && e.result.ok) {
                     return new Result(true, e.result.url, e.result.mime, e.result.mode, "", true);
                 }
             }
-        } else {
-            synchronized (LOCK) { CACHE.remove(key); }
         }
 
-        HttpURLConnection connection = null;
-        try {
-            String resolveUrl = source + (source.contains("?") ? "&" : "?") + "resolve=1&v=230";
-            connection = (HttpURLConnection) new URL(resolveUrl).openConnection();
-            connection.setInstanceFollowRedirects(true);
-            connection.setConnectTimeout(7000);
-            connection.setReadTimeout(9000);
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("User-Agent", "MusicRoadAndroid/" + BuildConfig.VERSION_NAME);
-            String cookie = nativeCookie(context);
-            if (!cookie.isEmpty()) connection.setRequestProperty("Cookie", cookie);
-
-            int code = connection.getResponseCode();
-            InputStream stream = code >= 200 && code < 400 ? connection.getInputStream() : connection.getErrorStream();
-            String body = readAll(stream);
-            if (code < 200 || code >= 300) {
-                return new Result(false, "", "", "DRIVE_RESOLVE", "Drive HTTP " + code + (body.isEmpty() ? "" : ": " + shortText(body)), false);
-            }
-            JSONObject json = new JSONObject(body);
-            String direct = json.optString("direct_url", json.optString("url", "")).trim();
-            String mime = json.optString("content_type", track.mimeType == null ? "" : track.mimeType);
-            if (!json.optBoolean("ok", false) || direct.isEmpty()) {
-                return new Result(false, "", mime, "DRIVE_RESOLVE", json.optString("message", "Google Drive não retornou uma URL de mídia."), false);
-            }
-            Uri directUri = Uri.parse(direct);
-            if (!"https".equalsIgnoreCase(directUri.getScheme()) || !isGoogleMediaHost(directUri.getHost())) {
-                return new Result(false, "", mime, "DRIVE_RESOLVE", "URL direta do Drive foi rejeitada por segurança.", false);
-            }
-            Result result = new Result(true, direct, mime, "DRIVE_DIRECT", "", json.optBoolean("cached", false));
-            synchronized (LOCK) { CACHE.put(key, new CacheEntry(result, System.currentTimeMillis())); }
-            return result;
-        } catch (Exception e) {
-            return new Result(false, "", "", "DRIVE_RESOLVE", e.getMessage() == null ? "Falha ao resolver Google Drive." : e.getMessage(), false);
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
+        String direct = candidateUrl(ref.id, ref.resourceKey, candidate);
+        Result result = new Result(true, direct, track.mimeType,
+                candidate == 0 ? "DRIVE_DIRECT" : "DRIVE_DIRECT_ALT", "", false);
+        synchronized (LOCK) { CACHE.put(cacheKey, new CacheEntry(result, System.currentTimeMillis())); }
+        return result;
     }
 
     static void invalidate(MusicTrack track) {
         if (track == null || track.source == null) return;
-        synchronized (LOCK) { CACHE.remove(track.source.trim()); }
+        DriveRef ref = extractDriveRef(Uri.parse(track.source), track.source);
+        synchronized (LOCK) {
+            if (ref.id.isEmpty()) {
+                CACHE.clear();
+                return;
+            }
+            String prefix = ref.id + "|" + ref.resourceKey + "|";
+            CACHE.entrySet().removeIf(e -> e.getKey().startsWith(prefix));
+        }
     }
 
     static void prefetch(Context context, MusicTrack track) {
@@ -161,28 +146,78 @@ final class DriveMediaResolver {
         } catch (Exception ignored) { return ""; }
     }
 
+    static String serverRescueUrl(MusicTrack track) {
+        if (track == null || track.source == null) return "";
+        String source = track.source.trim();
+        if (source.contains("/api/drive_stream.php")) return source;
+        DriveRef ref = extractDriveRef(Uri.parse(source), source);
+        if (ref.id.isEmpty()) return source;
+        String base = NativeApiClient.normalizeBase(BuildConfig.MUSICROAD_URL);
+        String out = base + "api/drive_stream.php?id=" + Uri.encode(ref.id);
+        if (!ref.resourceKey.isEmpty()) out += "&resourcekey=" + Uri.encode(ref.resourceKey);
+        return out;
+    }
+
+    private static String candidateUrl(String id, String resourceKey, int candidate) {
+        String encodedId = Uri.encode(id);
+        String rk = resourceKey.isEmpty() ? "" : "&resourcekey=" + Uri.encode(resourceKey);
+        if (candidate == 1) {
+            return "https://drive.google.com/uc?export=download&confirm=t&id=" + encodedId + rk;
+        }
+        return "https://drive.usercontent.google.com/download?id=" + encodedId
+                + "&export=download&authuser=0&confirm=t" + rk;
+    }
+
+    private static DriveRef extractDriveRef(Uri uri, String raw) {
+        String id = "";
+        String rk = "";
+        try {
+            if (uri != null) {
+                String qid = uri.getQueryParameter("id");
+                String qrk = uri.getQueryParameter("resourcekey");
+                if (qid != null) id = sanitize(qid);
+                if (qrk != null) rk = sanitize(qrk);
+                if (id.isEmpty()) {
+                    String path = uri.getPath() == null ? "" : uri.getPath();
+                    int marker = path.indexOf("/file/d/");
+                    if (marker >= 0) {
+                        String tail = path.substring(marker + 8);
+                        int slash = tail.indexOf('/');
+                        id = sanitize(slash >= 0 ? tail.substring(0, slash) : tail);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        if (id.isEmpty() && raw != null) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:[?&]id=|/file/d/)([A-Za-z0-9_-]{10,})", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(raw);
+            if (m.find()) id = sanitize(m.group(1));
+        }
+        if (rk.isEmpty() && raw != null) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("[?&]resourcekey=([A-Za-z0-9_-]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(raw);
+            if (m.find()) rk = sanitize(m.group(1));
+        }
+        return new DriveRef(id, rk);
+    }
+
+    private static String sanitize(String value) {
+        return value == null ? "" : value.replaceAll("[^A-Za-z0-9_-]", "");
+    }
+
     private static boolean isGoogleMediaHost(String host) {
         if (host == null) return false;
         String h = host.toLowerCase(Locale.ROOT);
-        return h.equals("google.com") || h.endsWith(".google.com") || h.equals("googleusercontent.com") || h.endsWith(".googleusercontent.com") || h.equals("googleapis.com") || h.endsWith(".googleapis.com");
+        return h.equals("google.com") || h.endsWith(".google.com")
+                || h.equals("googleusercontent.com") || h.endsWith(".googleusercontent.com")
+                || h.equals("googleapis.com") || h.endsWith(".googleapis.com");
     }
 
-    private static String readAll(InputStream stream) throws Exception {
-        if (stream == null) return "";
-        StringBuilder out = new StringBuilder();
-        try (BufferedReader r = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            char[] buf = new char[4096];
-            int n;
-            while ((n = r.read(buf)) > 0) {
-                out.append(buf, 0, n);
-                if (out.length() > 131072) break;
-            }
+    private static final class DriveRef {
+        final String id;
+        final String resourceKey;
+        DriveRef(String id, String resourceKey) {
+            this.id = id == null ? "" : id;
+            this.resourceKey = resourceKey == null ? "" : resourceKey;
         }
-        return out.toString();
-    }
-
-    private static String shortText(String value) {
-        String v = value == null ? "" : value.replaceAll("\\s+", " ").trim();
-        return v.length() > 180 ? v.substring(0, 180) : v;
     }
 }
