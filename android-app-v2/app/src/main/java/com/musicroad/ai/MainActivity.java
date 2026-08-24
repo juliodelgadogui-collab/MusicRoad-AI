@@ -177,6 +177,7 @@ public class MainActivity extends ComponentActivity {
 
     private void showShell(){
         if(landscape()){showLandscapeShell();return;}
+        setAutomotiveImmersive(false);
         root.removeAllViews();
         LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout main=new LinearLayout(this);main.setOrientation(LinearLayout.VERTICAL);shell.addView(main,new LinearLayout.LayoutParams(-1,0,1));
@@ -185,25 +186,30 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void showLandscapeShell(){
-        root.removeAllViews();root.setBackgroundColor(Color.rgb(3,8,14));
-        LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.HORIZONTAL);root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
-        shell.addView(driveRail(),new LinearLayout.LayoutParams(dp(86),-1));
-        content=new FrameLayout(this);content.setBackgroundColor(Color.rgb(5,11,18));shell.addView(content,new LinearLayout.LayoutParams(0,-1,1));
+        setAutomotiveImmersive(true);
+        root.removeAllViews();root.setBackgroundColor(Color.rgb(2,7,12));
+        LinearLayout outer=new LinearLayout(this);outer.setOrientation(LinearLayout.VERTICAL);root.addView(outer,new FrameLayout.LayoutParams(-1,-1));
+        outer.addView(driveStatusBar(),new LinearLayout.LayoutParams(-1,dp(40)));
+        LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.HORIZONTAL);outer.addView(shell,new LinearLayout.LayoutParams(-1,0,1));
+        shell.addView(driveRail(),new LinearLayout.LayoutParams(dp(74),-1));
+        content=new FrameLayout(this);content.setBackgroundColor(Color.rgb(4,10,16));shell.addView(content,new LinearLayout.LayoutParams(0,-1,1));
         renderLandscape();
     }
 
     private View driveRail(){
-        LinearLayout r=new LinearLayout(this);r.setOrientation(LinearLayout.VERTICAL);r.setGravity(Gravity.CENTER_HORIZONTAL);r.setPadding(dp(7),dp(8),dp(7),dp(8));r.setBackground(grad(new int[]{Color.rgb(4,9,16),Color.rgb(8,12,25)},0,Color.rgb(28,35,55)));
-        TextView mark=t("MR",15,Color.WHITE,true);mark.setGravity(Gravity.CENTER);mark.setBackground(grad(new int[]{PURPLE,Color.rgb(70,35,156)},15,PURPLE));r.addView(mark,new LinearLayout.LayoutParams(-1,dp(48)));
-        driveRailButton(r,"⌂","INÍCIO",HOME);driveRailButton(r,"➤","MAPA",MAP);driveRailButton(r,"♫","MÍDIA",MUSIC);driveRailButton(r,"FM","RÁDIO",RADIO);driveRailButton(r,"⇩","OFF",OFFLINE);driveRailButton(r,"⚙","AJUSTES",SETTINGS);
-        Space sp=new Space(this);r.addView(sp,new LinearLayout.LayoutParams(1,0,1));TextView ver=t("v"+BuildConfig.VERSION_NAME,9,MUTED,false);ver.setGravity(Gravity.CENTER);r.addView(ver,new LinearLayout.LayoutParams(-1,dp(22)));return r;
+        LinearLayout r=new LinearLayout(this);r.setOrientation(LinearLayout.VERTICAL);r.setGravity(Gravity.CENTER_HORIZONTAL);r.setPadding(dp(6),dp(7),dp(6),dp(7));r.setBackgroundColor(Color.rgb(3,8,13));
+        TextView mark=t("MR",14,Color.WHITE,true);mark.setGravity(Gravity.CENTER);mark.setBackground(bg(Color.rgb(26,32,40),14,Color.rgb(48,58,70)));r.addView(mark,new LinearLayout.LayoutParams(-1,dp(46)));
+        driveRailButton(r,"⌂","HOME",HOME);driveRailButton(r,"➤","NAV",MAP);driveRailButton(r,"♫","MÍDIA",MUSIC);driveRailButton(r,"FM","RÁDIO",RADIO);driveRailButton(r,"⇩","OFF",OFFLINE);driveRailButton(r,"⚙","AJUSTE",SETTINGS);
+        Space sp=new Space(this);r.addView(sp,new LinearLayout.LayoutParams(1,0,1));TextView ver=t("v"+BuildConfig.VERSION_NAME,8,Color.rgb(92,108,122),false);ver.setGravity(Gravity.CENTER);r.addView(ver,new LinearLayout.LayoutParams(-1,dp(20)));return r;
     }
 
     private void driveRailButton(LinearLayout r,String icon,String label,int target){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);box.setPadding(dp(3),dp(4),dp(3),dp(4));
-        if(screen==target)box.setBackground(grad(new int[]{Color.rgb(81,37,166),Color.rgb(35,24,91)},15,PURPLE));else box.setBackground(bg(Color.TRANSPARENT,15,0));
-        TextView i=t(icon,target==RADIO?13:20,screen==target?Color.WHITE:MUTED,true);i.setGravity(Gravity.CENTER);box.addView(i,new LinearLayout.LayoutParams(-1,dp(29)));TextView l=t(label,8,screen==target?Color.WHITE:MUTED,true);l.setGravity(Gravity.CENTER);box.addView(l,new LinearLayout.LayoutParams(-1,dp(17)));
-        r.addView(box,new LinearLayout.LayoutParams(-1,dp(55)));margins(box,0,5,0,0);box.setOnClickListener(v->go(target));
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);box.setPadding(dp(2),dp(3),dp(2),dp(3));
+        boolean active=screen==target;
+        box.setBackground(active?bg(Color.rgb(42,25,17),14,ACCENT):bg(Color.TRANSPARENT,14,0));
+        TextView i=t(icon,target==RADIO?12:19,active?ACCENT:Color.rgb(158,170,181),true);i.setGravity(Gravity.CENTER);box.addView(i,new LinearLayout.LayoutParams(-1,dp(28)));
+        TextView l=t(label,7.5f,active?Color.WHITE:Color.rgb(120,136,149),true);l.setGravity(Gravity.CENTER);box.addView(l,new LinearLayout.LayoutParams(-1,dp(14)));
+        r.addView(box,new LinearLayout.LayoutParams(-1,dp(52)));margins(box,0,4,0,0);box.setOnClickListener(v->go(target));
     }
 
     private void renderLandscape(){
@@ -215,16 +221,31 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void landscapeHome(){
-        locate();LinearLayout board=new LinearLayout(this);board.setOrientation(LinearLayout.HORIZONTAL);board.setPadding(dp(22),dp(18),dp(22),dp(18));content.addView(board,new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout left=new LinearLayout(this);left.setOrientation(LinearLayout.VERTICAL);left.setPadding(dp(22),dp(18),dp(22),dp(18));left.setBackground(grad(new int[]{Color.rgb(16,25,48),Color.rgb(20,17,48),Color.rgb(8,16,28)},24,Color.rgb(55,48,105)));board.addView(left,new LinearLayout.LayoutParams(0,-1,1.18f));
-        left.addView(t("DRIVE OS",10,ACCENT,true));JSONObject u=account.optJSONObject("user");String n=u==null?"Motorista":u.optString("name","Motorista");left.addView(t("Olá, "+first(n),31,TEXT,true));TextView sub=t("Navegação, mídia e alertas preparados para a central do carro.",13,MUTED,false);left.addView(sub);margins(sub,0,4,0,14);
-        TextView gps=pill(lastLocation==null?"GPS procurando":"GPS ativo",lastLocation==null?MUTED:GREEN);left.addView(gps,new LinearLayout.LayoutParams(-2,dp(34)));margins(gps,0,0,0,14);
-        TextView lbl=t("PARA ONDE VAMOS?",9,MUTED,true);left.addView(lbl);EditText dest=edit("Cidade, rua ou endereço");dest.setText(pendingDestination);left.addView(dest,new LinearLayout.LayoutParams(-1,dp(54)));margins(dest,0,6,0,9);Button start=btn("INICIAR NAVEGAÇÃO",true);left.addView(start,new LinearLayout.LayoutParams(-1,dp(56)));start.setOnClickListener(v->{String d=dest.getText().toString().trim();if(d.length()<2){toast("Digite um destino.");return;}pendingDestination=d;go(MAP);});
-        LinearLayout quickRow=new LinearLayout(this);left.addView(quickRow,new LinearLayout.LayoutParams(-1,dp(56)));margins(quickRow,0,10,0,0);Button music=btn("♫ MÍDIA",false),radio=btn("FM RÁDIO",false),off=btn("⇩ OFFLINE",false);quickRow.addView(music,new LinearLayout.LayoutParams(0,-1,1));quickRow.addView(radio,new LinearLayout.LayoutParams(0,-1,1));quickRow.addView(off,new LinearLayout.LayoutParams(0,-1,1));margins(radio,7,0,0,0);margins(off,7,0,0,0);music.setOnClickListener(v->go(MUSIC));radio.setOnClickListener(v->go(RADIO));off.setOnClickListener(v->go(OFFLINE));
-        LinearLayout right=new LinearLayout(this);right.setOrientation(LinearLayout.VERTICAL);right.setPadding(dp(18),0,0,0);board.addView(right,new LinearLayout.LayoutParams(0,-1,.82f));
-        LinearLayout drive=card();drive.addView(t("PAINEL DE CONDUÇÃO",10,ACCENT,true));LinearLayout metrics=new LinearLayout(this);drive.addView(metrics,new LinearLayout.LayoutParams(-1,dp(92)));TextView sp=driveMetric(metrics,lastLocation==null?"0":String.valueOf(Math.max(0,Math.round(lastLocation.getSpeed()*3.6f))),"km/h");driveMetric(metrics,"--","limite");driveMetric(metrics,nearestHazardText(),"alerta");right.addView(drive,new LinearLayout.LayoutParams(-1,0,1));
-        if(currentRouteCoords.length()>1){LinearLayout trip=card();trip.addView(t("VIAGEM ATIVA",10,GREEN,true));trip.addView(t(currentDestination.isEmpty()?"Destino ativo":currentDestination,18,TEXT,true));trip.addView(t(currentRouteDistanceMeters>0?km(currentRouteDistanceMeters)+" · "+duration(currentRouteDurationSeconds):"Rota salva",13,MUTED,false));right.addView(trip,new LinearLayout.LayoutParams(-1,-2));margins(trip,0,10,0,0);trip.setOnClickListener(v->go(MAP));}
-        View now=nowCard();right.addView(now,new LinearLayout.LayoutParams(-1,dp(86)));margins(now,0,10,0,0);
+        locate();
+        LinearLayout board=new LinearLayout(this);board.setOrientation(LinearLayout.HORIZONTAL);board.setPadding(dp(14),dp(12),dp(14),dp(12));content.addView(board,new FrameLayout.LayoutParams(-1,-1));
+
+        LinearLayout navCard=autoPanel();board.addView(navCard,new LinearLayout.LayoutParams(0,-1,1.24f));
+        LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);head.addView(t("NAVEGAÇÃO",10,ACCENT,true),new LinearLayout.LayoutParams(0,dp(28),1));head.addView(pill(lastLocation==null?"GPS…":"GPS",lastLocation==null?MUTED:GREEN),new LinearLayout.LayoutParams(-2,dp(28)));navCard.addView(head);
+        TextView hero=t(currentRouteCoords.length()>1?"Viagem em andamento":"Para onde vamos?",30,TEXT,true);navCard.addView(hero);margins(hero,0,4,0,2);
+        TextView routeState=t(currentRouteCoords.length()>1?(currentDestination.isEmpty()?"Destino ativo":currentDestination):"Mapa, radares e alertas no mesmo painel.",12,MUTED,false);routeState.setMaxLines(2);navCard.addView(routeState);margins(routeState,0,0,0,12);
+
+        EditText dest=edit("Cidade, rua ou endereço");dest.setText(pendingDestination);navCard.addView(dest,new LinearLayout.LayoutParams(-1,dp(54)));
+        Button start=btn(currentRouteCoords.length()>1?"ABRIR NAVEGAÇÃO":"INICIAR NAVEGAÇÃO",true);start.setTextSize(14);navCard.addView(start,new LinearLayout.LayoutParams(-1,dp(56)));margins(start,0,9,0,0);
+        start.setOnClickListener(v->{String d=dest.getText().toString().trim();if(currentRouteCoords.length()>1&&d.isEmpty()){go(MAP);return;}if(d.length()<2){toast("Digite um destino.");return;}pendingDestination=d;go(MAP);});
+
+        Space navSpace=new Space(this);navCard.addView(navSpace,new LinearLayout.LayoutParams(1,0,1));
+        LinearLayout metrics=new LinearLayout(this);metrics.setGravity(Gravity.CENTER_VERTICAL);navCard.addView(metrics,new LinearLayout.LayoutParams(-1,dp(92)));
+        autoMetric(metrics,lastLocation==null?"0":String.valueOf(Math.max(0,Math.round(lastLocation.getSpeed()*3.6f))),"KM/H",TEXT);
+        autoMetric(metrics,currentRouteDistanceMeters>0?km(currentRouteDistanceMeters):"--","VIAGEM",currentRouteDistanceMeters>0?GREEN:TEXT);
+        autoMetric(metrics,nearestHazardText(),"ALERTA",nearestHazardText().equals("--")?TEXT:ACCENT);
+
+        LinearLayout right=new LinearLayout(this);right.setOrientation(LinearLayout.VERTICAL);right.setPadding(dp(12),0,0,0);board.addView(right,new LinearLayout.LayoutParams(0,-1,.76f));
+        LinearLayout media=autoPanel();right.addView(media,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout mh=new LinearLayout(this);mh.setGravity(Gravity.CENTER_VERTICAL);mh.addView(t("MÍDIA",10,Color.rgb(193,125,255),true),new LinearLayout.LayoutParams(0,dp(26),1));TextView mIcon=t("♫",22,Color.rgb(210,157,255),true);mIcon.setGravity(Gravity.CENTER);media.addView(mh);media.addView(t("Tocando agora",22,TEXT,true));TextView msub=t("Música local, Drive e rádio sem tirar o foco da estrada.",11,MUTED,false);media.addView(msub);margins(msub,0,4,0,8);View now=nowCard();media.addView(now,new LinearLayout.LayoutParams(-1,dp(82)));media.setOnClickListener(v->go(MUSIC));
+
+        LinearLayout tiles=new LinearLayout(this);right.addView(tiles,new LinearLayout.LayoutParams(-1,dp(96)));margins(tiles,0,10,0,0);
+        View radio=autoTile("FM","RÁDIO","Estações",RADIO);View off=autoTile("⇩","OFFLINE","Mapas",OFFLINE);tiles.addView(radio,new LinearLayout.LayoutParams(0,-1,1));tiles.addView(off,new LinearLayout.LayoutParams(0,-1,1));margins(off,8,0,0,0);
+        LinearLayout sys=autoPanel();sys.setOrientation(LinearLayout.HORIZONTAL);sys.setGravity(Gravity.CENTER_VERTICAL);sys.addView(t("⚙  Sistema e alertas",13,TEXT,true),new LinearLayout.LayoutParams(0,-1,1));sys.addView(pill(online()?"ONLINE":"OFFLINE",online()?GREEN:ACCENT),new LinearLayout.LayoutParams(-2,dp(30)));right.addView(sys,new LinearLayout.LayoutParams(-1,dp(64)));margins(sys,0,10,0,0);sys.setOnClickListener(v->go(SETTINGS));
     }
 
     private TextView driveMetric(LinearLayout row,String value,String unit){
@@ -232,34 +253,87 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void landscapeMap(){
-        locate();LinearLayout drive=new LinearLayout(this);drive.setOrientation(LinearLayout.HORIZONTAL);content.addView(drive,new FrameLayout.LayoutParams(-1,-1));
-        int screenPx=getResources().getDisplayMetrics().widthPixels;int cockpitPx=Math.max(dp(300),Math.min(dp(405),(int)(screenPx*.34f)));
-        LinearLayout cockpit=new LinearLayout(this);cockpit.setOrientation(LinearLayout.VERTICAL);cockpit.setPadding(dp(18),dp(15),dp(18),dp(14));cockpit.setBackground(grad(new int[]{Color.rgb(8,17,29),Color.rgb(12,15,34)},0,Color.rgb(37,46,68)));drive.addView(cockpit,new LinearLayout.LayoutParams(cockpitPx,-1));
-        LinearLayout title=new LinearLayout(this);title.setGravity(Gravity.CENTER_VERTICAL);TextView nav=t("NAVEGAÇÃO",10,ACCENT,true);title.addView(nav,new LinearLayout.LayoutParams(0,-1,1));TextView onlineChip=pill(online()?"ONLINE":"OFFLINE",online()?GREEN:ACCENT);title.addView(onlineChip,new LinearLayout.LayoutParams(-2,dp(31)));cockpit.addView(title,new LinearLayout.LayoutParams(-1,dp(32)));
-        turnInstruction=t(currentRouteCoords.length()>1?"Siga a rota destacada":"Escolha um destino",22,TEXT,true);turnInstruction.setMaxLines(2);cockpit.addView(turnInstruction,new LinearLayout.LayoutParams(-1,-2));TextView destinationText=t(currentDestination.isEmpty()?"MusicRoad Navigation":currentDestination,11,MUTED,false);destinationText.setMaxLines(2);cockpit.addView(destinationText,new LinearLayout.LayoutParams(-1,-2));margins(destinationText,0,3,0,9);
-        LinearLayout speedRow=new LinearLayout(this);cockpit.addView(speedRow,new LinearLayout.LayoutParams(-1,dp(82)));hudSpeed=driveMetric(speedRow,lastLocation==null?"0":String.valueOf(Math.max(0,Math.round(lastLocation.getSpeed()*3.6f))),"km/h");hudLimit=driveMetric(speedRow,"--","limite");landscapeTripInfo=driveMetric(speedRow,currentRouteDistanceMeters>0?km(currentRouteDistanceMeters):"--",currentRouteDurationSeconds>0?duration(currentRouteDurationSeconds):"viagem");
-        LinearLayout hazard=card();hazard.setGravity(Gravity.CENTER_VERTICAL);TextView hi=t("⚠",24,ACCENT,true);hi.setGravity(Gravity.CENTER);hazard.addView(hi,new LinearLayout.LayoutParams(dp(44),dp(44)));LinearLayout hzText=new LinearLayout(this);hzText.setOrientation(LinearLayout.VERTICAL);hzText.addView(t("PRÓXIMO ALERTA",9,MUTED,true));hudRadar=t(nearestHazardText(),20,TEXT,true);hzText.addView(hudRadar);hazard.addView(hzText,new LinearLayout.LayoutParams(0,-1,1));cockpit.addView(hazard,new LinearLayout.LayoutParams(-1,dp(76)));margins(hazard,0,8,0,8);
-        EditText dest=edit("Cidade, rua ou endereço");dest.setText(pendingDestination);cockpit.addView(dest,new LinearLayout.LayoutParams(-1,dp(50)));LinearLayout actions=new LinearLayout(this);Button route=btn(currentRouteCoords.length()>1?"RECALCULAR":"IR",true);Button stop=btn("ENCERRAR",false);actions.addView(route,new LinearLayout.LayoutParams(0,dp(49),1));actions.addView(stop,new LinearLayout.LayoutParams(0,dp(49),1));margins(stop,8,0,0,0);cockpit.addView(actions,new LinearLayout.LayoutParams(-1,dp(49)));margins(actions,0,7,0,0);activeRouteButton=route;TextView summary=small(currentRouteCoords.length()>1?"Viagem ativa":"GPS pronto");summary.setVisibility(View.GONE);cockpit.addView(summary);
-        Space spacer=new Space(this);cockpit.addView(spacer,new LinearLayout.LayoutParams(1,0,1));View now=nowCard();cockpit.addView(now,new LinearLayout.LayoutParams(-1,dp(76)));
-        FrameLayout mapStage=new FrameLayout(this);drive.addView(mapStage,new LinearLayout.LayoutParams(0,-1,1));mapView=new NativeMapView(this);mapStage.addView(mapView,new FrameLayout.LayoutParams(-1,-1));loadMap();loadRoute();if(lastLocation!=null){mapView.setUserBearing(lastLocation.hasBearing()?lastLocation.getBearing():0f);mapView.setUserLocation(lastLocation.getLatitude(),lastLocation.getLongitude());}if(currentRouteCoords.length()>1)mapView.setDrivingMode(true);
-        LinearLayout tools=new LinearLayout(this);tools.setOrientation(LinearLayout.VERTICAL);Button follow=btn("➤",false),report=btn("⚠",false);follow.setTextSize(22);report.setTextSize(22);tools.addView(follow,new LinearLayout.LayoutParams(dp(54),dp(54)));tools.addView(report,new LinearLayout.LayoutParams(dp(54),dp(54)));margins(report,0,8,0,0);FrameLayout.LayoutParams toolp=new FrameLayout.LayoutParams(dp(56),-2);toolp.gravity=Gravity.END|Gravity.CENTER_VERTICAL;toolp.setMargins(0,0,dp(14),0);mapStage.addView(tools,toolp);follow.setOnClickListener(v->{if(lastLocation!=null){mapView.setDrivingMode(true);mapView.recenter(lastLocation.getLatitude(),lastLocation.getLongitude());}});report.setOnClickListener(v->reportPointDialog());
-        TextView mapStatus=pill(currentRouteCoords.length()>1?"ROTA ATIVA":"MAPBOX",currentRouteCoords.length()>1?GREEN:PURPLE);FrameLayout.LayoutParams msp=new FrameLayout.LayoutParams(-2,dp(34));msp.gravity=Gravity.TOP|Gravity.END;msp.setMargins(0,dp(14),dp(14),0);mapStage.addView(mapStatus,msp);
-        route.setOnClickListener(v->{String d=dest.getText().toString().trim();if(d.length()<2){toast("Informe o destino.");return;}if(lastLocation==null){toast("Aguardando GPS.");locate();return;}pendingDestination=d;mapView.setDrivingMode(false);calc(d,route,summary,cockpit);});
-        stop.setOnClickListener(v->{try{startService(NavigationService.stopIntent(this));}catch(Exception ignored){}currentRouteCoords=new JSONArray();currentHazards=new JSONArray();currentDestination="";currentRouteDistanceMeters=0;currentRouteDurationSeconds=0;if(mapView!=null){mapView.setDrivingMode(false);mapView.clearRoute();mapView.setRadars(currentHazards);}turnInstruction.setText("Escolha um destino");if(landscapeTripInfo!=null)landscapeTripInfo.setText("--");toast("Navegação encerrada.");});
-        if(!pendingDestination.isEmpty()&&currentRouteCoords.length()<2&&lastLocation!=null&&online())ui.postDelayed(()->calc(pendingDestination,route,summary,cockpit),400);
+        locate();
+        FrameLayout mapStage=new FrameLayout(this);content.addView(mapStage,new FrameLayout.LayoutParams(-1,-1));
+        mapView=new NativeMapView(this);mapStage.addView(mapView,new FrameLayout.LayoutParams(-1,-1));
+        loadMap();loadRoute();
+        if(lastLocation!=null){mapView.setUserBearing(lastLocation.hasBearing()?lastLocation.getBearing():0f);mapView.setUserLocation(lastLocation.getLatitude(),lastLocation.getLongitude());}
+        if(currentRouteCoords.length()>1)mapView.setDrivingMode(true);
+
+        int stageW=Math.max(dp(720),getResources().getDisplayMetrics().widthPixels-dp(74));
+        int searchW=Math.min(dp(560),Math.max(dp(390),(int)(stageW*.48f)));
+        LinearLayout search=new LinearLayout(this);search.setGravity(Gravity.CENTER_VERTICAL);search.setPadding(dp(9),dp(7),dp(9),dp(7));search.setBackground(bg(Color.argb(236,6,13,21),18,Color.rgb(51,67,80)));
+        EditText dest=edit("Destino · cidade, rua ou endereço");dest.setText(pendingDestination);search.addView(dest,new LinearLayout.LayoutParams(0,dp(48),1));
+        Button route=btn(currentRouteCoords.length()>1?"↻":"IR",true);route.setTextSize(14);search.addView(route,new LinearLayout.LayoutParams(dp(64),dp(48)));margins(route,8,0,0,0);
+        Button stop=btn("×",false);stop.setTextSize(22);stop.setVisibility(currentRouteCoords.length()>1?View.VISIBLE:View.GONE);search.addView(stop,new LinearLayout.LayoutParams(dp(52),dp(48)));margins(stop,7,0,0,0);activeRouteButton=route;
+        FrameLayout.LayoutParams sp=new FrameLayout.LayoutParams(searchW,dp(62));sp.gravity=Gravity.TOP|Gravity.START;sp.setMargins(dp(14),dp(12),0,0);mapStage.addView(search,sp);
+
+        TextView mode=pill(currentRouteCoords.length()>1?"ROTA ATIVA":"MAPBOX",currentRouteCoords.length()>1?GREEN:PURPLE);FrameLayout.LayoutParams mp=new FrameLayout.LayoutParams(-2,dp(32));mp.gravity=Gravity.TOP|Gravity.END;mp.setMargins(0,dp(14),dp(14),0);mapStage.addView(mode,mp);
+
+        LinearLayout speedCluster=new LinearLayout(this);speedCluster.setGravity(Gravity.BOTTOM);hudSpeed=autoSpeedGauge(speedCluster,lastLocation==null?"0":String.valueOf(Math.max(0,Math.round(lastLocation.getSpeed()*3.6f))));hudLimit=autoLimitGauge(speedCluster,"--");
+        FrameLayout.LayoutParams sgp=new FrameLayout.LayoutParams(dp(206),dp(122));sgp.gravity=Gravity.BOTTOM|Gravity.START;sgp.setMargins(dp(14),0,0,dp(14));mapStage.addView(speedCluster,sgp);
+
+        LinearLayout hazard=autoPanel();hazard.setOrientation(LinearLayout.HORIZONTAL);hazard.setGravity(Gravity.CENTER_VERTICAL);hazard.setPadding(dp(14),dp(8),dp(14),dp(8));TextView hi=t("⚠",28,ACCENT,true);hi.setGravity(Gravity.CENTER);hazard.addView(hi,new LinearLayout.LayoutParams(dp(48),-1));LinearLayout hz=new LinearLayout(this);hz.setOrientation(LinearLayout.VERTICAL);hz.addView(t("PRÓXIMO ALERTA",9,MUTED,true));hudRadar=t(nearestHazardText(),18,TEXT,true);hudRadar.setMaxLines(1);hz.addView(hudRadar);hazard.addView(hz,new LinearLayout.LayoutParams(0,-1,1));FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(dp(310),dp(72));hp.gravity=Gravity.BOTTOM|Gravity.START;hp.setMargins(dp(224),0,0,dp(18));mapStage.addView(hazard,hp);
+
+        LinearLayout maneuver=autoPanel();maneuver.setOrientation(LinearLayout.HORIZONTAL);maneuver.setGravity(Gravity.CENTER_VERTICAL);maneuver.setPadding(dp(14),dp(7),dp(14),dp(7));TextView arrow=t("➤",24,Color.WHITE,true);arrow.setGravity(Gravity.CENTER);arrow.setBackground(bg(Color.rgb(34,28,21),14,ACCENT));maneuver.addView(arrow,new LinearLayout.LayoutParams(dp(50),dp(50)));LinearLayout md=new LinearLayout(this);md.setOrientation(LinearLayout.VERTICAL);md.setPadding(dp(12),0,0,0);turnInstruction=t(currentRouteCoords.length()>1?"Siga a rota destacada":"Radarbot-style: mapa e alertas em primeiro plano",16,TEXT,true);turnInstruction.setMaxLines(1);md.addView(turnInstruction);landscapeTripInfo=t(currentRouteDistanceMeters>0?km(currentRouteDistanceMeters)+(currentRouteDurationSeconds>0?" · "+duration(currentRouteDurationSeconds):""):"GPS pronto",10,MUTED,true);md.addView(landscapeTripInfo);maneuver.addView(md,new LinearLayout.LayoutParams(0,-1,1));FrameLayout.LayoutParams manp=new FrameLayout.LayoutParams(dp(390),dp(68));manp.gravity=Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL;manp.setMargins(0,0,0,dp(18));mapStage.addView(maneuver,manp);
+
+        LinearLayout tools=new LinearLayout(this);tools.setOrientation(LinearLayout.VERTICAL);Button follow=autoIconButton("➤"),report=autoIconButton("⚠");tools.addView(follow,new LinearLayout.LayoutParams(dp(56),dp(56)));tools.addView(report,new LinearLayout.LayoutParams(dp(56),dp(56)));margins(report,0,9,0,0);FrameLayout.LayoutParams tp=new FrameLayout.LayoutParams(dp(58),-2);tp.gravity=Gravity.END|Gravity.CENTER_VERTICAL;tp.setMargins(0,0,dp(14),0);mapStage.addView(tools,tp);
+        follow.setOnClickListener(v->{if(lastLocation!=null){mapView.setDrivingMode(true);mapView.recenter(lastLocation.getLatitude(),lastLocation.getLongitude());}});report.setOnClickListener(v->reportPointDialog());
+
+        TextView summary=small(currentRouteCoords.length()>1?"Viagem ativa":"GPS pronto");summary.setVisibility(View.GONE);mapStage.addView(summary,new FrameLayout.LayoutParams(1,1));
+        route.setOnClickListener(v->{String d=dest.getText().toString().trim();if(d.length()<2){toast("Informe o destino.");return;}if(lastLocation==null){toast("Aguardando GPS.");locate();return;}pendingDestination=d;mapView.setDrivingMode(false);calc(d,route,summary,mapStage);});
+        stop.setOnClickListener(v->{try{startService(NavigationService.stopIntent(this));}catch(Exception ignored){}currentRouteCoords=new JSONArray();currentHazards=new JSONArray();currentDestination="";currentRouteDistanceMeters=0;currentRouteDurationSeconds=0;if(mapView!=null){mapView.setDrivingMode(false);mapView.clearRoute();mapView.setRadars(currentHazards);}turnInstruction.setText("Escolha um destino");if(landscapeTripInfo!=null)landscapeTripInfo.setText("GPS pronto");stop.setVisibility(View.GONE);route.setText("IR");toast("Navegação encerrada.");});
+        if(!pendingDestination.isEmpty()&&currentRouteCoords.length()<2&&lastLocation!=null&&online())ui.postDelayed(()->calc(pendingDestination,route,summary,mapStage),400);
     }
 
     private void landscapeMusic(){
-        content.removeAllViews();LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.HORIZONTAL);shell.setPadding(dp(16),dp(14),dp(16),dp(14));content.addView(shell,new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout player=new LinearLayout(this);player.setOrientation(LinearLayout.VERTICAL);player.setPadding(dp(18),dp(18),dp(18),dp(18));player.setBackground(grad(new int[]{Color.rgb(14,22,45),Color.rgb(24,14,50)},22,Color.rgb(55,47,105)));shell.addView(player,new LinearLayout.LayoutParams(dp(300),-1));player.addView(t("MÍDIA",10,ACCENT,true));player.addView(t("Tocando agora",27,TEXT,true));TextView art=t("♫",62,Color.rgb(203,132,255),true);art.setGravity(Gravity.CENTER);art.setBackground(grad(new int[]{Color.rgb(28,48,77),Color.rgb(54,25,105)},24,PURPLE));player.addView(art,new LinearLayout.LayoutParams(-1,0,1));margins(art,0,13,0,13);View now=nowCard();player.addView(now,new LinearLayout.LayoutParams(-1,dp(84)));LinearLayout nav=new LinearLayout(this);Button radio=btn("FM RÁDIO",false),off=btn("OFFLINE",false);nav.addView(radio,new LinearLayout.LayoutParams(0,dp(48),1));nav.addView(off,new LinearLayout.LayoutParams(0,dp(48),1));margins(off,8,0,0,0);player.addView(nav);margins(nav,0,10,0,0);radio.setOnClickListener(v->go(RADIO));off.setOnClickListener(v->go(OFFLINE));
-        FrameLayout library=new FrameLayout(this);shell.addView(library,new LinearLayout.LayoutParams(0,-1,1));margins(library,14,0,0,0);FrameLayout previous=content;content=library;landscapePaneRender=true;music();landscapePaneRender=false;content=previous;
+        content.removeAllViews();LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.HORIZONTAL);shell.setPadding(dp(14),dp(12),dp(14),dp(12));content.addView(shell,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout player=autoPanel();player.setPadding(dp(20),dp(16),dp(20),dp(16));shell.addView(player,new LinearLayout.LayoutParams(dp(330),-1));
+        LinearLayout mh=new LinearLayout(this);mh.setGravity(Gravity.CENTER_VERTICAL);mh.addView(t("MÍDIA",10,Color.rgb(202,139,255),true),new LinearLayout.LayoutParams(0,dp(28),1));mh.addView(pill("PLAYER",PURPLE),new LinearLayout.LayoutParams(-2,dp(28)));player.addView(mh);
+        TextView art=t("♫",66,Color.rgb(218,170,255),true);art.setGravity(Gravity.CENTER);art.setBackground(bg(Color.rgb(20,24,38),22,Color.rgb(70,50,101)));player.addView(art,new LinearLayout.LayoutParams(-1,0,1));margins(art,0,10,0,10);
+        playerNow=t("Nenhuma música",18,TEXT,true);playerNow.setMaxLines(2);player.addView(playerNow);TextView src=t("MusicRoad · biblioteca local e online",10,MUTED,false);player.addView(src);margins(src,0,2,0,10);
+        LinearLayout controls=new LinearLayout(this);controls.setGravity(Gravity.CENTER);Button prev=autoIconButton("⏮"),play=autoIconButton("▶"),next=autoIconButton("⏭");play.setBackground(bg(Color.rgb(52,27,72),18,PURPLE));controls.addView(prev,new LinearLayout.LayoutParams(0,dp(58),1));controls.addView(play,new LinearLayout.LayoutParams(0,dp(58),1));controls.addView(next,new LinearLayout.LayoutParams(0,dp(58),1));margins(play,8,0,8,0);player.addView(controls,new LinearLayout.LayoutParams(-1,dp(58)));prev.setOnClickListener(v->startService(PlaybackService.intentAction(this,PlaybackService.ACTION_PREVIOUS)));play.setOnClickListener(v->startService(PlaybackService.intentAction(this,PlaybackService.ACTION_TOGGLE)));next.setOnClickListener(v->startService(PlaybackService.intentAction(this,PlaybackService.ACTION_NEXT)));
+        LinearLayout shortcuts=new LinearLayout(this);Button radio=btn("FM RÁDIO",false),off=btn("OFFLINE",false);shortcuts.addView(radio,new LinearLayout.LayoutParams(0,dp(46),1));shortcuts.addView(off,new LinearLayout.LayoutParams(0,dp(46),1));margins(off,7,0,0,0);player.addView(shortcuts);margins(shortcuts,0,9,0,0);radio.setOnClickListener(v->go(RADIO));off.setOnClickListener(v->go(OFFLINE));
+        FrameLayout library=new FrameLayout(this);shell.addView(library,new LinearLayout.LayoutParams(0,-1,1));margins(library,12,0,0,0);FrameLayout previous=content;content=library;landscapePaneRender=true;music();landscapePaneRender=false;content=previous;
     }
 
     private void landscapeUtility(int target){
-        content.removeAllViews();LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.HORIZONTAL);shell.setPadding(dp(16),dp(14),dp(16),dp(14));content.addView(shell,new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout side=new LinearLayout(this);side.setOrientation(LinearLayout.VERTICAL);side.setPadding(dp(20),dp(20),dp(20),dp(20));side.setBackground(grad(new int[]{Color.rgb(13,22,39),Color.rgb(16,14,35)},22,Color.rgb(45,51,76)));shell.addView(side,new LinearLayout.LayoutParams(dp(255),-1));side.addView(t("DRIVE OS",10,ACCENT,true));side.addView(t(name(target),28,TEXT,true));side.addView(t(target==OFFLINE?"Prepare mapa, radares e dados para viagens sem internet.":target==RADIO?"Rádio e áudio para a estrada.":"Ajuste voz, alertas, conta e comportamento do MusicRoad.",12,MUTED,false));Space sp=new Space(this);side.addView(sp,new LinearLayout.LayoutParams(1,0,1));View now=nowCard();side.addView(now,new LinearLayout.LayoutParams(-1,dp(80)));
-        FrameLayout pane=new FrameLayout(this);shell.addView(pane,new LinearLayout.LayoutParams(0,-1,1));margins(pane,14,0,0,0);FrameLayout previous=content;content=pane;landscapePaneRender=true;if(target==OFFLINE)offline();else if(target==RADIO)radio();else settings();landscapePaneRender=false;content=previous;
+        content.removeAllViews();LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.HORIZONTAL);shell.setPadding(dp(14),dp(12),dp(14),dp(12));content.addView(shell,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout side=autoPanel();side.setPadding(dp(18),dp(16),dp(18),dp(16));shell.addView(side,new LinearLayout.LayoutParams(dp(224),-1));side.addView(t("DRIVE OS",9,ACCENT,true));side.addView(t(name(target),26,TEXT,true));TextView desc=t(target==OFFLINE?"Prepare mapas e alertas para rodar sem sinal.":target==RADIO?"Rádio e áudio pensados para a estrada.":"Voz, alertas, conta e comportamento do sistema.",11,MUTED,false);side.addView(desc);margins(desc,0,4,0,12);
+        if(target==OFFLINE)side.addView(pill("DADOS NO APARELHO",GREEN),new LinearLayout.LayoutParams(-2,dp(30)));else if(target==RADIO)side.addView(pill("ENTRETENIMENTO",PURPLE),new LinearLayout.LayoutParams(-2,dp(30)));else side.addView(pill("SISTEMA",ACCENT),new LinearLayout.LayoutParams(-2,dp(30)));
+        Space sp=new Space(this);side.addView(sp,new LinearLayout.LayoutParams(1,0,1));View now=nowCard();side.addView(now,new LinearLayout.LayoutParams(-1,dp(78)));
+        FrameLayout pane=new FrameLayout(this);shell.addView(pane,new LinearLayout.LayoutParams(0,-1,1));margins(pane,12,0,0,0);FrameLayout previous=content;content=pane;landscapePaneRender=true;if(target==OFFLINE)offline();else if(target==RADIO)radio();else settings();landscapePaneRender=false;content=previous;
     }
+
+    private void setAutomotiveImmersive(boolean enabled){
+        try{
+            View decor=getWindow().getDecorView();
+            if(enabled){
+                decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+            }else{
+                decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
+            }
+        }catch(Exception ignored){}
+    }
+
+    private View driveStatusBar(){
+        LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);bar.setPadding(dp(12),0,dp(14),0);bar.setBackgroundColor(Color.rgb(2,6,10));
+        TextView brand=t("MR  MusicRoad",12,TEXT,true);bar.addView(brand,new LinearLayout.LayoutParams(-2,-1));
+        TextView mode=t("  DRIVE OS",8,ACCENT,true);bar.addView(mode,new LinearLayout.LayoutParams(-2,-1));
+        Space sp=new Space(this);bar.addView(sp,new LinearLayout.LayoutParams(0,1,1));
+        TextView gps=t(lastLocation==null?"● GPS":"● GPS",9,lastLocation==null?MUTED:GREEN,true);bar.addView(gps,new LinearLayout.LayoutParams(-2,-1));
+        TextView net=t(online()?"  ● ONLINE":"  ● OFFLINE",9,online()?GREEN:ACCENT,true);bar.addView(net,new LinearLayout.LayoutParams(-2,-1));
+        TextView clock=t("  "+android.text.format.DateFormat.format("HH:mm",new java.util.Date()),13,TEXT,true);bar.addView(clock,new LinearLayout.LayoutParams(-2,-1));
+        return bar;
+    }
+
+    private LinearLayout autoPanel(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(16),dp(14),dp(16),dp(14));l.setBackground(bg(Color.rgb(8,15,22),18,Color.rgb(35,48,59)));return l;}
+    private void autoMetric(LinearLayout row,String value,String label,int color){LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setGravity(Gravity.CENTER);TextView v=t(value,24,color,true);v.setGravity(Gravity.CENTER);v.setMaxLines(1);TextView l=t(label,8,MUTED,true);l.setGravity(Gravity.CENTER);c.addView(v);c.addView(l);row.addView(c,new LinearLayout.LayoutParams(0,-1,1));}
+    private View autoTile(String icon,String title,String sub,int target){LinearLayout c=autoPanel();c.setGravity(Gravity.CENTER);TextView i=t(icon,22,target==RADIO?Color.rgb(202,139,255):ACCENT,true);i.setGravity(Gravity.CENTER);c.addView(i);TextView h=t(title,12,TEXT,true);h.setGravity(Gravity.CENTER);c.addView(h);TextView s=t(sub,8,MUTED,false);s.setGravity(Gravity.CENTER);c.addView(s);c.setOnClickListener(v->go(target));return c;}
+    private Button autoIconButton(String icon){Button b=btn(icon,false);b.setTextSize(20);b.setTextColor(Color.WHITE);b.setBackground(bg(Color.argb(238,8,17,26),17,Color.rgb(52,68,80)));return b;}
+    private TextView autoSpeedGauge(LinearLayout row,String value){LinearLayout g=new LinearLayout(this);g.setOrientation(LinearLayout.VERTICAL);g.setGravity(Gravity.CENTER);g.setBackground(bg(Color.argb(238,5,12,18),60,Color.rgb(71,88,100)));TextView v=t(value,38,TEXT,true);v.setGravity(Gravity.CENTER);TextView u=t("km/h",9,MUTED,true);u.setGravity(Gravity.CENTER);g.addView(v);g.addView(u);row.addView(g,new LinearLayout.LayoutParams(dp(118),dp(118)));return v;}
+    private TextView autoLimitGauge(LinearLayout row,String value){LinearLayout g=new LinearLayout(this);g.setOrientation(LinearLayout.VERTICAL);g.setGravity(Gravity.CENTER);g.setBackground(bg(Color.rgb(245,245,245),40,Color.rgb(222,54,54)));TextView v=t(value,22,Color.rgb(24,24,24),true);v.setGravity(Gravity.CENTER);g.addView(v);row.addView(g,new LinearLayout.LayoutParams(dp(72),dp(72)));margins(g,10,0,0,7);return v;}
 
     private SpannableString logoSpan(){SpannableString x=new SpannableString("MusicRoad");x.setSpan(new StyleSpan(Typeface.BOLD_ITALIC),0,x.length(),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);x.setSpan(new ForegroundColorSpan(ACCENT),5,x.length(),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);return x;}
     private GradientDrawable grad(int[] colors,int radius,int stroke){GradientDrawable d=new GradientDrawable(GradientDrawable.Orientation.TL_BR,colors);d.setCornerRadius(dp(radius));if(stroke!=0)d.setStroke(dp(1),stroke);return d;}
