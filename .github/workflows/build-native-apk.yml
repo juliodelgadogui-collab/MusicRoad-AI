@@ -1,4 +1,4 @@
-# MusicRoad native Android — direct clean build from android-app-v2
+# MusicRoad 2.2.0 DriveOS Automotive — direct clean native build
 name: Build MusicRoad Native APK
 
 on:
@@ -24,48 +24,83 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Android SDK
         uses: android-actions/setup-android@v3
+
       - name: Install Android 35
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
       - name: Restore stable debug signing key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: musicroad-stable-debug-signing-v1
+
       - name: Ensure stable debug signing key
         shell: bash
         run: |
           mkdir -p "$HOME/.android"
           if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
           fi
-      - name: Verify clean native architecture
+
+      - name: Verify MusicRoad 2.2 clean native architecture
         shell: bash
         run: |
           set -e
+          grep -q "versionName '2.2.0'" android-app-v2/app/build.gradle
+          grep -q 'versionCode 42' android-app-v2/app/build.gradle
           grep -q "applicationId 'com.musicroad.ai'" android-app-v2/app/build.gradle
           grep -q 'extends ComponentActivity' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'android:name=".MusicRoadApplication"' android-app-v2/app/src/main/AndroidManifest.xml
+          grep -q 'DriveOsShell.init' android-app-v2/app/src/main/java/com/musicroad/ai/MusicRoadApplication.java
+          grep -q 'static void install(MainActivity a)' android-app-v2/app/src/main/java/com/musicroad/ai/DriveOsShell.java
           grep -q 'FastMapboxRouteEngine' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
+          grep -q 'api/route_fast.php' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
+          grep -q 'api/route_hazards.php' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
+          grep -q 'maxspeeds' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
+          grep -q "'annotations'=>'maxspeed'" api/route_fast.php
           grep -q 'setDrivingMode' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMapView.java
+          grep -q 'musicroad-route-source' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMapView.java
           grep -q 'MediaStore' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java
+          grep -q 'ACTION_PREVIOUS' android-app-v2/app/src/main/java/com/musicroad/ai/PlaybackService.java
+          grep -q 'ACTION_NEXT' android-app-v2/app/src/main/java/com/musicroad/ai/PlaybackService.java
           grep -q 'BUMP_SEQUENCE_MILESTONES' android-app-v2/app/src/main/java/com/musicroad/ai/NavigationService.java
-          if grep -R -q 'android.webkit.WebView\|new WebView' android-app-v2/app/src/main/java; then echo 'WebView found'; exit 1; fi
-      - name: Build native APK
+          grep -q 'routeChangedIntent' android-app-v2/app/src/main/java/com/musicroad/ai/NavigationService.java
+          if grep -R -q 'android.webkit.WebView\|new WebView' android-app-v2/app/src/main/java; then
+            echo 'WebView found in MusicRoad 2.2 source'; exit 1
+          fi
+          if find . -maxdepth 3 -type f -name 'apply_v*.py' | grep -q .; then
+            echo 'Legacy patch chain found'; exit 1
+          fi
+
+      - name: Build MusicRoad 2.2 APK
         working-directory: android-app-v2
         run: gradle --no-daemon clean assembleDebug
-      - name: Upload APK
+
+      - name: Upload MusicRoad 2.2 APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-current-apk
+          name: MusicRoad-AI-native-2.2.0-DriveOS-Automotive-apk
           path: android-app-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
