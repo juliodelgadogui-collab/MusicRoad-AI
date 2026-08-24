@@ -21,13 +21,13 @@ public final class MusicTrack {
     public MusicTrack(String id, String title, String artist, String album, String source,
                       String origin, String mimeType, long durationMs, long fileSize, long albumId,
                       String genre, String folder, String folderPath) {
-        this.id = id;
-        this.title = title;
-        this.artist = artist;
-        this.album = album;
-        this.source = source;
-        this.origin = origin;
-        this.mimeType = mimeType;
+        this.id = id == null ? "" : id;
+        this.title = title == null || title.trim().isEmpty() ? "Sem título" : title;
+        this.artist = artist == null || artist.trim().isEmpty() ? "Artista desconhecido" : artist;
+        this.album = album == null ? "" : album;
+        this.source = source == null ? "" : source;
+        this.origin = origin == null ? "" : origin;
+        this.mimeType = mimeType == null ? "" : mimeType;
         this.durationMs = durationMs;
         this.fileSize = fileSize;
         this.albumId = albumId;
@@ -37,30 +37,36 @@ public final class MusicTrack {
     }
 
     public JSONObject toJson() throws JSONException {
+        MusicTrack effective = MusicOfflineStore.preferLocal(this);
+        if (effective == null) effective = this;
         JSONObject o = new JSONObject();
-        o.put("id", id);
-        o.put("title", title);
-        o.put("artist", artist);
-        o.put("album", album);
-        o.put("source", source);
-        o.put("content_uri", source);
-        o.put("origin", origin);
-        o.put("mime_type", mimeType);
-        o.put("duration", durationMs > 0 ? Math.round(durationMs / 1000.0) : 0);
-        o.put("duration_ms", durationMs);
-        o.put("file_size", fileSize);
-        o.put("album_id", albumId);
-        o.put("genre", genre);
-        o.put("folder", folder);
-        o.put("folder_path", folderPath);
-        o.put("relative_path", folderPath);
-        o.put("deviceSource", "mediastore");
+        o.put("id", effective.id);
+        o.put("title", effective.title);
+        o.put("artist", effective.artist);
+        o.put("album", effective.album);
+        o.put("source", effective.source);
+        o.put("content_uri", effective.source);
+        if (!effective.source.equals(this.source) && (this.source.startsWith("http://") || this.source.startsWith("https://"))) {
+            o.put("remote_source", this.source);
+        }
+        o.put("origin", effective.origin);
+        o.put("mime_type", effective.mimeType);
+        o.put("duration", effective.durationMs > 0 ? Math.round(effective.durationMs / 1000.0) : 0);
+        o.put("duration_ms", effective.durationMs);
+        o.put("file_size", effective.fileSize);
+        o.put("album_id", effective.albumId);
+        o.put("genre", effective.genre);
+        o.put("folder", effective.folder);
+        o.put("folder_path", effective.folderPath);
+        o.put("relative_path", effective.folderPath);
+        o.put("downloaded", effective.source.startsWith("file://"));
+        o.put("deviceSource", effective.source.startsWith("file://") ? "musicroad-offline" : "mediastore");
         o.put("nativeMedia", true);
         return o;
     }
 
     public static MusicTrack fromJson(JSONObject o) {
-        return new MusicTrack(
+        MusicTrack t = new MusicTrack(
                 o.optString("id", ""),
                 o.optString("title", "Sem título"),
                 o.optString("artist", "Artista desconhecido"),
@@ -75,5 +81,8 @@ public final class MusicTrack {
                 o.optString("folder", ""),
                 o.optString("folder_path", o.optString("relative_path", ""))
         );
+        MusicOfflineStore.remember(t);
+        MusicTrack local = MusicOfflineStore.preferLocal(t);
+        return local == null ? t : local;
     }
 }
