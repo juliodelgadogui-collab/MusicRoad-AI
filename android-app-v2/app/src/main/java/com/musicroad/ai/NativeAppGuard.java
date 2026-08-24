@@ -10,17 +10,19 @@ import android.view.ViewParent;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.webkit.CookieManager;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
+import java.util.List;
 
 /**
  * Runtime guard for the native shell.
  *
  * Keeps native content single-layered, mirrors the API session for protected
- * media, and reconciles the legacy download button with the integrated offline
- * library. No WebView is created or rendered.
+ * metadata endpoints, and turns the existing download button into the MusicRoad
+ * 2.3 direct Google Drive/offline-library flow. No WebView is created.
  */
 final class NativeAppGuard {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -36,7 +38,7 @@ final class NativeAppGuard {
             syncNativeSessionCookie(a);
             MusicOfflineStore.reconcileDownloads();
             long now = System.currentTimeMillis();
-            if (now - lastMusicUiAt >= 1200L) {
+            if (now - lastMusicUiAt >= 900L) {
                 lastMusicUiAt = now;
                 normalizeMusicOfflineUi(a);
             }
@@ -64,9 +66,6 @@ final class NativeAppGuard {
             if (content == null) return;
             int count = content.getChildCount();
             if (count <= 1) return;
-
-            // MainActivity screens are full-screen single-root views. Direct calls such as
-            // music() used to add a second transparent ScrollView. Keep only the newest root.
             View newest = content.getChildAt(count - 1);
             content.removeAllViews();
             content.addView(newest, new FrameLayout.LayoutParams(
@@ -79,11 +78,11 @@ final class NativeAppGuard {
         try {
             FrameLayout content = content(activity);
             if (content == null || content.getChildCount() == 0) return;
-            normalizeNode(content.getChildAt(content.getChildCount() - 1));
+            normalizeNode(activity, content.getChildAt(content.getChildCount() - 1));
         } catch (Throwable ignored) {}
     }
 
-    private static void normalizeNode(View view) {
+    private static void normalizeNode(MainActivity activity, View view) {
         if (view == null) return;
         if (view instanceof TextView && !(view instanceof Button)) {
             TextView tv = (TextView) view;
@@ -96,32 +95,69 @@ final class NativeAppGuard {
                     for (int i = 0; i < box.getChildCount(); i++) {
                         View child = box.getChildAt(i);
                         if (child instanceof TextView && child != tv) {
-                            ((TextView) child).setText("Baixadas permanecem na pasta original e tocam sem internet.");
+                            ((TextView) child).setText("Baixadas continuam na pasta original. Play usa offline primeiro e Drive depois.");
                             break;
                         }
                     }
                 }
             }
         }
+
         if (view instanceof Button) {
             Button b = (Button) view;
             String label = String.valueOf(b.getText()).trim();
             if ("↓".equals(label) || "✓".equals(label)) {
                 ViewParent p = b.getParent();
                 if (p instanceof ViewGroup) {
-                    String title = rowTitle((ViewGroup) p);
-                    if (!title.isEmpty() && MusicOfflineStore.isDownloadedTitle(title)) {
-                        b.setText("✓");
-                        b.setEnabled(false);
-                        b.setContentDescription("Disponível offline na pasta original");
+                    ViewGroup row = (ViewGroup) p;
+                    String title = rowTitle(row);
+                    String subtitle = rowSubtitle(row);
+                    MusicTrack track = findTrack(activity, title, subtitle);
+                    if (track != null) {
+                        boolean downloaded = MusicOfflineStore.isDownloaded(track);
+                        if (downloaded) {
+                            b.setText("✓");
+                            b.setEnabled(true);
+                            b.setContentDescription("Disponível offline na pasta original. Segure para remover.");
+                            b.setOnClickListener(v -> Toast.makeText(activity, "Esta música já está disponível offline.", Toast.LENGTH_SHORT).show());
+                            b.setOnLongClickListener(v -> MusicDirectDownload.remove(activity, track, b));
+                        } else {
+                            b.setText("↓");
+                            b.setEnabled(true);
+                            b.setContentDescription("Baixar direto do Google Drive para esta pasta");
+                            b.setOnLongClickListener(null);
+                            b.setOnClickListener(v -> MusicDirectDownload.start(activity, track, b));
+                        }
                     }
                 }
             }
         }
+
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) normalizeNode(group.getChildAt(i));
+            for (int i = 0; i < group.getChildCount(); i++) normalizeNode(activity, group.getChildAt(i));
         }
+    }
+
+    private static MusicTrack findTrack(MainActivity activity, String title, String subtitle) {
+        if (title == null || title.trim().isEmpty()) return null;
+        try {
+            Field f = MainActivity.class.getDeclaredField("shownTracks");
+            f.setAccessible(true);
+            Object raw = f.get(activity);
+            if (!(raw instanceof List)) return null;
+            MusicTrack first = null;
+            for (Object o : (List<?>) raw) {
+                if (!(o instanceof MusicTrack)) continue;
+                MusicTrack t = (MusicTrack) o;
+                if (!title.trim().equals(t.title == null ? "" : t.title.trim())) continue;
+                if (first == null) first = t;
+                String artist = t.artist == null ? "" : t.artist.trim();
+                String folder = t.folder == null ? "" : t.folder.trim();
+                if (subtitle != null && ((!artist.isEmpty() && subtitle.contains(artist)) || (!folder.isEmpty() && subtitle.contains(folder)))) return t;
+            }
+            return first;
+        } catch (Throwable ignored) { return null; }
     }
 
     private static String rowTitle(ViewGroup row) {
@@ -134,6 +170,25 @@ final class NativeAppGuard {
                 if (nested instanceof TextView && !(nested instanceof Button)) {
                     String value = String.valueOf(((TextView) nested).getText()).trim();
                     if (!value.isEmpty()) return value;
+                }
+            }
+        }
+        return "";
+    }
+
+    private static String rowSubtitle(ViewGroup row) {
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View child = row.getChildAt(i);
+            if (!(child instanceof ViewGroup)) continue;
+            ViewGroup box = (ViewGroup) child;
+            int found = 0;
+            for (int j = 0; j < box.getChildCount(); j++) {
+                View nested = box.getChildAt(j);
+                if (nested instanceof TextView && !(nested instanceof Button)) {
+                    String value = String.valueOf(((TextView) nested).getText()).trim();
+                    if (value.isEmpty()) continue;
+                    found++;
+                    if (found == 2) return value;
                 }
             }
         }
