@@ -16,8 +16,10 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public final class NativeMusicRepository {
     private NativeMusicRepository() {}
@@ -35,8 +37,25 @@ public final class NativeMusicRepository {
 
     public static List<MusicTrack> scan(Context context) {
         List<MusicTrack> result = new ArrayList<>();
-        if (!hasPermission(context)) return result;
+        MusicOfflineStore.init(context);
 
+        if (hasPermission(context)) scanMediaStore(context, result);
+
+        // Spotify-like behavior: when the server/internet is unavailable, downloaded
+        // Drive/server tracks remain visible with their original origin/folder metadata.
+        // While online those same tracks arrive through library.php and MusicTrack.fromJson
+        // automatically swaps the remote URL for the local copy, avoiding duplicates.
+        if (!MusicOfflineStore.isNetworkConnected(context)) {
+            Set<String> seen = new HashSet<>();
+            for (MusicTrack t : result) seen.add(trackKey(t));
+            for (MusicTrack t : MusicOfflineStore.downloadedTracks()) {
+                if (t != null && seen.add(trackKey(t))) result.add(t);
+            }
+        }
+        return result;
+    }
+
+    private static void scanMediaStore(Context context, List<MusicTrack> result) {
         ContentResolver resolver = context.getContentResolver();
         Uri collection = Build.VERSION.SDK_INT >= 29
                 ? MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
@@ -65,7 +84,7 @@ public final class NativeMusicRepository {
                 + MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC";
 
         try (Cursor c = resolver.query(collection, projection, selection, null, sort)) {
-            if (c == null) return result;
+            if (c == null) return;
             int idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
             int titleCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE);
             int artistCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST);
@@ -127,7 +146,6 @@ public final class NativeMusicRepository {
         } catch (RuntimeException ignored) {
             // Be tolerant of vendor-specific MediaStore implementations.
         }
-        return result;
     }
 
     public static JSONObject scanAsJson(Context context) {
@@ -135,19 +153,22 @@ public final class NativeMusicRepository {
         JSONArray arr = new JSONArray();
         try {
             boolean permission = hasPermission(context);
-            root.put("ok", permission);
-            root.put("permission", permission ? "granted" : "required");
-            if (permission) {
-                List<MusicTrack> tracks = scan(context);
-                for (MusicTrack t : tracks) arr.put(t.toJson());
-                root.put("count", tracks.size());
-                root.put("scanner", "mediastore-audio-v2");
-            } else {
-                root.put("count", 0);
-            }
+            List<MusicTrack> tracks = scan(context);
+            root.put("ok", permission || !tracks.isEmpty());
+            root.put("permission", permission ? "granted" : "required_for_device_music");
+            for (MusicTrack t : tracks) arr.put(t.toJson());
+            root.put("count", tracks.size());
+            root.put("scanner", "mediastore-audio-v3-offline-library");
             root.put("tracks", arr);
         } catch (JSONException ignored) {}
         return root;
+    }
+
+    private static String trackKey(MusicTrack t) {
+        if (t == null) return "";
+        String o = t.origin == null ? "" : t.origin.toLowerCase(Locale.ROOT).trim();
+        String id = t.id == null ? "" : t.id.trim();
+        return o + ":" + id + ":" + (t.title == null ? "" : t.title.trim());
     }
 
     private static boolean isSupportedAudio(String displayName, String mime) {
