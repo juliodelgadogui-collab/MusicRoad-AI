@@ -34,6 +34,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class PlaybackService extends Service {
     public static final String ACTION_SET_QUEUE="com.musicroad.ai.SET_QUEUE";
@@ -62,6 +64,7 @@ public class PlaybackService extends Service {
 
     private final List<MusicTrack> queue=new ArrayList<>();
     private final Handler handler=new Handler(Looper.getMainLooper());
+    private final ExecutorService mediaIo=Executors.newSingleThreadExecutor();
     private MediaPlayer player;
     private MediaSession mediaSession;
     private AudioManager audioManager;
@@ -69,13 +72,20 @@ public class PlaybackService extends Service {
     private TextToSpeech tts;
     private boolean ttsReady=false;
     private boolean prepared=false;
+    private boolean resolving=false;
     private boolean playWhenReady=false;
     private boolean resumeOnFocusGain=false;
     private int index=-1;
+    private int prepareGeneration=0;
+    private int driveRetryStage=0;
     private float userVolume=1f;
     private float focusDuck=1f;
     private float alertDuck=1f;
     private String lastError="";
+    private String lastErrorCode="";
+    private String transportMode="";
+    private long prepareStartedAt=0L;
+    private long lastStartupMs=0L;
 
     private final AudioManager.OnAudioFocusChangeListener focusListener = focus -> {
         if (focus == AudioManager.AUDIOFOCUS_GAIN) {
@@ -102,6 +112,7 @@ public class PlaybackService extends Service {
 
     @Override public void onCreate(){
         super.onCreate();
+        MusicOfflineStore.init(this);
         createChannel();
         audioManager=(AudioManager)getSystemService(AUDIO_SERVICE);
         createMediaSession();
@@ -128,53 +139,166 @@ public class PlaybackService extends Service {
     }
 
     private void setQueue(String json,int start,boolean autoplay){
-        queue.clear(); lastError="";
-        try{ JSONArray arr=new JSONArray(json==null?"[]":json); for(int i=0;i<arr.length();i++){JSONObject o=arr.optJSONObject(i);if(o!=null)queue.add(MusicTrack.fromJson(o));} }catch(Exception e){lastError="Fila de reprodução inválida.";}
+        queue.clear(); lastError=""; lastErrorCode="";
+        try{
+            JSONArray arr=new JSONArray(json==null?"[]":json);
+            for(int i=0;i<arr.length();i++){
+                JSONObject o=arr.optJSONObject(i);
+                if(o!=null)queue.add(MusicTrack.fromJson(o));
+            }
+        }catch(Exception e){lastError="Fila de reprodução inválida.";lastErrorCode="QUEUE_INVALID";}
         if(queue.isEmpty()){broadcastState();return;}
         index=Math.max(0,Math.min(start,queue.size()-1));
-        prepare(autoplay);
+        driveRetryStage=0;
+        prepare(autoplay,false);
     }
 
-    private void prepare(boolean autoplay){
-        releasePlayer();
-        MusicTrack t=current();
-        if(t==null)return;
-        if(t.source==null || t.source.trim().isEmpty()){ lastError="Fonte de áudio não disponível."; handler.postDelayed(this::next,250); return; }
-        prepared=false; playWhenReady=autoplay; lastError="";
+    private void prepare(boolean autoplay,boolean forceDriveRefresh){
+        final int generation=++prepareGeneration;
+        releasePlayerOnly();
+        MusicTrack original=current();
+        if(original==null)return;
+        MusicTrack local=MusicOfflineStore.preferLocal(original);
+        MusicTrack effective=local==null?original:local;
+        if(effective.source==null || effective.source.trim().isEmpty()){
+            lastError="Fonte de áudio não disponível.";lastErrorCode="SOURCE_EMPTY";broadcastState();handler.postDelayed(this::next,700);return;
+        }
+
+        prepared=false;
+        resolving=false;
+        playWhenReady=autoplay;
+        lastError="";
+        lastErrorCode="";
+        prepareStartedAt=System.currentTimeMillis();
+        lastStartupMs=0L;
+
+        String source=effective.source.trim();
+        String scheme=Uri.parse(source).getScheme();
+        boolean localSource="file".equalsIgnoreCase(scheme)||"content".equalsIgnoreCase(scheme);
+        if(localSource){
+            transportMode="OFFLINE";
+            openPlayer(effective,source,transportMode,generation);
+            return;
+        }
+
+        if(DriveMediaResolver.isDriveTrack(effective)){
+            resolving=true;
+            transportMode="DRIVE_RESOLVING";
+            startForeground(NOTIFICATION_ID,notification());
+            updateMediaMetadata();
+            broadcastState();
+            mediaIo.execute(()->{
+                DriveMediaResolver.Result result=DriveMediaResolver.resolve(getApplicationContext(),effective,forceDriveRefresh);
+                handler.post(()->{
+                    if(generation!=prepareGeneration)return;
+                    resolving=false;
+                    if(result.ok){
+                        transportMode=result.mode.isEmpty()?"DRIVE_DIRECT":result.mode;
+                        openPlayer(effective,result.url,transportMode,generation);
+                    }else{
+                        // Compatibility rescue only. No song is stored on the server; older
+                        // Drive endpoints can still proxy a problematic public file.
+                        lastError=result.error.isEmpty()?"Não foi possível resolver a música no Google Drive.":result.error;
+                        lastErrorCode="DRIVE_RESOLVE";
+                        if(driveRetryStage>=1){
+                            transportMode="DRIVE_RESCUE";
+                            openPlayer(effective,effective.source,transportMode,generation);
+                        }else{
+                            driveRetryStage=1;
+                            DriveMediaResolver.invalidate(effective);
+                            prepare(playWhenReady,true);
+                        }
+                    }
+                });
+            });
+            return;
+        }
+
+        transportMode="HTTP";
+        openPlayer(effective,source,transportMode,generation);
+    }
+
+    private void openPlayer(MusicTrack track,String source,String mode,int generation){
+        if(generation!=prepareGeneration)return;
         try{
             player=new MediaPlayer();
             AudioAttributes attrs=new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
             player.setAudioAttributes(attrs);
-            Uri uri=Uri.parse(t.source);
+            Uri uri=Uri.parse(source);
             String scheme=uri.getScheme()==null?"":uri.getScheme().toLowerCase(Locale.ROOT);
             if("http".equals(scheme)||"https".equals(scheme)){
                 Map<String,String> headers=new HashMap<>();
-                String cookie=getSharedPreferences("musicroad_native_api_v1",MODE_PRIVATE).getString("cookie","");
-                if(cookie==null||cookie.trim().isEmpty())cookie=CookieManager.getInstance().getCookie(t.source);
-                if(cookie!=null&&!cookie.isEmpty())headers.put("Cookie",cookie);
                 headers.put("User-Agent","MusicRoadAndroid/"+BuildConfig.VERSION_NAME);
+                // Cookies are sent only to the MusicRoad compatibility endpoint. Direct
+                // Google media URLs are public/short-lived and do not receive app cookies.
+                if(source.contains("/api/")){
+                    String cookie=DriveMediaResolver.nativeCookie(this);
+                    if(cookie==null||cookie.trim().isEmpty())cookie=CookieManager.getInstance().getCookie(source);
+                    if(cookie!=null&&!cookie.isEmpty())headers.put("Cookie",cookie);
+                }
                 player.setDataSource(this,uri,headers);
             } else player.setDataSource(this,uri);
             applyVolume();
             player.setOnPreparedListener(mp->{
+                if(generation!=prepareGeneration)return;
                 prepared=true;
+                resolving=false;
+                lastStartupMs=Math.max(0L,System.currentTimeMillis()-prepareStartedAt);
+                lastError="";lastErrorCode="";
                 if(playWhenReady && requestAudioFocus()) mp.start();
                 updateForeground(); updateMediaMetadata(); startTicker();
+                prefetchNext();
             });
             player.setOnCompletionListener(mp->next());
             player.setOnErrorListener((mp,what,extra)->{
-                lastError="Não foi possível reproduzir esta faixa.";
-                broadcastState();
-                handler.postDelayed(this::next,350);
+                if(generation!=prepareGeneration)return true;
+                handlePlayerError(track,mode,what,extra);
                 return true;
             });
             startForeground(NOTIFICATION_ID,notification());
+            updateMediaMetadata();
+            broadcastState();
             player.prepareAsync();
-            updateMediaMetadata(); startTicker();
+            startTicker();
         }catch(Exception e){
-            lastError="Falha ao abrir a música: "+(e.getMessage()==null?"fonte inválida":e.getMessage());
-            broadcastState(); handler.postDelayed(this::next,350);
+            handleOpenFailure(track,mode,e);
         }
+    }
+
+    private void handleOpenFailure(MusicTrack track,String mode,Exception e){
+        lastError="Falha ao abrir a música: "+(e.getMessage()==null?"fonte inválida":e.getMessage());
+        lastErrorCode="OPEN_FAILED";
+        broadcastState();
+        if(DriveMediaResolver.isDriveTrack(track)&&!"DRIVE_RESCUE".equals(mode)&&driveRetryStage<2){
+            driveRetryStage++;
+            DriveMediaResolver.invalidate(track);
+            handler.postDelayed(()->prepare(playWhenReady,true),180);
+        }else handler.postDelayed(this::next,900);
+    }
+
+    private void handlePlayerError(MusicTrack track,String mode,int what,int extra){
+        lastError="Não foi possível reproduzir esta faixa.";
+        lastErrorCode="MEDIA_"+what+"_"+extra;
+        broadcastState();
+        if(DriveMediaResolver.isDriveTrack(track)&&!"DRIVE_RESCUE".equals(mode)&&driveRetryStage<2){
+            driveRetryStage++;
+            DriveMediaResolver.invalidate(track);
+            handler.postDelayed(()->prepare(playWhenReady,true),220);
+        }else if(DriveMediaResolver.isDriveTrack(track)&&!"DRIVE_RESCUE".equals(mode)){
+            int generation=++prepareGeneration;
+            releasePlayerOnly();
+            transportMode="DRIVE_RESCUE";
+            openPlayer(track,track.source,transportMode,generation);
+        }else handler.postDelayed(this::next,1000);
+    }
+
+    private void prefetchNext(){
+        if(queue.size()<2)return;
+        int nextIndex=(index+1)%queue.size();
+        MusicTrack next=queue.get(nextIndex);
+        MusicTrack local=MusicOfflineStore.preferLocal(next);
+        if(local!=null&&local.source!=null&&local.source.startsWith("file://"))return;
+        DriveMediaResolver.prefetch(this,next);
     }
 
     private MusicTrack current(){ return index>=0&&index<queue.size()?queue.get(index):null; }
@@ -182,10 +306,10 @@ public class PlaybackService extends Service {
 
     private void play(){
         playWhenReady=true;
-        if(player==null){ if(!queue.isEmpty())prepare(true); return; }
+        if(player==null){ if(!queue.isEmpty()){driveRetryStage=0;prepare(true,false);} return; }
         if(!prepared)return;
         if(!requestAudioFocus())return;
-        try{player.start();lastError="";}catch(Exception e){lastError="Falha ao iniciar reprodução.";}
+        try{player.start();lastError="";lastErrorCode="";}catch(Exception e){lastError="Falha ao iniciar reprodução.";lastErrorCode="PLAY_FAILED";}
         updateForeground();startTicker();
     }
 
@@ -195,11 +319,19 @@ public class PlaybackService extends Service {
         updateForeground();
     }
 
-    private void next(){ if(queue.isEmpty())return; index=(index+1)%queue.size();prepare(true); }
+    private void next(){
+        if(queue.isEmpty())return;
+        index=(index+1)%queue.size();
+        driveRetryStage=0;
+        prepare(true,false);
+    }
+
     private void previous(){
         if(queue.isEmpty())return;
         try{ if(player!=null&&prepared&&player.getCurrentPosition()>5000){player.seekTo(0);broadcastState();return;} }catch(Exception ignored){}
-        index=(index-1+queue.size())%queue.size();prepare(true);
+        index=(index-1+queue.size())%queue.size();
+        driveRetryStage=0;
+        prepare(true,false);
     }
 
     private void seek(double percent){
@@ -285,7 +417,7 @@ public class PlaybackService extends Service {
     private void updateMediaSessionState(){
         if(mediaSession==null)return;
         long pos=0;try{if(player!=null&&prepared)pos=player.getCurrentPosition();}catch(Exception ignored){}
-        int state=player==null?PlaybackState.STATE_STOPPED:(!prepared?PlaybackState.STATE_BUFFERING:(isPlaying()?PlaybackState.STATE_PLAYING:PlaybackState.STATE_PAUSED));
+        int state=player==null?(resolving?PlaybackState.STATE_BUFFERING:PlaybackState.STATE_STOPPED):(!prepared?PlaybackState.STATE_BUFFERING:(isPlaying()?PlaybackState.STATE_PLAYING:PlaybackState.STATE_PAUSED));
         long actions=PlaybackState.ACTION_PLAY|PlaybackState.ACTION_PAUSE|PlaybackState.ACTION_PLAY_PAUSE|PlaybackState.ACTION_SKIP_TO_NEXT|PlaybackState.ACTION_SKIP_TO_PREVIOUS|PlaybackState.ACTION_SEEK_TO;
         mediaSession.setPlaybackState(new PlaybackState.Builder().setActions(actions).setState(state,pos,isPlaying()?1f:0f).build());
     }
@@ -305,7 +437,8 @@ public class PlaybackService extends Service {
         Intent open=new Intent(this,MainActivity.class);open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent content=PendingIntent.getActivity(this,1,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-        b.setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(artist).setContentIntent(content).setOngoing(isPlaying()).setShowWhen(false)
+        String subtitle=artist+(transportMode.isEmpty()?"":" · "+transportLabel());
+        b.setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(subtitle).setContentIntent(content).setOngoing(isPlaying()).setShowWhen(false)
             .addAction(new Notification.Action.Builder(R.drawable.ic_notification,"Anterior",action(ACTION_PREVIOUS,2)).build())
             .addAction(new Notification.Action.Builder(R.drawable.ic_notification,isPlaying()?"Pausar":"Tocar",action(ACTION_TOGGLE,3)).build())
             .addAction(new Notification.Action.Builder(R.drawable.ic_notification,"Próxima",action(ACTION_NEXT,4)).build());
@@ -313,8 +446,14 @@ public class PlaybackService extends Service {
         return b.build();
     }
 
+    private String transportLabel(){
+        if("OFFLINE".equals(transportMode))return "OFFLINE";
+        if(transportMode.startsWith("DRIVE"))return "DRIVE";
+        return "ONLINE";
+    }
+
     private void updateForeground(){
-        if(player!=null)startForeground(NOTIFICATION_ID,notification());
+        if(player!=null||resolving)startForeground(NOTIFICATION_ID,notification());
         updateMediaSessionState();broadcastState();
     }
 
@@ -323,31 +462,41 @@ public class PlaybackService extends Service {
     private void broadcastState(){
         try{
             JSONObject o=new JSONObject();MusicTrack t=current();boolean playing=isPlaying();
-            o.put("playing",playing);o.put("prepared",prepared);o.put("index",index);o.put("count",queue.size());
+            o.put("playing",playing);o.put("prepared",prepared);o.put("resolving",resolving);o.put("index",index);o.put("count",queue.size());
+            o.put("source_mode",transportMode);o.put("source_label",transportLabel());o.put("startup_ms",lastStartupMs);
             if(t!=null){
                 o.put("id",t.id);o.put("title",t.title);o.put("artist",t.artist);o.put("album",t.album);o.put("origin",t.origin);
                 JSONObject track=t.toJson();
-                track.put("playing",playing);track.put("prepared",prepared);
+                track.put("playing",playing);track.put("prepared",prepared);track.put("resolving",resolving);track.put("source_mode",transportMode);track.put("source_label",transportLabel());
                 String displayArtist=t.artist==null||t.artist.trim().isEmpty()?"MusicRoad":t.artist;
-                track.put("artist",displayArtist+(playing?" · Tocando":(prepared?" · Pausado":" · Carregando")));
+                String state=playing?"Tocando":(prepared?"Pausado":"Carregando");
+                track.put("artist",displayArtist+" · "+state+(transportMode.isEmpty()?"":" · "+transportLabel()));
                 o.put("track",track);
             }
             long pos=0,dur=0;
             if(player!=null&&prepared){try{pos=player.getCurrentPosition();dur=player.getDuration();}catch(Exception ignored){}}
             o.put("positionMs",pos);o.put("durationMs",dur);o.put("position_ms",pos);o.put("duration_ms",dur);
             if(!lastError.isEmpty())o.put("error",lastError);
+            if(!lastErrorCode.isEmpty())o.put("error_code",lastErrorCode);
             Intent i=new Intent(ACTION_STATE);i.setPackage(getPackageName());i.putExtra(EXTRA_STATE_JSON,o.toString());sendBroadcast(i);
         }catch(Exception ignored){}
     }
 
-    private void releasePlayer(){
+    private void releasePlayerOnly(){
         handler.removeCallbacks(stateTicker);
         if(player!=null){try{player.stop();}catch(Exception ignored){}try{player.reset();}catch(Exception ignored){}try{player.release();}catch(Exception ignored){}player=null;}
         prepared=false;
+        resolving=false;
+    }
+
+    private void releasePlayer(){
+        ++prepareGeneration;
+        releasePlayerOnly();
     }
 
     @Override public void onDestroy(){
         releasePlayer();restoreAfterAlert();abandonAudioFocus();
+        mediaIo.shutdownNow();
         if(tts!=null){try{tts.stop();tts.shutdown();}catch(Exception ignored){}}
         if(mediaSession!=null){mediaSession.setActive(false);mediaSession.release();}
         stopForeground(true);super.onDestroy();
