@@ -3,8 +3,8 @@
 name: Build MusicRoad Native APK
 
 on:
-  push:
-    branches: [agent/native-apk-build]
+  pull_request:
+    branches: [main]
     paths:
       - 'android-app-v2/**'
       - 'api/route_fast.php'
@@ -69,8 +69,6 @@ jobs:
         shell: bash
         run: |
           set -e
-          # Keep the cockpit stop control usable even when the route starts after
-          # the screen was created. This edits only the one-shot migration input.
           sed -i 's/stop.setEnabled(currentRouteCoords.length()>1);/stop.setEnabled(true);/' .driveos-2.2-migrate.py
           python3 .driveos-2.2-migrate.py
           git diff --check
