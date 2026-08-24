@@ -15,13 +15,19 @@ $knownMime = '';
 $knownTitle = 'musica';
 $libraryDriveTrack = false;
 try {
-    $stmt = db()->prepare('SELECT title, mime_type, origin FROM music_library WHERE origin_ref = ? LIMIT 1');
+    $stmt = db()->prepare('SELECT title, mime_type, origin, source_url FROM music_library WHERE origin_ref = ? LIMIT 1');
     $stmt->execute([$fileId]);
     $row = $stmt->fetch();
     if ($row) {
         $knownMime = trim((string)($row['mime_type'] ?? ''));
         $knownTitle = trim((string)($row['title'] ?? 'musica')) ?: 'musica';
         $libraryDriveTrack = str_contains(strtolower((string)($row['origin'] ?? '')), 'drive');
+        if ($resourceKey === '') {
+            $storedSource = (string)($row['source_url'] ?? '');
+            if ($storedSource !== '' && preg_match('/[?&]resourcekey=([A-Za-z0-9_-]+)/i', $storedSource, $m)) {
+                $resourceKey = $m[1];
+            }
+        }
     }
 } catch (Throwable $e) {}
 
@@ -36,6 +42,33 @@ if (!$user && !$libraryDriveTrack) {
 }
 
 $resolved = drive_resolve_public_download($fileId, $resourceKey);
+
+// MusicRoad 2.3: default app path. Return only a short-lived Google URL so the
+// audio bytes travel Google Drive -> Android instead of crossing this server.
+if (isset($_GET['resolve'])) {
+    if (empty($resolved['ok']) || empty($resolved['url'])) {
+        json_response([
+            'ok'=>false,
+            'file_id'=>$fileId,
+            'resourcekey'=>$resourceKey !== '',
+            'status_code'=>(int)($resolved['status_code'] ?? 0),
+            'content_type'=>(string)($resolved['content_type'] ?? ''),
+            'message'=>(string)($resolved['message'] ?? 'Não foi possível resolver o áudio do Google Drive.'),
+        ], 502);
+    }
+    json_response([
+        'ok'=>true,
+        'file_id'=>$fileId,
+        'direct_url'=>(string)$resolved['url'],
+        'content_type'=>(string)($resolved['content_type'] ?? $knownMime),
+        'cached'=>!empty($resolved['cached']),
+        'resourcekey'=>$resourceKey !== '',
+        'expires_in'=>420,
+        'transport'=>'google_drive_direct',
+        'message'=>'URL direta do Google Drive pronta. O áudio não passa pelo servidor MusicRoad.',
+    ]);
+}
+
 if (isset($_GET['check'])) {
     json_response([
         'ok'=>(bool)($resolved['ok'] ?? false),
@@ -55,6 +88,8 @@ if (empty($resolved['ok']) || empty($resolved['url'])) {
     exit;
 }
 
+// Compatibility/rescue path for older APKs. New APKs use ?resolve=1 and play
+// directly from Google Drive. This proxy does not save the audio to disk.
 if (!function_exists('curl_init')) {
     header('Location: ' . $resolved['url']);
     exit;
@@ -65,7 +100,7 @@ stream_remote_audio((string)$resolved['url'], $knownMime, $knownTitle, !empty($_
 function stream_remote_audio(string $url, string $knownMime, string $knownTitle, bool $download): void
 {
     $requestHeaders = [
-        'User-Agent: Mozilla/5.0 MusicRoadAI/2.2',
+        'User-Agent: Mozilla/5.0 MusicRoadAI/2.3',
         'Accept: audio/*,application/octet-stream;q=0.9,*/*;q=0.8',
         'Accept-Encoding: identity',
     ];
