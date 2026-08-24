@@ -149,7 +149,8 @@ public class PlaybackService extends Service {
             String scheme=uri.getScheme()==null?"":uri.getScheme().toLowerCase(Locale.ROOT);
             if("http".equals(scheme)||"https".equals(scheme)){
                 Map<String,String> headers=new HashMap<>();
-                String cookie=CookieManager.getInstance().getCookie(t.source);
+                String cookie=getSharedPreferences("musicroad_native_api_v1",MODE_PRIVATE).getString("cookie","");
+                if(cookie==null||cookie.trim().isEmpty())cookie=CookieManager.getInstance().getCookie(t.source);
                 if(cookie!=null&&!cookie.isEmpty())headers.put("Cookie",cookie);
                 headers.put("User-Agent","MusicRoadAndroid/"+BuildConfig.VERSION_NAME);
                 player.setDataSource(this,uri,headers);
@@ -323,7 +324,14 @@ public class PlaybackService extends Service {
         try{
             JSONObject o=new JSONObject();MusicTrack t=current();boolean playing=isPlaying();
             o.put("playing",playing);o.put("prepared",prepared);o.put("index",index);o.put("count",queue.size());
-            if(t!=null){o.put("id",t.id);o.put("title",t.title);o.put("artist",t.artist);o.put("album",t.album);o.put("origin",t.origin);}
+            if(t!=null){
+                o.put("id",t.id);o.put("title",t.title);o.put("artist",t.artist);o.put("album",t.album);o.put("origin",t.origin);
+                JSONObject track=t.toJson();
+                track.put("playing",playing);track.put("prepared",prepared);
+                String displayArtist=t.artist==null||t.artist.trim().isEmpty()?"MusicRoad":t.artist;
+                track.put("artist",displayArtist+(playing?" · Tocando":(prepared?" · Pausado":" · Carregando")));
+                o.put("track",track);
+            }
             long pos=0,dur=0;
             if(player!=null&&prepared){try{pos=player.getCurrentPosition();dur=player.getDuration();}catch(Exception ignored){}}
             o.put("positionMs",pos);o.put("durationMs",dur);o.put("position_ms",pos);o.put("duration_ms",dur);
