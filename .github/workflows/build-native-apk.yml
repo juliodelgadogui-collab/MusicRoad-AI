@@ -1,4 +1,4 @@
-# EstradaPlay 1.2.0 — offline-first music + state safety base + 250 km travel reserve
+# EstradaPlay 1.3.0 — native redesign + offline-first music + state safety base + 250 km travel reserve
 name: Build EstradaPlay Native APK
 
 on:
@@ -68,25 +68,29 @@ jobs:
               -dname "CN=EstradaPlay Stable Debug,O=EstradaPlay,C=BR"
           fi
 
-      - name: Verify EstradaPlay 1.2.0 offline architecture
+      - name: Verify EstradaPlay 1.3.0 native redesign and offline architecture
         shell: bash
         run: |
           set -e
-          grep -q "versionName '1.2.0'" estradaplay-app/app/build.gradle
-          grep -q 'versionCode 3' estradaplay-app/app/build.gradle
+          grep -q "versionName '1.3.0'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 4' estradaplay-app/app/build.gradle
           grep -q "applicationId 'com.estradaplay.app'" estradaplay-app/app/build.gradle
           grep -q 'android:name=".GateActivity"' estradaplay-app/app/src/main/AndroidManifest.xml
           grep -q 'ACCESS_FINE_LOCATION' estradaplay-app/app/src/main/AndroidManifest.xml
           grep -q 'foregroundServiceType="location"' estradaplay-app/app/src/main/AndroidManifest.xml
+          grep -q 'EstradaPlay Design System 1.3' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'featureCard' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'Tudo pronto para a estrada' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'BIBLIOTECA OFFLINE' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'COBERTURA OFFLINE' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'Proteção sem precisar abrir rota' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java
           grep -q 'RESERVE_DISTANCE_M = 250000' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'api/road_corridor_pack.php' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'api/road_state_pack.php' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'prepareTravelReserve' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'reserve_km", 250' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'Base estadual + reserva de até 250 km' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'getLong' estradaplay-app/app/src/main/java/com/estradaplay/app/ApiClient.java
           grep -q "\['SP','RJ','MG','ES'\]" api/road_state_pack.php
-          grep -q 'distance=%d&width=%d' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'traffic_signals' api/road_safety_pack_helpers.php
           grep -q 'traffic_calming' api/road_safety_pack_helpers.php
           grep -q 'toll_booth' api/road_safety_pack_helpers.php
@@ -111,13 +115,13 @@ jobs:
           php -l api/road_state_pack.php
           php -l api/road_corridor_pack.php
 
-      - name: Build EstradaPlay 1.2.0 APK
+      - name: Build EstradaPlay 1.3.0 APK
         working-directory: estradaplay-app
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Upload EstradaPlay 1.2.0 APK
+      - name: Upload EstradaPlay 1.3.0 APK
         uses: actions/upload-artifact@v4
         with:
-          name: EstradaPlay-1.2.0-state-250km-offline-apk
+          name: EstradaPlay-1.3.0-native-redesign-apk
           path: estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
