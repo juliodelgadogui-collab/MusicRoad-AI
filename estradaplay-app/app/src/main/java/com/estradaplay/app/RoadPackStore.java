@@ -5,9 +5,11 @@ import android.content.Context;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -60,8 +62,7 @@ final class RoadPackStore {
 
     synchronized String status(double lat, double lon) {
         if (packs.isEmpty()) return "Baixando alertas da região…";
-        int nearby = 0;
-        for (RoadHazard h : nearby(lat, lon, 2400)) nearby++;
+        int nearby = nearby(lat, lon, 2400).size();
         return "Offline · " + packCount() + " área(s) · " + hazardCount() + " pontos" + (nearby > 0 ? " · " + nearby + " próximos" : "");
     }
 
@@ -90,7 +91,7 @@ final class RoadPackStore {
             stored.put("hazards", hazards);
             stored.put("coverage", json.optJSONObject("coverage"));
             File target = new File(dir, key + ".json");
-            Files.write(target.toPath(), stored.toString().getBytes(StandardCharsets.UTF_8));
+            writeText(target, stored.toString());
             Pack p = parsePack(target, stored);
             if (p == null) return false;
             synchronized (this) {
@@ -135,7 +136,7 @@ final class RoadPackStore {
         long now = System.currentTimeMillis();
         for (File f : files) {
             try {
-                JSONObject json = new JSONObject(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+                JSONObject json = new JSONObject(readText(f));
                 long fetched = json.optLong("fetched_at", f.lastModified());
                 if (now - fetched > MAX_AGE_MS) { f.delete(); continue; }
                 Pack p = parsePack(f, json);
@@ -168,6 +169,24 @@ final class RoadPackStore {
             return new Pack(key, lat, lon, radius, fetched, file, hazards, index);
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    private static String readText(File file) throws Exception {
+        try (FileInputStream in = new FileInputStream(file); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[8192]; int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                if (out.size() > 6_000_000) throw new IllegalStateException("Pacote grande demais");
+            }
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static void writeText(File file, String text) throws Exception {
+        byte[] data = text.getBytes(StandardCharsets.UTF_8);
+        try (FileOutputStream out = new FileOutputStream(file, false)) {
+            out.write(data); out.flush();
         }
     }
 
