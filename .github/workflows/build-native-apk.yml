@@ -1,26 +1,16 @@
-# MusicRoad 2.4.0 DriveOS Automotive — offline-first Google Drive folders
-name: Build MusicRoad Native APK
+# EstradaPlay 1.0.0 — clean Android app, offline-first music
+name: Build EstradaPlay Native APK
 
 on:
   push:
     branches: [agent/native-apk-build]
     paths:
-      - 'android-app-v2/**'
-      - 'api/route_fast.php'
-      - 'api/route_hazards.php'
-      - 'api/drive_stream.php'
-      - 'api/drive_helpers.php'
-      - 'api/library.php'
+      - 'estradaplay-app/**'
       - '.github/workflows/build-native-apk.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'android-app-v2/**'
-      - 'api/route_fast.php'
-      - 'api/route_hazards.php'
-      - 'api/drive_stream.php'
-      - 'api/drive_helpers.php'
-      - 'api/library.php'
+      - 'estradaplay-app/**'
       - '.github/workflows/build-native-apk.yml'
   workflow_dispatch:
 
@@ -52,7 +42,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
-          key: musicroad-stable-debug-signing-v1
+          key: estradaplay-stable-debug-signing-v1
 
       - name: Ensure stable debug signing key
         shell: bash
@@ -67,60 +57,42 @@ jobs:
               -keyalg RSA \
               -keysize 2048 \
               -validity 10000 \
-              -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
+              -dname "CN=EstradaPlay Stable Debug,O=EstradaPlay,C=BR"
           fi
 
-      - name: Verify MusicRoad 2.4.0 offline-first architecture
+      - name: Verify EstradaPlay 1.0.0 clean architecture
         shell: bash
         run: |
           set -e
-          grep -q "versionName '2.4.0'" android-app-v2/app/build.gradle
-          grep -q 'versionCode 50' android-app-v2/app/build.gradle
-          grep -q "applicationId 'com.musicroad.ai'" android-app-v2/app/build.gradle
-          grep -q 'extends ComponentActivity' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'android:name=".MusicRoadApplication"' android-app-v2/app/src/main/AndroidManifest.xml
-          grep -q 'OfflineFolderDownloadService' android-app-v2/app/src/main/AndroidManifest.xml
-          grep -q 'foregroundServiceType="dataSync"' android-app-v2/app/src/main/AndroidManifest.xml
-          grep -q 'class OfflineFolderManager' android-app-v2/app/src/main/java/com/musicroad/ai/OfflineFolderManager.java
-          grep -q 'Escolha suas músicas offline' android-app-v2/app/src/main/java/com/musicroad/ai/OfflineFolderManager.java
-          grep -q 'Gerenciar músicas offline' android-app-v2/app/src/main/java/com/musicroad/ai/OfflineFolderManager.java
-          grep -q 'class OfflineFolderDownloadService' android-app-v2/app/src/main/java/com/musicroad/ai/OfflineFolderDownloadService.java
-          grep -q 'MusicDirectDownload.downloadBlocking' android-app-v2/app/src/main/java/com/musicroad/ai/OfflineFolderDownloadService.java
-          grep -q 'offlineRequired = isDriveTrack() && !downloaded' android-app-v2/app/src/main/java/com/musicroad/ai/MusicTrack.java
-          grep -q 'playbackSource = offlineRequired ? ""' android-app-v2/app/src/main/java/com/musicroad/ai/MusicTrack.java
-          grep -q 'Baixe esta pasta para tocar sem acessar o Drive' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
-          grep -q 'TICK_MS=650L' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
-          grep -q 'musicFingerprint' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
-          if grep -q 'TICK_MS = 180L\|TICK_MS=180L' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java; then
-            echo 'Heavy 180 ms polling found'; exit 1
+          grep -q "versionName '1.0.0'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 1' estradaplay-app/app/build.gradle
+          grep -q "applicationId 'com.estradaplay.app'" estradaplay-app/app/build.gradle
+          grep -q 'android:label="EstradaPlay"' estradaplay-app/app/src/main/AndroidManifest.xml
+          grep -q 'class MainActivity extends ComponentActivity' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'Escolha suas músicas' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'BAIXAR E CONTINUAR' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'Gerenciar músicas' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'class DownloadService extends Service' estradaplay-app/app/src/main/java/com/estradaplay/app/DownloadService.java
+          grep -q 'foregroundServiceType="dataSync"' estradaplay-app/app/src/main/AndroidManifest.xml
+          grep -q 'class PlayerService extends Service' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
+          grep -q 'new File(t.localPath)' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
+          if grep -q 'drive_stream.php\|DriveMediaResolver\|HttpURLConnection' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java; then
+            echo 'Player must be local-only'; exit 1
           fi
-          grep -q 'DriveMediaResolver.resolve' android-app-v2/app/src/main/java/com/musicroad/ai/MusicDirectDownload.java
-          grep -q 'preferLocal' android-app-v2/app/src/main/java/com/musicroad/ai/MusicTrack.java
-          grep -q 'static void install(MainActivity a)' android-app-v2/app/src/main/java/com/musicroad/ai/DriveOsShell.java
-          grep -q 'FastMapboxRouteEngine' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
-          grep -q 'api/route_fast.php' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
-          grep -q 'api/route_hazards.php' android-app-v2/app/src/main/java/com/musicroad/ai/FastMapboxRouteEngine.java
-          grep -q 'mediastore-audio-v3-offline-library' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java
-          if grep -q 'String selection = MediaStore.Audio.Media.IS_MUSIC' android-app-v2/app/src/main/java/com/musicroad/ai/NativeMusicRepository.java; then
-            echo 'Legacy IS_MUSIC hard filter found'; exit 1
+          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app/app/src/main/java; then
+            echo 'WebView found in EstradaPlay source'; exit 1
           fi
-          if grep -R -q 'android.webkit.WebView\|new WebView' android-app-v2/app/src/main/java; then
-            echo 'WebView found in MusicRoad 2.4.0 source'; exit 1
+          if grep -R -q 'com\.musicroad\.ai' estradaplay-app; then
+            echo 'Old MusicRoad package leaked into clean EstradaPlay app'; exit 1
           fi
 
-      - name: PHP lint MusicRoad endpoints
-        run: |
-          php -l api/drive_stream.php
-          php -l api/drive_helpers.php
-          php -l api/library.php
-
-      - name: Build MusicRoad 2.4.0 APK
-        working-directory: android-app-v2
+      - name: Build EstradaPlay 1.0.0 APK
+        working-directory: estradaplay-app
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Upload MusicRoad 2.4.0 APK
+      - name: Upload EstradaPlay 1.0.0 APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-2.4.0-DriveOS-OfflineFirst-apk
-          path: android-app-v2/app/build/outputs/apk/debug/app-debug.apk
+          name: EstradaPlay-1.0.0-clean-offline-first-apk
+          path: estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
