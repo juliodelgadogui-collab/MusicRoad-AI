@@ -13,8 +13,8 @@ android {
         applicationId 'com.estradaplay.app'
         minSdk 24
         targetSdk 35
-        versionCode 6
-        versionName '1.4.0'
+        versionCode 7
+        versionName '1.5.0'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
     }
 
@@ -47,5 +47,5 @@ android {
 
 dependencies {
     implementation 'androidx.activity:activity:1.10.1'
-    implementation 'com.mapbox.maps:android:11.28.3'
+    implementation 'org.maplibre.gl:android-sdk:13.4.1'
 }
