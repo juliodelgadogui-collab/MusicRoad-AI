@@ -1,4 +1,4 @@
-# MusicRoad 2.3.1 DriveOS Automotive — phone-side Google Drive redirects + integrated offline
+# MusicRoad 2.3.2 DriveOS Automotive — Google Drive direct playback + UI performance fix
 name: Build MusicRoad Native APK
 
 on:
@@ -70,12 +70,12 @@ jobs:
               -dname "CN=MusicRoad Stable Debug,O=MusicRoad,C=BR"
           fi
 
-      - name: Verify MusicRoad 2.3.1 native architecture
+      - name: Verify MusicRoad 2.3.2 native architecture and performance guard
         shell: bash
         run: |
           set -e
-          grep -q "versionName '2.3.1'" android-app-v2/app/build.gradle
-          grep -q 'versionCode 48' android-app-v2/app/build.gradle
+          grep -q "versionName '2.3.2'" android-app-v2/app/build.gradle
+          grep -q 'versionCode 49' android-app-v2/app/build.gradle
           grep -q "applicationId 'com.musicroad.ai'" android-app-v2/app/build.gradle
           grep -q 'extends ComponentActivity' android-app-v2/app/src/main/java/com/musicroad/ai/MainActivity.java
           grep -q 'android:name=".MusicRoadApplication"' android-app-v2/app/src/main/AndroidManifest.xml
@@ -86,6 +86,13 @@ jobs:
           grep -q 'DRIVE_DIRECT_ALT' android-app-v2/app/src/main/java/com/musicroad/ai/DriveMediaResolver.java
           grep -q 'class MusicDirectDownload' android-app-v2/app/src/main/java/com/musicroad/ai/MusicDirectDownload.java
           grep -q 'MusicDirectDownload.start' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
+          grep -q 'LAYER_TICK_MS = 280L' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
+          grep -q 'Executors.newSingleThreadExecutor' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
+          grep -q 'IO.execute' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
+          grep -q 'trackLookup' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
+          if grep -q 'TICK_MS = 180L' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java; then
+            echo 'Heavy 180 ms polling found'; exit 1
+          fi
           grep -q 'Offline integrado' android-app-v2/app/src/main/java/com/musicroad/ai/NativeAppGuard.java
           grep -q 'class MusicOfflineStore' android-app-v2/app/src/main/java/com/musicroad/ai/MusicOfflineStore.java
           grep -q 'preferLocal' android-app-v2/app/src/main/java/com/musicroad/ai/MusicTrack.java
@@ -106,22 +113,22 @@ jobs:
             echo 'Legacy IS_MUSIC hard filter found'; exit 1
           fi
           if grep -R -q 'android.webkit.WebView\|new WebView' android-app-v2/app/src/main/java; then
-            echo 'WebView found in MusicRoad 2.3.1 source'; exit 1
+            echo 'WebView found in MusicRoad 2.3.2 source'; exit 1
           fi
 
-      - name: PHP lint Drive 2.3.1 endpoints
+      - name: PHP lint Drive 2.3.2 endpoints
         run: |
           php -l api/drive_stream.php
           php -l api/drive_helpers.php
           php -l api/library.php
 
-      - name: Build MusicRoad 2.3.1 APK
+      - name: Build MusicRoad 2.3.2 APK
         working-directory: android-app-v2
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Upload MusicRoad 2.3.1 APK
+      - name: Upload MusicRoad 2.3.2 APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicRoad-AI-native-2.3.1-DriveOS-Automotive-apk
+          name: MusicRoad-AI-native-2.3.2-DriveOS-Automotive-apk
           path: android-app-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
