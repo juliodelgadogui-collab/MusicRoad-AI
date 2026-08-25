@@ -43,9 +43,9 @@ public final class MusicTrack {
     }
 
     public JSONObject toJson() throws JSONException {
-        MusicTrack effective = MusicOfflineStore.preferLocal(this);
+        boolean downloaded = MusicOfflineStore.isDownloaded(this);
+        MusicTrack effective = downloaded ? MusicOfflineStore.preferLocal(this) : this;
         if (effective == null) effective = this;
-        boolean downloaded = effective.source.startsWith("file://");
         boolean offlineRequired = isDriveTrack() && !downloaded;
         String playbackSource = offlineRequired ? "" : effective.source;
 
