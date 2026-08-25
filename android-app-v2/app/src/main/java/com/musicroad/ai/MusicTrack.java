@@ -3,6 +3,8 @@ package com.musicroad.ai;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Locale;
+
 public final class MusicTrack {
     public final String id;
     public final String title;
@@ -36,17 +38,25 @@ public final class MusicTrack {
         this.folderPath = folderPath == null ? "" : folderPath;
     }
 
+    public boolean isDriveTrack() {
+        return origin != null && origin.toLowerCase(Locale.ROOT).contains("drive");
+    }
+
     public JSONObject toJson() throws JSONException {
         MusicTrack effective = MusicOfflineStore.preferLocal(this);
         if (effective == null) effective = this;
+        boolean downloaded = effective.source.startsWith("file://");
+        boolean offlineRequired = isDriveTrack() && !downloaded;
+        String playbackSource = offlineRequired ? "" : effective.source;
+
         JSONObject o = new JSONObject();
         o.put("id", effective.id);
         o.put("title", effective.title);
         o.put("artist", effective.artist);
         o.put("album", effective.album);
-        o.put("source", effective.source);
-        o.put("content_uri", effective.source);
-        if (!effective.source.equals(this.source) && (this.source.startsWith("http://") || this.source.startsWith("https://"))) {
+        o.put("source", playbackSource);
+        o.put("content_uri", playbackSource);
+        if ((offlineRequired || !effective.source.equals(this.source)) && (this.source.startsWith("http://") || this.source.startsWith("https://"))) {
             o.put("remote_source", this.source);
         }
         o.put("origin", effective.origin);
@@ -59,8 +69,9 @@ public final class MusicTrack {
         o.put("folder", effective.folder);
         o.put("folder_path", effective.folderPath);
         o.put("relative_path", effective.folderPath);
-        o.put("downloaded", effective.source.startsWith("file://"));
-        o.put("deviceSource", effective.source.startsWith("file://") ? "musicroad-offline" : "mediastore");
+        o.put("downloaded", downloaded);
+        o.put("offline_required", offlineRequired);
+        o.put("deviceSource", downloaded ? "musicroad-offline" : (offlineRequired ? "drive-metadata-only" : "mediastore"));
         o.put("nativeMedia", true);
         return o;
     }
