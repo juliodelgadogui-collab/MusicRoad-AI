@@ -36,6 +36,7 @@ public final class RoadSafetyService extends Service {
 
     private LocationManager locationManager;
     private RoadPackStore packs;
+    private OfflineRoadStore mapRoads;
     private ApiClient api;
     private TextToSpeech tts;
     private boolean ttsReady;
@@ -46,6 +47,7 @@ public final class RoadSafetyService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         packs = new RoadPackStore(this);
+        mapRoads = new OfflineRoadStore(this);
         api = new ApiClient(this);
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
         createChannel();
@@ -132,8 +134,8 @@ public final class RoadSafetyService extends Service {
             long now = System.currentTimeMillis();
             if (now - lastNotificationAt > 7000L) {
                 String state = packs.hasAnyCoverage(loc.getLatitude(), loc.getLongitude())
-                        ? packs.status(loc.getLatitude(), loc.getLongitude())
-                        : (fetching.get() ? "Preparando base estadual e reserva de viagem…" : "Aguardando proteção offline desta região");
+                        ? packs.status(loc.getLatitude(), loc.getLongitude()) + " · " + mapRoads.status(loc.getLatitude(), loc.getLongitude())
+                        : (fetching.get() ? "Preparando alertas e mapa offline…" : "Aguardando proteção offline desta região");
                 updateNotification("Proteção na estrada ativa", state, false);
                 broadcast(loc, speedKmh, null, 0, state);
             }
@@ -141,18 +143,23 @@ public final class RoadSafetyService extends Service {
     }
 
     private void ensureCoverage(double lat, double lon, float heading) {
-        if (!packs.needsPreparation(lat, lon, heading) || fetching.get()) return;
+        boolean alertNeeds = packs.needsPreparation(lat, lon, heading);
+        boolean mapNeeds = mapRoads.needsPreparation(lat, lon, heading);
+        if ((!alertNeeds && !mapNeeds) || fetching.get()) return;
         if (api.cookie() == null || api.cookie().trim().isEmpty()) return;
         if (!fetching.compareAndSet(false, true)) return;
-        updateNotification("Preparando viagem offline", "Base estadual + reserva de até 250 km à frente", false);
+        updateNotification("Preparando viagem offline", "Alertas + mapa livre para até 250 km à frente", false);
         io.execute(() -> {
-            try { packs.prepareTravelReserve(api, lat, lon, heading); }
-            finally {
+            try {
+                if (alertNeeds) packs.prepareTravelReserve(api, lat, lon, heading);
+                if (mapNeeds) mapRoads.prepare(api, lat, lon, heading);
+            } finally {
                 fetching.set(false);
                 String text = packs.hasAnyCoverage(lat, lon)
-                        ? packs.status(lat, lon)
-                        : "Não consegui atualizar agora; usando os alertas já salvos";
+                        ? packs.status(lat, lon) + " · " + mapRoads.status(lat, lon)
+                        : "Não consegui atualizar agora; usando o que já está salvo";
                 updateNotification("Proteção na estrada ativa", text, false);
+                broadcastSynthetic(lat, lon, text);
             }
         });
     }
@@ -256,16 +263,7 @@ public final class RoadSafetyService extends Service {
     }
 
     private void broadcast(Location loc, double speedKmh, RoadHazard h, double distance, String status) {
-        Intent i = new Intent(ACTION_STATE).setPackage(getPackageName());
-        i.putExtra("lat", loc.getLatitude());
-        i.putExtra("lon", loc.getLongitude());
-        i.putExtra("speed_kmh", speedKmh);
-        i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f);
-        i.putExtra("pack_count", packs.packCount());
-        i.putExtra("state_pack_count", packs.statePackCount());
-        i.putExtra("reserve_km", 250);
-        i.putExtra("hazard_count", packs.hazardCount());
-        i.putExtra("status", status == null ? "" : status);
+        Intent i = baseBroadcast(loc.getLatitude(), loc.getLongitude(), speedKmh, status);
         if (h != null) {
             i.putExtra("hazard_id", h.id);
             i.putExtra("hazard_type", h.type);
@@ -277,18 +275,37 @@ public final class RoadSafetyService extends Service {
         sendBroadcast(i);
     }
 
+    private void broadcastSynthetic(double lat, double lon, String status) {
+        sendBroadcast(baseBroadcast(lat, lon, 0.0, status));
+    }
+
+    private Intent baseBroadcast(double lat, double lon, double speedKmh, String status) {
+        Intent i = new Intent(ACTION_STATE).setPackage(getPackageName());
+        i.putExtra("lat", lat);
+        i.putExtra("lon", lon);
+        i.putExtra("speed_kmh", speedKmh);
+        i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f);
+        i.putExtra("pack_count", packs.packCount());
+        i.putExtra("state_pack_count", packs.statePackCount());
+        i.putExtra("reserve_km", 250);
+        i.putExtra("hazard_count", packs.hazardCount());
+        i.putExtra("map_pack_count", mapRoads.packCount());
+        i.putExtra("status", status == null ? "" : status);
+        return i;
+    }
+
     private void createChannel() {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationManager nm = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         if (nm == null) return;
         NotificationChannel ch = new NotificationChannel(CHANNEL, "Alertas da estrada", NotificationManager.IMPORTANCE_LOW);
-        ch.setDescription("GPS e alertas offline com base estadual e reserva de viagem.");
+        ch.setDescription("GPS, alertas e mapa livre offline da estrada.");
         ch.setSound(null, null);
         nm.createNotificationChannel(ch);
     }
 
     private Notification notification(String title, String text, boolean alert) {
-        Intent open = new Intent(this, MainActivity.class);
+        Intent open = new Intent(this, RoadMapActivity.class);
         PendingIntent pi = PendingIntent.getActivity(this, 10, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         b.setSmallIcon(android.R.drawable.ic_menu_mylocation)
