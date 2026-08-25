@@ -5,53 +5,159 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PointF;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
-import com.mapbox.common.MapboxOptions;
-import com.mapbox.geojson.Point;
-import com.mapbox.maps.CameraOptions;
-import com.mapbox.maps.MapInitOptions;
-import com.mapbox.maps.MapView;
-import com.mapbox.maps.MapboxMap;
-import com.mapbox.maps.ScreenCoordinate;
-
-import org.json.JSONObject;
+import org.maplibre.android.MapLibre;
+import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.camera.CameraUpdateFactory;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.MapLibreMapOptions;
+import org.maplibre.android.maps.MapView;
+import org.maplibre.android.maps.Style;
+import org.maplibre.android.style.layers.LineLayer;
+import org.maplibre.android.style.sources.GeoJsonSource;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.maplibre.android.style.layers.PropertyFactory.lineColor;
+import static org.maplibre.android.style.layers.PropertyFactory.lineOpacity;
+import static org.maplibre.android.style.layers.PropertyFactory.lineWidth;
+
 final class RoadMapView extends FrameLayout {
+    private static final String OPEN_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+    private static final String EMPTY_GEOJSON = "{\"type\":\"FeatureCollection\",\"features\":[]}";
+    private static final String LOCAL_STYLE = "{\"version\":8,\"name\":\"EstradaPlay Offline\",\"sources\":{},\"layers\":[{\"id\":\"background\",\"type\":\"background\",\"paint\":{\"background-color\":\"#070a0f\"}}]}";
+
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ArrayList<RoadHazard> hazards = new ArrayList<>();
     private final HazardOverlay overlay;
     private final TextView fallback;
     private MapView mapView;
-    private MapboxMap mapboxMap;
+    private MapLibreMap map;
+    private Style currentStyle;
+    private GeoJsonSource offlineRoadSource;
     private double userLat = Double.NaN;
     private double userLon = Double.NaN;
     private double bearing = 0.0;
     private boolean mapReady;
-    private boolean styleFallbackTried;
     private boolean follow = true;
-    private String status = "Carregando mapa…";
+    private boolean offlineStyle;
+    private String offlineRoadGeoJson = EMPTY_GEOJSON;
+    private String status = "Preparando mapa livre…";
 
     RoadMapView(Context context) {
         super(context);
         setBackgroundColor(Color.rgb(5, 8, 12));
         fallback = new TextView(context);
-        fallback.setText("Preparando mapa…");
+        fallback.setText("Preparando mapa livre…");
         fallback.setTextColor(Color.rgb(132, 145, 160));
         fallback.setTextSize(12);
         fallback.setGravity(android.view.Gravity.CENTER);
         fallback.setBackgroundColor(Color.rgb(5, 8, 12));
         addView(fallback, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        initMapLibre();
         overlay = new HazardOverlay(context);
         addView(overlay, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-        fetchConfig();
+    }
+
+    private void initMapLibre() {
+        try {
+            MapLibre.getInstance(getContext().getApplicationContext());
+            MapLibreMapOptions options = new MapLibreMapOptions().textureMode(true);
+            MapView mv = new MapView(getContext(), options);
+            mv.onCreate(null);
+            mv.setAlpha(0f);
+            addView(mv, 1, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+            mapView = mv;
+            mv.getMapAsync(value -> {
+                map = value;
+                map.addOnCameraMoveListener(() -> overlay.invalidate());
+                if (online()) loadOpenMap(); else loadOfflineMap();
+            });
+        } catch (Throwable e) {
+            setFallback("Mapa offline próprio\nAguardando dados da estrada");
+        }
+    }
+
+    private void loadOpenMap() {
+        if (map == null) return;
+        mapReady = false;
+        offlineStyle = false;
+        status = "Carregando MapLibre + OpenStreetMap…";
+        fallback.setText("Carregando mapa livre…");
+        fallback.setVisibility(View.VISIBLE);
+        try {
+            map.setStyle(new Style.Builder().fromUri(OPEN_STYLE), style -> {
+                currentStyle = style;
+                offlineStyle = false;
+                mapReady = true;
+                status = "Mapa livre · OpenStreetMap";
+                fallback.setVisibility(View.GONE);
+                if (mapView != null) mapView.animate().alpha(1f).setDuration(180L).start();
+                if (Double.isFinite(userLat) && Double.isFinite(userLon)) recenter();
+                overlay.invalidate();
+            });
+        } catch (Throwable e) {
+            loadOfflineMap();
+            return;
+        }
+        ui.postDelayed(() -> {
+            if (!mapReady) loadOfflineMap();
+        }, 6500L);
+    }
+
+    private void loadOfflineMap() {
+        if (map == null) return;
+        try {
+            map.setStyle(new Style.Builder().fromJson(LOCAL_STYLE), style -> {
+                currentStyle = style;
+                offlineStyle = true;
+                mapReady = true;
+                status = "Mapa offline próprio · EstradaPlay";
+                fallback.setVisibility(View.GONE);
+                installOfflineRoads(style);
+                if (mapView != null) mapView.animate().alpha(1f).setDuration(160L).start();
+                if (Double.isFinite(userLat) && Double.isFinite(userLon)) recenter();
+                overlay.invalidate();
+            });
+        } catch (Throwable e) {
+            setFallback("Mapa offline próprio\nAlertas continuam ativos");
+        }
+    }
+
+    void setOfflineRoadGeoJson(String geoJson) {
+        offlineRoadGeoJson = geoJson == null || geoJson.trim().isEmpty() ? EMPTY_GEOJSON : geoJson;
+        if (offlineStyle && currentStyle != null) installOfflineRoads(currentStyle);
+    }
+
+    private void installOfflineRoads(Style style) {
+        try {
+            GeoJsonSource source = offlineRoadSource;
+            if (source == null) {
+                source = new GeoJsonSource("estradaplay-offline-roads", offlineRoadGeoJson);
+                style.addSource(source);
+                offlineRoadSource = source;
+                LineLayer casing = new LineLayer("estradaplay-road-casing", "estradaplay-offline-roads")
+                        .withProperties(lineColor("#26313d"), lineWidth(5.2f), lineOpacity(0.96f));
+                LineLayer roads = new LineLayer("estradaplay-roads", "estradaplay-offline-roads")
+                        .withProperties(lineColor("#d7dde3"), lineWidth(2.5f), lineOpacity(0.92f));
+                style.addLayer(casing);
+                style.addLayer(roads);
+            } else {
+                source.setGeoJson(offlineRoadGeoJson);
+            }
+        } catch (Throwable ignored) {}
     }
 
     void setFollow(boolean value) {
@@ -61,9 +167,7 @@ final class RoadMapView extends FrameLayout {
 
     void recenter() {
         follow = true;
-        if (mapboxMap != null && Double.isFinite(userLat) && Double.isFinite(userLon)) {
-            setCamera(userLat, userLon, 16.35, 52.0, bearing);
-        }
+        if (map != null && Double.isFinite(userLat) && Double.isFinite(userLon)) setCamera(userLat, userLon, offlineStyle ? 14.8 : 16.1, offlineStyle ? 38.0 : 50.0, bearing);
     }
 
     void setUserLocation(double lat, double lon, double heading) {
@@ -71,7 +175,7 @@ final class RoadMapView extends FrameLayout {
         userLat = lat;
         userLon = lon;
         if (Double.isFinite(heading) && heading >= 0) bearing = ((heading % 360.0) + 360.0) % 360.0;
-        if (follow && mapboxMap != null) setCamera(lat, lon, 16.35, 52.0, bearing);
+        if (follow && map != null && mapReady) setCamera(lat, lon, offlineStyle ? 14.8 : 16.1, offlineStyle ? 38.0 : 50.0, bearing);
         overlay.invalidate();
     }
 
@@ -83,96 +187,55 @@ final class RoadMapView extends FrameLayout {
 
     String status() { return status; }
 
-    private void fetchConfig() {
-        new Thread(() -> {
-            try {
-                ApiClient api = new ApiClient(getContext());
-                ApiClient.Response response = api.get("api/native_app.php?action=mapbox_config&v=140");
-                JSONObject json = response.json();
-                if (!response.ok() || !json.optBoolean("ok", false) || !json.optBoolean("enabled", true)) {
-                    ui.post(() -> setFallback("Mapa indisponível agora\nAlertas offline continuam ativos"));
-                    return;
-                }
-                String token = json.optString("token", "").trim();
-                String style = json.optString("style", "mapbox://styles/mapbox/navigation-night-v1").trim();
-                if (!token.startsWith("pk.")) {
-                    ui.post(() -> setFallback("Token do mapa não configurado\nAlertas offline continuam ativos"));
-                    return;
-                }
-                if (!style.startsWith("mapbox://styles/")) style = "mapbox://styles/mapbox/navigation-night-v1";
-                String finalStyle = style;
-                ui.post(() -> attachMapbox(token, finalStyle));
-            } catch (Throwable e) {
-                ui.post(() -> setFallback("Sem conexão para carregar o mapa\nAlertas offline continuam ativos"));
-            }
-        }, "EstradaPlay-MapConfig").start();
-    }
+    boolean isOfflineStyle() { return offlineStyle; }
 
-    private void attachMapbox(String token, String styleUri) {
-        if (mapView != null) return;
-        try {
-            MapboxOptions.INSTANCE.setAccessToken(token);
-            MapInitOptions options = new MapInitOptions(getContext());
-            options.setTextureView(true);
-            MapView mv = new MapView(getContext(), options);
-            mv.setAlpha(0f);
-            addView(mv, 1, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-            mapView = mv;
-            mapboxMap = mv.getMapboxMap();
-            status = "Carregando mapa…";
-            mapboxMap.loadStyle(styleUri, style -> activate());
-
-            ui.postDelayed(() -> {
-                if (mapReady || mapboxMap == null || styleFallbackTried) return;
-                styleFallbackTried = true;
-                try { mapboxMap.loadStyle("mapbox://styles/mapbox/dark-v11", style -> activate()); }
-                catch (Throwable ignored) {}
-            }, 5500L);
-
-            ui.postDelayed(() -> {
-                if (!mapReady) setFallback("Mapa sem conexão\nAlertas offline continuam ativos");
-            }, 12000L);
-        } catch (Throwable e) {
-            setFallback("Não consegui iniciar o mapa\nAlertas offline continuam ativos");
-        }
-    }
-
-    private void activate() {
-        if (mapView == null) return;
-        mapReady = true;
-        status = "Mapa ativo";
-        fallback.setVisibility(View.GONE);
-        mapView.animate().alpha(1f).setDuration(220L).start();
-        if (Double.isFinite(userLat) && Double.isFinite(userLon)) recenter();
-        overlay.invalidate();
-    }
+    void onStartMap() { try { if (mapView != null) mapView.onStart(); } catch (Throwable ignored) {} }
+    void onResumeMap() { try { if (mapView != null) mapView.onResume(); } catch (Throwable ignored) {} }
+    void onPauseMap() { try { if (mapView != null) mapView.onPause(); } catch (Throwable ignored) {} }
+    void onStopMap() { try { if (mapView != null) mapView.onStop(); } catch (Throwable ignored) {} }
+    void onLowMemoryMap() { try { if (mapView != null) mapView.onLowMemory(); } catch (Throwable ignored) {} }
+    void onDestroyMap() { try { if (mapView != null) mapView.onDestroy(); } catch (Throwable ignored) {} }
+    void onSaveMap(Bundle out) { try { if (mapView != null) mapView.onSaveInstanceState(out); } catch (Throwable ignored) {} }
 
     private void setFallback(String message) {
-        status = message == null ? "Mapa offline" : message.replace('\n', ' ');
-        fallback.setText(message == null ? "Mapa offline" : message);
+        mapReady = false;
+        status = message == null ? "Mapa offline próprio" : message.replace('\n', ' ');
+        fallback.setText(message == null ? "Mapa offline próprio" : message);
         fallback.setVisibility(View.VISIBLE);
         overlay.invalidate();
     }
 
-    private void setCamera(double lat, double lon, double zoom, double pitch, double direction) {
+    private void setCamera(double lat, double lon, double zoom, double tilt, double direction) {
         try {
-            if (mapboxMap == null) return;
-            mapboxMap.setCamera(new CameraOptions.Builder()
-                    .center(Point.fromLngLat(lon, lat))
+            if (map == null) return;
+            CameraPosition position = new CameraPosition.Builder()
+                    .target(new LatLng(lat, lon))
                     .zoom(zoom)
-                    .pitch(pitch)
+                    .tilt(tilt)
                     .bearing(direction)
-                    .build());
+                    .build();
+            map.animateCamera(CameraUpdateFactory.newCameraPosition(position), 320);
         } catch (Throwable ignored) {}
     }
 
-    private ScreenCoordinate screen(double lat, double lon) {
+    private PointF screen(double lat, double lon) {
         try {
-            if (mapboxMap == null || !mapReady) return null;
-            ScreenCoordinate s = mapboxMap.pixelForCoordinate(Point.fromLngLat(lon, lat));
-            if (!Double.isFinite(s.getX()) || !Double.isFinite(s.getY())) return null;
-            return s;
+            if (map == null || !mapReady) return null;
+            return map.getProjection().toScreenLocation(new LatLng(lat, lon));
         } catch (Throwable e) { return null; }
+    }
+
+    private boolean online() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager)getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return false;
+            if (Build.VERSION.SDK_INT >= 23) {
+                android.net.Network n = cm.getActiveNetwork(); if (n == null) return false;
+                NetworkCapabilities c = cm.getNetworkCapabilities(n);
+                return c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+            }
+            android.net.NetworkInfo info = cm.getActiveNetworkInfo(); return info != null && info.isConnected();
+        } catch (Throwable e) { return false; }
     }
 
     private final class HazardOverlay extends View {
@@ -202,11 +265,11 @@ final class RoadMapView extends FrameLayout {
 
         @Override protected void onDraw(Canvas c) {
             super.onDraw(c);
-            if (mapboxMap != null && mapReady) {
+            if (map != null && mapReady) {
                 for (RoadHazard h : hazards) {
-                    ScreenCoordinate s = screen(h.lat, h.lon);
+                    PointF s = screen(h.lat, h.lon);
                     if (s == null) continue;
-                    float x = (float)s.getX(), y = (float)s.getY();
+                    float x = s.x, y = s.y;
                     if (x < -40 || y < -40 || x > getWidth() + 40 || y > getHeight() + 40) continue;
                     Paint p = hazardPaint(h.type);
                     c.drawCircle(x, y, dp(7.0f), p);
@@ -218,15 +281,14 @@ final class RoadMapView extends FrameLayout {
                     }
                 }
                 if (Double.isFinite(userLat) && Double.isFinite(userLon)) {
-                    ScreenCoordinate s = screen(userLat, userLon);
-                    if (s != null) drawUser(c, (float)s.getX(), (float)s.getY());
+                    PointF s = screen(userLat, userLon);
+                    if (s != null) drawUser(c, s.x, s.y);
                 }
             } else if (Double.isFinite(userLat) && Double.isFinite(userLon)) {
                 float x = getWidth() / 2f, y = getHeight() / 2f;
                 drawUser(c, x, y);
                 drawFallbackHazards(c, x, y);
             }
-            postInvalidateDelayed(180L);
         }
 
         private void drawUser(Canvas c, float x, float y) {
