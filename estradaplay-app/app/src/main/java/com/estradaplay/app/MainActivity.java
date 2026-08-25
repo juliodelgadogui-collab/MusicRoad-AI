@@ -81,6 +81,7 @@ public final class MainActivity extends ComponentActivity {
     private TextView downloadTitle, downloadState;
     private ProgressBar downloadProgress;
     private TextView nowTitle, nowArtist, nowState;
+    private TextView roadLiveState, roadLiveDetail;
     private TrackAdapter trackAdapter;
     private String activeMusicFolder = "__ALL__";
 
@@ -123,6 +124,30 @@ public final class MainActivity extends ComponentActivity {
         }
     };
 
+    private final BroadcastReceiver roadReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            String hazard = intent.getStringExtra("hazard_label");
+            String road = intent.getStringExtra("road");
+            String status = intent.getStringExtra("status");
+            double distance = intent.getDoubleExtra("distance_m", 0);
+            double speed = intent.getDoubleExtra("speed_kmh", 0);
+            int packs = intent.getIntExtra("pack_count", 0);
+            int points = intent.getIntExtra("hazard_count", 0);
+            if (roadLiveState != null) {
+                if (hazard != null && !hazard.trim().isEmpty()) roadLiveState.setText("⚠ " + hazard + (distance > 0 ? " · " + Math.round(distance) + " m" : ""));
+                else roadLiveState.setText("Proteção GPS ativa");
+            }
+            if (roadLiveDetail != null) {
+                StringBuilder d = new StringBuilder();
+                if (road != null && !road.trim().isEmpty()) d.append(road.trim()).append(" · ");
+                d.append(Math.round(speed)).append(" km/h");
+                if (packs > 0 || points > 0) d.append(" · ").append(packs).append(" área(s) · ").append(points).append(" pontos");
+                if ((hazard == null || hazard.trim().isEmpty()) && status != null && !status.trim().isEmpty()) d.append("\n").append(status.trim());
+                roadLiveDetail.setText(d.toString());
+            }
+        }
+    };
+
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setStatusBarColor(BG);
@@ -142,6 +167,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void boot() {
         if (hasAccount()) {
+            startRoadSafetyIfAllowed();
             if (!library.hasSetupDone()) {
                 if (online()) loadCatalogAndOpenChooser(true); else showOfflineSetupBlocked();
             } else showHome();
@@ -366,11 +392,12 @@ public final class MainActivity extends ComponentActivity {
 
     private void showHome() {
         clearDownloadViews();
+        roadLiveState = null; roadLiveDetail = null;
         root.removeAllViews();
         LinearLayout page = column(); page.setPadding(dp(18), dp(18), dp(18), dp(24)); root.addView(page, new FrameLayout.LayoutParams(-1, -1));
         page.addView(topBar("Início"));
         TextView hero = text("Sua estrada.\nSua música.", 34, TEXT, true); page.addView(hero); margins(hero, 0, 18, 0, 4);
-        TextView sub = text("Reprodução local. Sem esperar o Drive a cada faixa.", 13, MUTED, false); page.addView(sub); margins(sub, 0, 0, 0, 18);
+        TextView sub = text("Música local e alertas da estrada preparados no aparelho.", 13, MUTED, false); page.addView(sub); margins(sub, 0, 0, 0, 18);
 
         List<Track> downloaded = library.downloadedTracks();
         Set<String> folders = library.folderNames(downloaded);
@@ -387,15 +414,18 @@ public final class MainActivity extends ComponentActivity {
         manage.addView(text("O Drive só é acessado quando você escolhe sincronizar/baixar.", 12, MUTED, false));
         manage.setOnClickListener(v -> { if (online()) loadCatalogAndOpenChooser(false); else toast("Conecte-se para buscar novas pastas."); });
 
+        RoadPackStore roadStore = new RoadPackStore(this);
         LinearLayout road = card(); page.addView(road); margins(road, 0, 12, 0, 0);
-        road.addView(text("➤  ESTRADA", 12, GREEN, true));
-        road.addView(text("Navegação em reconstrução limpa", 20, TEXT, true));
-        road.addView(text("A base antiga não foi reutilizada. O módulo de mapa/alertas será migrado para esta arquitetura nova.", 12, MUTED, false));
+        road.addView(text("◎  PROTEÇÃO NA ESTRADA", 12, GREEN, true));
+        road.addView(text(hasLocationPermission() ? "GPS + alertas offline ativos" : "Ative a localização", 20, TEXT, true));
+        String rs = roadStore.packCount() == 0 ? "O primeiro pacote será baixado automaticamente pela sua localização." : roadStore.packCount() + " área(s) offline · " + roadStore.hazardCount() + " pontos de alerta";
+        road.addView(text(rs, 12, MUTED, false));
         road.setOnClickListener(v -> showRoad());
     }
 
     private void showMusic() {
         clearDownloadViews();
+        roadLiveState = null; roadLiveDetail = null;
         List<Track> tracks = library.downloadedTracks();
         if (tracks.isEmpty()) { loadCatalogAndOpenChooser(false); return; }
         root.removeAllViews();
@@ -453,12 +483,34 @@ public final class MainActivity extends ComponentActivity {
         root.removeAllViews();
         LinearLayout page = column(); page.setPadding(dp(18), dp(18), dp(18), dp(24)); root.addView(page, new FrameLayout.LayoutParams(-1, -1));
         page.addView(topBar("Estrada"));
-        TextView icon = text("➤", 62, ACCENT, true); icon.setGravity(Gravity.CENTER); page.addView(icon, lp(-1, 100));
-        TextView title = text("Nova navegação", 28, TEXT, true); title.setGravity(Gravity.CENTER); page.addView(title);
-        TextView body = text("O EstradaPlay está sendo reconstruído sem herdar os remendos do MusicRoad. Música e offline já estão na base nova. O próximo módulo desta mesma base será mapa, rota, radares e quebra-molas.", 14, MUTED, false); body.setGravity(Gravity.CENTER); page.addView(body); margins(body, 18, 14, 18, 0);
+        TextView icon = text("◎", 62, ACCENT, true); icon.setGravity(Gravity.CENTER); page.addView(icon, lp(-1, 92));
+        TextView title = text("Proteção automática", 28, TEXT, true); title.setGravity(Gravity.CENTER); page.addView(title);
+        TextView body = text("Não precisa escolher destino. O GPS acompanha posição, velocidade e sentido do carro. Os pontos de segurança são baixados para o aparelho e comparados localmente com o que está à frente.", 14, MUTED, false); body.setGravity(Gravity.CENTER); page.addView(body); margins(body, 10, 10, 10, 16);
+
+        RoadPackStore store = new RoadPackStore(this);
+        LinearLayout live = card(); page.addView(live);
+        live.addView(text("PROTEÇÃO AO VIVO", 11, GREEN, true));
+        roadLiveState = text(hasLocationPermission() ? "Proteção GPS ativa" : "Localização desativada", 21, TEXT, true); live.addView(roadLiveState); margins(roadLiveState, 0, 4, 0, 0);
+        String initialDetail = store.packCount() == 0 ? "Aguardando a primeira área offline…" : store.packCount() + " área(s) · " + store.hazardCount() + " pontos armazenados no aparelho";
+        roadLiveDetail = text(initialDetail, 12, MUTED, false); live.addView(roadLiveDetail); margins(roadLiveDetail, 0, 5, 0, 0);
+
+        LinearLayout types = card(); page.addView(types); margins(types, 0, 12, 0, 0);
+        types.addView(text("ALERTAS OFFLINE", 11, ACCENT, true));
+        types.addView(text("Radar / fiscalização de velocidade", 14, TEXT, true));
+        types.addView(text("Semáforos · quebra-molas · pedágios · passagens de nível", 12, MUTED, false));
+        types.addView(text("O filtro usa direção de movimento e distância lateral para reduzir avisos de outra via ou de pontos que já ficaram para trás.", 11, MUTED, false)); margins(types.getChildAt(types.getChildCount()-1), 0, 8, 0, 0);
+
+        Button action = button(hasLocationPermission() ? "MANTER PROTEÇÃO ATIVA" : "ATIVAR LOCALIZAÇÃO", true); page.addView(action, lp(-1, 56)); margins(action, 0, 14, 0, 0);
+        action.setOnClickListener(v -> {
+            if (!hasLocationPermission()) startActivity(new Intent(this, GateActivity.class));
+            else { startRoadSafetyIfAllowed(); toast("Proteção da estrada ativa."); }
+        });
+
+        TextView note = text("Quando você entra em uma área ainda não salva e há internet, o EstradaPlay baixa o próximo pacote automaticamente. Depois o reconhecimento daquela área funciona sem consultar o servidor a cada alerta.", 11, MUTED, false); note.setGravity(Gravity.CENTER); page.addView(note); margins(note, 10, 12, 10, 0);
     }
 
     private void showAccount() {
+        roadLiveState = null; roadLiveDetail = null;
         root.removeAllViews();
         LinearLayout page = column(); page.setPadding(dp(18), dp(18), dp(18), dp(24)); root.addView(page, new FrameLayout.LayoutParams(-1, -1));
         page.addView(topBar("Conta"));
@@ -468,7 +520,7 @@ public final class MainActivity extends ComponentActivity {
         if (user != null) { c.addView(text(user.optString("email", ""), 13, MUTED, false)); c.addView(text("@" + user.optString("username", ""), 12, ACCENT, true)); }
         c.addView(text("Versão " + BuildConfig.VERSION_NAME + " · app Android novo", 11, MUTED, false));
         Button logout = button("SAIR DA CONTA", false); logout.setTextColor(RED); c.addView(logout, lp(-1, 52)); margins(logout, 0, 18, 0, 0);
-        logout.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("Sair?").setMessage("As músicas já baixadas permanecem neste aparelho.").setNegativeButton("Cancelar", null).setPositiveButton("Sair", (d,w) -> {
+        logout.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("Sair?").setMessage("As músicas e áreas de segurança já baixadas permanecem neste aparelho.").setNegativeButton("Cancelar", null).setPositiveButton("Sair", (d,w) -> {
             api.clearSession(); account = new JSONObject(); prefs.edit().remove(KEY_ACCOUNT).apply(); showAuth(false, null);
         }).show());
     }
@@ -482,7 +534,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void openMenu() {
-        String[] items = {"Início", "Música offline", "Gerenciar músicas", "Estrada", "Conta"};
+        String[] items = {"Início", "Música offline", "Gerenciar músicas", "Proteção na estrada", "Conta"};
         new AlertDialog.Builder(this).setTitle("EstradaPlay").setItems(items, (d, which) -> {
             if (which == 0) showHome();
             else if (which == 1) showMusic();
@@ -541,17 +593,32 @@ public final class MainActivity extends ComponentActivity {
     private void registerAppReceivers() {
         IntentFilter d = new IntentFilter(DownloadService.ACTION_STATE);
         IntentFilter p = new IntentFilter(PlayerService.ACTION_STATE);
+        IntentFilter r = new IntentFilter(RoadSafetyService.ACTION_STATE);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(downloadReceiver, d, Context.RECEIVER_NOT_EXPORTED);
             registerReceiver(playerReceiver, p, Context.RECEIVER_NOT_EXPORTED);
+            registerReceiver(roadReceiver, r, Context.RECEIVER_NOT_EXPORTED);
         } else {
             registerReceiver(downloadReceiver, d);
             registerReceiver(playerReceiver, p);
+            registerReceiver(roadReceiver, r);
         }
     }
 
     private void requestNotifications() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+    }
+
+    private boolean hasLocationPermission() {
+        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void startRoadSafetyIfAllowed() {
+        if (!hasLocationPermission()) return;
+        try {
+            Intent i = new Intent(this, RoadSafetyService.class);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i);
+        } catch (Throwable ignored) {}
     }
 
     private boolean online() {
@@ -575,6 +642,7 @@ public final class MainActivity extends ComponentActivity {
     private void saveAccount(JSONObject a) {
         account = a == null ? new JSONObject() : a;
         prefs.edit().putString(KEY_ACCOUNT, account.toString()).apply();
+        startRoadSafetyIfAllowed();
     }
 
     private boolean hasAccount() { return account.optBoolean("authenticated", false) || account.optJSONObject("user") != null; }
@@ -619,6 +687,7 @@ public final class MainActivity extends ComponentActivity {
     @Override protected void onDestroy() {
         try { unregisterReceiver(downloadReceiver); } catch (Exception ignored) {}
         try { unregisterReceiver(playerReceiver); } catch (Exception ignored) {}
+        try { unregisterReceiver(roadReceiver); } catch (Exception ignored) {}
         io.shutdownNow();
         super.onDestroy();
     }
