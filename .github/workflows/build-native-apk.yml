@@ -60,6 +60,26 @@ jobs:
           keytool -list -v -keystore estradaplay-app/signing/estradaplay-dev.keystore -storepass android -alias androiddebugkey | tee /tmp/keytool.txt
           grep -q 'C2:D8:8A:15:B1:34:F4:35:DE:9F:B5:32:69:9E:93:FC:D4:6B:C3:59:00:A0:86:57:5F:CB:2B:F7:F2:F6:6F:DB' /tmp/keytool.txt
 
+      - name: Make all protection entries open the live map
+        shell: bash
+        run: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java')
+          s = p.read_text(encoding='utf-8')
+          old1 = 'roadButton.setOnClickListener(v -> showRoad());'
+          new1 = 'roadButton.setOnClickListener(v -> startActivity(new Intent(this, RoadMapActivity.class)));'
+          old2 = 'else if (which == 3) showRoad();'
+          new2 = 'else if (which == 3) startActivity(new Intent(this, RoadMapActivity.class));'
+          if old1 not in s or old2 not in s:
+              raise SystemExit('MainActivity map entry anchors not found')
+          s = s.replace(old1, new1).replace(old2, new2)
+          p.write_text(s, encoding='utf-8')
+          PY
+          grep -q 'roadButton.setOnClickListener(v -> startActivity(new Intent(this, RoadMapActivity.class)))' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'which == 3) startActivity(new Intent(this, RoadMapActivity.class))' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+
       - name: Verify EstradaPlay 1.5.0 free and offline map architecture
         shell: bash
         run: |
