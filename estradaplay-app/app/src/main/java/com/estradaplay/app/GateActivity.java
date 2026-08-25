@@ -44,7 +44,7 @@ public final class GateActivity extends ComponentActivity {
         TextView tag = text("PLAY NA ESTRADA", 12, ACCENT, true); tag.setGravity(Gravity.CENTER); page.addView(tag);
         TextView icon = text("◎", 72, ACCENT, true); icon.setGravity(Gravity.CENTER); page.addView(icon); margins(icon, 0, 28, 0, 8);
         TextView title = text("Proteção automática na estrada", 25, TEXT, true); title.setGravity(Gravity.CENTER); page.addView(title);
-        TextView body = text("Sem escolher destino. O GPS identifica sua posição e o sentido do carro. O EstradaPlay baixa os alertas da região no aparelho e reconhece radares, semáforos, quebra-molas, pedágios e passagens de nível mesmo sem uma rota aberta.", 14, MUTED, false);
+        TextView body = text("Sem escolher destino. O GPS identifica sua posição e o sentido do carro. Quando há internet, o EstradaPlay prepara a base estadual e mantém uma reserva de até 250 km à frente. Assim radares, semáforos, quebra-molas, pedágios e passagens de nível continuam disponíveis mesmo em longos trechos sem sinal.", 14, MUTED, false);
         body.setGravity(Gravity.CENTER); page.addView(body); margins(body, 0, 12, 0, 24);
 
         Button allow = button("ATIVAR PROTEÇÃO", true); page.addView(allow, new LinearLayout.LayoutParams(-1, dp(58)));
