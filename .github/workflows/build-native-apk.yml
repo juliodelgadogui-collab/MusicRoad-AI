@@ -1,4 +1,4 @@
-# EstradaPlay 1.3.1 — native redesign + fixed dev signer + offline-first music + state safety base + 250 km travel reserve
+# EstradaPlay 1.4.0 — map-first driving UI + fixed signer + offline-first music and safety
 name: Build EstradaPlay Native APK
 
 on:
@@ -54,34 +54,32 @@ jobs:
           keytool -list -v -keystore estradaplay-app/signing/estradaplay-dev.keystore -storepass android -alias androiddebugkey | tee /tmp/keytool.txt
           grep -q 'C2:D8:8A:15:B1:34:F4:35:DE:9F:B5:32:69:9E:93:FC:D4:6B:C3:59:00:A0:86:57:5F:CB:2B:F7:F2:F6:6F:DB' /tmp/keytool.txt
 
-      - name: Verify EstradaPlay 1.3.1 native redesign and offline architecture
+      - name: Verify EstradaPlay 1.4.0 map-first offline architecture
         shell: bash
         run: |
           set -e
-          grep -q "versionName '1.3.1'" estradaplay-app/app/build.gradle
-          grep -q 'versionCode 5' estradaplay-app/app/build.gradle
+          grep -q "versionName '1.4.0'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 6' estradaplay-app/app/build.gradle
           grep -q "applicationId 'com.estradaplay.app'" estradaplay-app/app/build.gradle
           grep -q "storeFile estradaPlayDevKey" estradaplay-app/app/build.gradle
-          grep -q 'android:name=".GateActivity"' estradaplay-app/app/src/main/AndroidManifest.xml
+          grep -q "com.mapbox.maps:android:11.28.3" estradaplay-app/app/build.gradle
+          grep -q 'android:name=".RoadMapActivity"' estradaplay-app/app/src/main/AndroidManifest.xml
+          grep -q 'new Intent(this, RoadMapActivity.class)' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java
+          grep -q 'class RoadMapActivity extends ComponentActivity' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'class RoadMapView extends FrameLayout' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapView.java
+          grep -q 'mapbox_config' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapView.java
+          grep -q 'navigation-night-v1' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapView.java
+          grep -q 'nearby(lat, lon, 5200)' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'GPS monitorando sua direção · sem destino' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
           grep -q 'ACCESS_FINE_LOCATION' estradaplay-app/app/src/main/AndroidManifest.xml
           grep -q 'foregroundServiceType="location"' estradaplay-app/app/src/main/AndroidManifest.xml
           grep -q 'EstradaPlay Design System 1.3' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
-          grep -q 'featureCard' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
-          grep -q 'Tudo pronto para a estrada' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
-          grep -q 'BIBLIOTECA OFFLINE' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
-          grep -q 'COBERTURA OFFLINE' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
-          grep -q 'Proteção sem precisar abrir rota' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java
           grep -q 'RESERVE_DISTANCE_M = 250000' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'api/road_corridor_pack.php' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'api/road_state_pack.php' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'prepareTravelReserve' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'reserve_km", 250' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'getLong' estradaplay-app/app/src/main/java/com/estradaplay/app/ApiClient.java
           grep -q "\['SP','RJ','MG','ES'\]" api/road_state_pack.php
-          grep -q 'traffic_signals' api/road_safety_pack_helpers.php
-          grep -q 'traffic_calming' api/road_safety_pack_helpers.php
-          grep -q 'toll_booth' api/road_safety_pack_helpers.php
-          grep -q 'level_crossing' api/road_safety_pack_helpers.php
           grep -q 'class DownloadService extends Service' estradaplay-app/app/src/main/java/com/estradaplay/app/DownloadService.java
           grep -q 'class PlayerService extends Service' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
           grep -q 'new File(t.localPath)' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
@@ -102,7 +100,7 @@ jobs:
           php -l api/road_state_pack.php
           php -l api/road_corridor_pack.php
 
-      - name: Build EstradaPlay 1.3.1 APK
+      - name: Build EstradaPlay 1.4.0 APK
         working-directory: estradaplay-app
         run: gradle --no-daemon clean assembleDebug
 
@@ -114,9 +112,9 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/apksigner.txt
           grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/apksigner.txt
 
-      - name: Upload EstradaPlay 1.3.1 APK
+      - name: Upload EstradaPlay 1.4.0 APK
         uses: actions/upload-artifact@v4
         with:
-          name: EstradaPlay-1.3.1-stable-signer-redesign-apk
+          name: EstradaPlay-1.4.0-map-first-stable-signer-apk
           path: estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
