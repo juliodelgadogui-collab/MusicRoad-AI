@@ -1,4 +1,4 @@
-# EstradaPlay 1.3.0 — native redesign + offline-first music + state safety base + 250 km travel reserve
+# EstradaPlay 1.3.1 — native redesign + fixed dev signer + offline-first music + state safety base + 250 km travel reserve
 name: Build EstradaPlay Native APK
 
 on:
@@ -46,34 +46,20 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore stable debug signing key
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: estradaplay-stable-debug-signing-v1
-
-      - name: Ensure stable debug signing key
-        shell: bash
-        run: |
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=EstradaPlay Stable Debug,O=EstradaPlay,C=BR"
-          fi
-
-      - name: Verify EstradaPlay 1.3.0 native redesign and offline architecture
+      - name: Install fixed EstradaPlay development signer
         shell: bash
         run: |
           set -e
-          grep -q "versionName '1.3.0'" estradaplay-app/app/build.gradle
-          grep -q 'versionCode 4' estradaplay-app/app/build.gradle
+          mkdir -p "$HOME/.android"
+          base64 -d estradaplay-app/signing/estradaplay-dev.keystore.b64 > "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+
+      - name: Verify EstradaPlay 1.3.1 native redesign and offline architecture
+        shell: bash
+        run: |
+          set -e
+          grep -q "versionName '1.3.1'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 5' estradaplay-app/app/build.gradle
           grep -q "applicationId 'com.estradaplay.app'" estradaplay-app/app/build.gradle
           grep -q 'android:name=".GateActivity"' estradaplay-app/app/src/main/AndroidManifest.xml
           grep -q 'ACCESS_FINE_LOCATION' estradaplay-app/app/src/main/AndroidManifest.xml
@@ -115,13 +101,21 @@ jobs:
           php -l api/road_state_pack.php
           php -l api/road_corridor_pack.php
 
-      - name: Build EstradaPlay 1.3.0 APK
+      - name: Build EstradaPlay 1.3.1 APK
         working-directory: estradaplay-app
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Upload EstradaPlay 1.3.0 APK
+      - name: Verify fixed APK signing certificate
+        shell: bash
+        run: |
+          set -e
+          APK=estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/apksigner.txt
+          grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/apksigner.txt
+
+      - name: Upload EstradaPlay 1.3.1 APK
         uses: actions/upload-artifact@v4
         with:
-          name: EstradaPlay-1.3.0-native-redesign-apk
+          name: EstradaPlay-1.3.1-stable-signer-redesign-apk
           path: estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
