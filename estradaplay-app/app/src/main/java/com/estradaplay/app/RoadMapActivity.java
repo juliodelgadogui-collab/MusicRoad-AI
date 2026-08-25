@@ -38,13 +38,11 @@ public final class RoadMapActivity extends ComponentActivity {
     private static final String KEY_ACCOUNT = "account";
 
     private final int BG = Color.rgb(6, 8, 12);
-    private final int PANEL = Color.rgb(12, 17, 23);
     private final int BORDER = Color.rgb(37, 49, 61);
     private final int TEXT = Color.rgb(245, 248, 252);
     private final int MUTED = Color.rgb(145, 157, 170);
     private final int ACCENT = Color.rgb(255, 107, 44);
     private final int GREEN = Color.rgb(69, 212, 131);
-    private final int BLUE = Color.rgb(93, 169, 255);
 
     private FrameLayout root;
     private RoadMapView roadMap;
@@ -54,10 +52,12 @@ public final class RoadMapActivity extends ComponentActivity {
     private TextView hazardText;
     private TextView mapStateText;
     private RoadPackStore mapStore;
+    private OfflineRoadStore offlineRoadStore;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile long lastHazardRefreshAt;
     private volatile int loadedHazardCount = -1;
+    private volatile long loadedRoadRevision = Long.MIN_VALUE;
     private double lastLat = Double.NaN;
     private double lastLon = Double.NaN;
     private double lastHeading = 0.0;
@@ -79,7 +79,7 @@ public final class RoadMapActivity extends ComponentActivity {
                 lastLat = lat; lastLon = lon;
                 if (heading >= 0) lastHeading = heading;
                 if (roadMap != null) roadMap.setUserLocation(lat, lon, lastHeading);
-                refreshHazards(lat, lon, count);
+                refreshMapData(lat, lon, count);
             }
 
             if (speedText != null) speedText.setText(String.valueOf(Math.max(0, Math.round(speed))));
@@ -100,7 +100,7 @@ public final class RoadMapActivity extends ComponentActivity {
                     hazardText.setVisibility(View.VISIBLE);
                 }
             }
-            if (mapStateText != null && roadMap != null) mapStateText.setText(roadMap.status());
+            updateMapStatus();
         }
     };
 
@@ -120,6 +120,7 @@ public final class RoadMapActivity extends ComponentActivity {
             return;
         }
 
+        offlineRoadStore = new OfflineRoadStore(this);
         startSafety();
         buildUi();
         registerRoadReceiver();
@@ -148,7 +149,7 @@ public final class RoadMapActivity extends ComponentActivity {
         LinearLayout brand = new LinearLayout(this);
         brand.setOrientation(LinearLayout.VERTICAL);
         TextView logo = label("EstradaPlay", 20, TEXT, true);
-        TextView sub = label("MAPA · PROTEÇÃO AUTOMÁTICA", 9, GREEN, true);
+        TextView sub = label("MAPA LIVRE · PROTEÇÃO AUTOMÁTICA", 9, GREEN, true);
         sub.setLetterSpacing(0.12f);
         brand.addView(logo);
         brand.addView(sub);
@@ -192,7 +193,7 @@ public final class RoadMapActivity extends ComponentActivity {
         stateRow.setGravity(Gravity.CENTER_VERTICAL);
         protectionText = label("Proteção ativa", 19, TEXT, true);
         stateRow.addView(protectionText, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView offline = label("OFFLINE", 9, GREEN, true);
+        TextView offline = label("MAPA OFFLINE", 9, GREEN, true);
         offline.setGravity(Gravity.CENTER); offline.setPadding(dp(10), 0, dp(10), 0); offline.setBackground(panel(100, Color.rgb(18, 54, 40), 0));
         stateRow.addView(offline, new LinearLayout.LayoutParams(-2, dp(28)));
         bottom.addView(stateRow);
@@ -206,7 +207,7 @@ public final class RoadMapActivity extends ComponentActivity {
         hazardText.setBackground(panel(13, Color.rgb(62, 31, 22), Color.rgb(120, 54, 31)));
         bottom.addView(hazardText); setMargins(hazardText, 0, 10, 0, 0);
 
-        mapStateText = label("Carregando mapa…", 9, MUTED, false);
+        mapStateText = label("Preparando MapLibre + mapa offline…", 9, MUTED, false);
         bottom.addView(mapStateText); setMargins(mapStateText, 0, 8, 0, 0);
 
         LinearLayout actions = new LinearLayout(this);
@@ -220,7 +221,7 @@ public final class RoadMapActivity extends ComponentActivity {
         app.setOnClickListener(v -> startActivity(new Intent(this, MainActivity.class)));
     }
 
-    private void refreshHazards(double lat, double lon, int reportedCount) {
+    private void refreshMapData(double lat, double lon, int reportedCount) {
         long now = System.currentTimeMillis();
         if (now - lastHazardRefreshAt < 2500L) return;
         lastHazardRefreshAt = now;
@@ -231,9 +232,32 @@ public final class RoadMapActivity extends ComponentActivity {
                     loadedHazardCount = mapStore.hazardCount();
                 }
                 List<RoadHazard> nearby = mapStore.nearby(lat, lon, 5200);
-                ui.post(() -> { if (roadMap != null) roadMap.setHazards(nearby); });
+                if (offlineRoadStore == null) offlineRoadStore = new OfflineRoadStore(this);
+                long revision = offlineRoadStore.revision();
+                String roads = null;
+                if (revision != loadedRoadRevision) {
+                    roads = offlineRoadStore.combinedGeoJson(lat, lon);
+                    loadedRoadRevision = revision;
+                }
+                final String finalRoads = roads;
+                ui.post(() -> {
+                    if (roadMap != null) {
+                        roadMap.setHazards(nearby);
+                        if (finalRoads != null) roadMap.setOfflineRoadGeoJson(finalRoads);
+                    }
+                    updateMapStatus();
+                });
             } catch (Throwable ignored) {}
         });
+    }
+
+    private void updateMapStatus() {
+        if (mapStateText == null || roadMap == null) return;
+        StringBuilder value = new StringBuilder(roadMap.status());
+        if (offlineRoadStore != null && Double.isFinite(lastLat) && Double.isFinite(lastLon)) {
+            value.append(" · ").append(offlineRoadStore.status(lastLat, lastLon));
+        }
+        mapStateText.setText(value.toString());
     }
 
     private void seedLocation() {
@@ -251,7 +275,7 @@ public final class RoadMapActivity extends ComponentActivity {
                 lastLat = best.getLatitude(); lastLon = best.getLongitude();
                 if (best.hasBearing()) lastHeading = best.getBearing();
                 roadMap.setUserLocation(lastLat, lastLon, lastHeading);
-                refreshHazards(lastLat, lastLon, 0);
+                refreshMapData(lastLat, lastLon, 0);
             }
         } catch (Throwable ignored) {}
     }
@@ -327,8 +351,16 @@ public final class RoadMapActivity extends ComponentActivity {
 
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
+    @Override protected void onStart() { super.onStart(); if (roadMap != null) roadMap.onStartMap(); }
+    @Override protected void onResume() { super.onResume(); if (roadMap != null) roadMap.onResumeMap(); }
+    @Override protected void onPause() { if (roadMap != null) roadMap.onPauseMap(); super.onPause(); }
+    @Override protected void onStop() { if (roadMap != null) roadMap.onStopMap(); super.onStop(); }
+    @Override public void onLowMemory() { super.onLowMemory(); if (roadMap != null) roadMap.onLowMemoryMap(); }
+    @Override protected void onSaveInstanceState(Bundle outState) { if (roadMap != null) roadMap.onSaveMap(outState); super.onSaveInstanceState(outState); }
+
     @Override protected void onDestroy() {
         try { unregisterReceiver(roadReceiver); } catch (Throwable ignored) {}
+        if (roadMap != null) roadMap.onDestroyMap();
         io.shutdownNow();
         super.onDestroy();
     }
