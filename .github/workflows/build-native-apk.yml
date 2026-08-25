@@ -1,4 +1,4 @@
-# EstradaPlay 1.1.0 — offline-first music + passive GPS road safety
+# EstradaPlay 1.2.0 — offline-first music + state safety base + 250 km travel reserve
 name: Build EstradaPlay Native APK
 
 on:
@@ -7,12 +7,18 @@ on:
     paths:
       - 'estradaplay-app/**'
       - 'api/road_pack.php'
+      - 'api/road_state_pack.php'
+      - 'api/road_corridor_pack.php'
+      - 'api/road_safety_pack_helpers.php'
       - '.github/workflows/build-native-apk.yml'
   pull_request:
     branches: [main]
     paths:
       - 'estradaplay-app/**'
       - 'api/road_pack.php'
+      - 'api/road_state_pack.php'
+      - 'api/road_corridor_pack.php'
+      - 'api/road_safety_pack_helpers.php'
       - '.github/workflows/build-native-apk.yml'
   workflow_dispatch:
 
@@ -62,29 +68,29 @@ jobs:
               -dname "CN=EstradaPlay Stable Debug,O=EstradaPlay,C=BR"
           fi
 
-      - name: Verify EstradaPlay 1.1.0 offline architecture
+      - name: Verify EstradaPlay 1.2.0 offline architecture
         shell: bash
         run: |
           set -e
-          grep -q "versionName '1.1.0'" estradaplay-app/app/build.gradle
-          grep -q 'versionCode 2' estradaplay-app/app/build.gradle
+          grep -q "versionName '1.2.0'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 3' estradaplay-app/app/build.gradle
           grep -q "applicationId 'com.estradaplay.app'" estradaplay-app/app/build.gradle
           grep -q 'android:name=".GateActivity"' estradaplay-app/app/src/main/AndroidManifest.xml
           grep -q 'ACCESS_FINE_LOCATION' estradaplay-app/app/src/main/AndroidManifest.xml
-          grep -q 'FOREGROUND_SERVICE_LOCATION' estradaplay-app/app/src/main/AndroidManifest.xml
           grep -q 'foregroundServiceType="location"' estradaplay-app/app/src/main/AndroidManifest.xml
-          grep -q 'class RoadSafetyService extends Service' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'packs.nearby' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'forward = east' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'lateral = Math.abs' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'Semáforo à frente' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'Quebra-molas à frente' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'class RoadPackStore' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
-          grep -q 'api/road_pack.php' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
-          grep -q 'highway\"=\"traffic_signals' api/road_pack.php
-          grep -q 'traffic_calming' api/road_pack.php
-          grep -q 'toll_booth' api/road_pack.php
-          grep -q 'level_crossing' api/road_pack.php
+          grep -q 'RESERVE_DISTANCE_M = 250000' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'api/road_corridor_pack.php' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'api/road_state_pack.php' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'prepareTravelReserve' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'reserve_km", 250' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'Base estadual + reserva de até 250 km' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'getLong' estradaplay-app/app/src/main/java/com/estradaplay/app/ApiClient.java
+          grep -q "\['SP','RJ','MG','ES'\]" api/road_state_pack.php
+          grep -q 'distance=%d&width=%d' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'traffic_signals' api/road_safety_pack_helpers.php
+          grep -q 'traffic_calming' api/road_safety_pack_helpers.php
+          grep -q 'toll_booth' api/road_safety_pack_helpers.php
+          grep -q 'level_crossing' api/road_safety_pack_helpers.php
           grep -q 'class DownloadService extends Service' estradaplay-app/app/src/main/java/com/estradaplay/app/DownloadService.java
           grep -q 'class PlayerService extends Service' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
           grep -q 'new File(t.localPath)' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
@@ -98,16 +104,20 @@ jobs:
             echo 'Old MusicRoad package leaked into clean EstradaPlay app'; exit 1
           fi
 
-      - name: PHP lint road pack endpoint
-        run: php -l api/road_pack.php
+      - name: PHP lint offline safety endpoints
+        run: |
+          php -l api/road_pack.php
+          php -l api/road_safety_pack_helpers.php
+          php -l api/road_state_pack.php
+          php -l api/road_corridor_pack.php
 
-      - name: Build EstradaPlay 1.1.0 APK
+      - name: Build EstradaPlay 1.2.0 APK
         working-directory: estradaplay-app
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Upload EstradaPlay 1.1.0 APK
+      - name: Upload EstradaPlay 1.2.0 APK
         uses: actions/upload-artifact@v4
         with:
-          name: EstradaPlay-1.1.0-offline-road-safety-apk
+          name: EstradaPlay-1.2.0-state-250km-offline-apk
           path: estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
