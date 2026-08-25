@@ -100,7 +100,7 @@ public final class RoadSafetyService extends Service {
         double speedKmh = speedKmh(loc);
         previous = new Location(loc);
 
-        ensureCoverage(loc.getLatitude(), loc.getLongitude());
+        ensureCoverage(loc.getLatitude(), loc.getLongitude(), heading);
         List<RoadHazard> nearby = packs.nearby(loc.getLatitude(), loc.getLongitude(), 1900);
         RoadHazard best = null;
         double bestForward = Double.MAX_VALUE;
@@ -133,25 +133,25 @@ public final class RoadSafetyService extends Service {
             if (now - lastNotificationAt > 7000L) {
                 String state = packs.hasAnyCoverage(loc.getLatitude(), loc.getLongitude())
                         ? packs.status(loc.getLatitude(), loc.getLongitude())
-                        : (fetching.get() ? "Baixando alertas desta área…" : "Aguardando pacote offline desta área");
+                        : (fetching.get() ? "Preparando base estadual e reserva de viagem…" : "Aguardando proteção offline desta região");
                 updateNotification("Proteção na estrada ativa", state, false);
                 broadcast(loc, speedKmh, null, 0, state);
             }
         }
     }
 
-    private void ensureCoverage(double lat, double lon) {
-        if (packs.hasFreshCoreCoverage(lat, lon) || fetching.get()) return;
+    private void ensureCoverage(double lat, double lon, float heading) {
+        if (!packs.needsPreparation(lat, lon, heading) || fetching.get()) return;
         if (api.cookie() == null || api.cookie().trim().isEmpty()) return;
         if (!fetching.compareAndSet(false, true)) return;
-        updateNotification("Preparando alertas offline", "Baixando radares, semáforos e obstáculos da região", false);
+        updateNotification("Preparando viagem offline", "Base estadual + reserva de até 250 km à frente", false);
         io.execute(() -> {
-            try { packs.fetchCoverage(api, lat, lon); }
+            try { packs.prepareTravelReserve(api, lat, lon, heading); }
             finally {
                 fetching.set(false);
                 String text = packs.hasAnyCoverage(lat, lon)
-                        ? "Pacote salvo no aparelho · " + packs.hazardCount() + " pontos"
-                        : "Não consegui atualizar agora; usando o que já estiver offline";
+                        ? packs.status(lat, lon)
+                        : "Não consegui atualizar agora; usando os alertas já salvos";
                 updateNotification("Proteção na estrada ativa", text, false);
             }
         });
@@ -262,6 +262,8 @@ public final class RoadSafetyService extends Service {
         i.putExtra("speed_kmh", speedKmh);
         i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f);
         i.putExtra("pack_count", packs.packCount());
+        i.putExtra("state_pack_count", packs.statePackCount());
+        i.putExtra("reserve_km", 250);
         i.putExtra("hazard_count", packs.hazardCount());
         i.putExtra("status", status == null ? "" : status);
         if (h != null) {
@@ -280,7 +282,7 @@ public final class RoadSafetyService extends Service {
         NotificationManager nm = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         if (nm == null) return;
         NotificationChannel ch = new NotificationChannel(CHANNEL, "Alertas da estrada", NotificationManager.IMPORTANCE_LOW);
-        ch.setDescription("GPS e alertas offline de radares, semáforos e obstáculos.");
+        ch.setDescription("GPS e alertas offline com base estadual e reserva de viagem.");
         ch.setSound(null, null);
         nm.createNotificationChannel(ch);
     }
