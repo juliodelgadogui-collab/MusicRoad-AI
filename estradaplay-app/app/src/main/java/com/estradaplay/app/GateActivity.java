@@ -77,7 +77,7 @@ public final class GateActivity extends ComponentActivity {
         Button allow = button("ATIVAR PROTEÇÃO", true); page.addView(allow, new LinearLayout.LayoutParams(-1, dp(58)));
         Button skip = button("CONTINUAR SEM GPS", false); page.addView(skip, new LinearLayout.LayoutParams(-1, dp(50))); margins(skip, 0, 8, 0, 0);
         allow.setOnClickListener(v -> requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOCATION));
-        skip.setOnClickListener(v -> openApp());
+        skip.setOnClickListener(v -> startActivity(new Intent(this, MainActivity.class)));
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
@@ -101,7 +101,7 @@ public final class GateActivity extends ComponentActivity {
     }
 
     private void openApp() {
-        startActivity(new Intent(this, MainActivity.class));
+        startActivity(new Intent(this, RoadMapActivity.class));
         finish();
     }
 
