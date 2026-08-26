@@ -12,8 +12,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  cleanup-and-rebuild:
-    runs-on: ubuntu-latest
+  cleanup:
+    runs-on: ubuntu-22.04
     steps:
       - name: Delete existing Actions artifacts only
         shell: bash
@@ -34,13 +34,3 @@ jobs:
             done <<< "$ids"
             echo "Deleted ${count} Actions artifacts."
           fi
-
-      - name: Trigger fresh EstradaPlay build
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-          sleep 10
-          gh workflow run build-native-apk.yml --ref agent/native-apk-build
-          echo "Fresh build dispatched."
