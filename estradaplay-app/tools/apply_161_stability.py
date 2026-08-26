@@ -1,6 +1,9 @@
 from pathlib import Path
 
-p = Path(__file__).resolve().parents[1] / 'app/src/main/java/com/estradaplay/app/MainActivity.java'
+root = Path(__file__).resolve().parents[1]
+
+# --- MainActivity: stable map startup + in-app GPS authorization ---
+p = root / 'app/src/main/java/com/estradaplay/app/MainActivity.java'
 s = p.read_text(encoding='utf-8')
 
 s = s.replace(
@@ -83,6 +86,51 @@ insert = '''    private void clearDownloadViews() { downloadTitle = null; downlo
 if anchor not in s:
     raise SystemExit('1.6.1 permission result anchor not found')
 s = s.replace(anchor, insert, 1)
-
 p.write_text(s, encoding='utf-8')
-print('EstradaPlay 1.6.1 crash-safe launcher and in-app GPS gate applied')
+
+# --- RoadPackStore: one-time ES cache reset + resilient forced refresh ---
+p = root / 'app/src/main/java/com/estradaplay/app/RoadPackStore.java'
+s = p.read_text(encoding='utf-8')
+
+constructor = '''        dir = new File(app.getFilesDir(), "road_safety_packs");
+        if (!dir.exists()) dir.mkdirs();
+        loadDisk();
+'''
+constructor_new = '''        dir = new File(app.getFilesDir(), "road_safety_packs");
+        if (!dir.exists()) dir.mkdirs();
+        migrateEsStateV13();
+        loadDisk();
+'''
+if constructor not in s:
+    raise SystemExit('1.6.1 RoadPackStore constructor anchor not found')
+s = s.replace(constructor, constructor_new, 1)
+
+insert_anchor = '''    synchronized int packCount() { return packs.size(); }
+'''
+migration = '''    private void migrateEsStateV13() {
+        try {
+            android.content.SharedPreferences m = app.getSharedPreferences("estradaplay_migrations", Context.MODE_PRIVATE);
+            if (m.getBoolean("es_state_v13_reset", false)) return;
+            File legacy = new File(dir, "state_es.json");
+            if (legacy.isFile()) legacy.delete();
+            m.edit().putBoolean("es_state_v13_reset", true).apply();
+        } catch (Throwable ignored) {}
+    }
+
+    synchronized int packCount() { return packs.size(); }
+'''
+if insert_anchor not in s:
+    raise SystemExit('1.6.1 RoadPackStore migration anchor not found')
+s = s.replace(insert_anchor, migration, 1)
+
+state_call = '''            ApiClient.Response response=api.getLong("api/road_state_pack.php?uf="+uf);
+'''
+state_call_new = '''            String statePath="api/road_state_pack.php?uf="+uf+("ES".equals(uf)?"&refresh=1":"");
+            ApiClient.Response response=api.getLong(statePath);
+'''
+if state_call not in s:
+    raise SystemExit('1.6.1 RoadPackStore state refresh anchor not found')
+s = s.replace(state_call, state_call_new, 1)
+p.write_text(s, encoding='utf-8')
+
+print('EstradaPlay 1.6.1 stability + ES cache reset/forced refresh applied')
