@@ -1,4 +1,4 @@
-# EstradaPlay 1.6.0 — premium landscape automotive cockpit + in-app permissions + voice ducking
+# EstradaPlay 1.6.1 — startup stability + resilient Espírito Santo alerts
 name: Build EstradaPlay Native APK
 
 on:
@@ -8,16 +8,10 @@ on:
       - 'estradaplay-app/**'
       - 'admin_radares.php'
       - 'api/radar_db.php'
-      - 'api/radars.php'
-      - 'api/import_radars.php'
-      - 'importers/RadarImporter.php'
-      - 'api/road_pack.php'
+      - 'api/road_hazard_db.php'
       - 'api/road_state_pack.php'
       - 'api/road_corridor_pack.php'
       - 'api/road_safety_pack_helpers.php'
-      - 'api/road_map_helpers.php'
-      - 'api/road_map_state.php'
-      - 'api/road_map_corridor.php'
       - '.github/workflows/build-native-apk.yml'
   pull_request:
     branches: [main]
@@ -25,16 +19,10 @@ on:
       - 'estradaplay-app/**'
       - 'admin_radares.php'
       - 'api/radar_db.php'
-      - 'api/radars.php'
-      - 'api/import_radars.php'
-      - 'importers/RadarImporter.php'
-      - 'api/road_pack.php'
+      - 'api/road_hazard_db.php'
       - 'api/road_state_pack.php'
       - 'api/road_corridor_pack.php'
       - 'api/road_safety_pack_helpers.php'
-      - 'api/road_map_helpers.php'
-      - 'api/road_map_state.php'
-      - 'api/road_map_corridor.php'
       - '.github/workflows/build-native-apk.yml'
   workflow_dispatch:
 
@@ -70,82 +58,56 @@ jobs:
           keytool -list -v -keystore estradaplay-app/signing/estradaplay-dev.keystore -storepass android -alias androiddebugkey | tee /tmp/keytool.txt
           grep -q 'C2:D8:8A:15:B1:34:F4:35:DE:9F:B5:32:69:9E:93:FC:D4:6B:C3:59:00:A0:86:57:5F:CB:2B:F7:F2:F6:6F:DB' /tmp/keytool.txt
 
-      - name: Apply EstradaPlay visual shell compatibility
+      - name: Apply EstradaPlay visual compatibility
         run: python3 estradaplay-app/tools/apply_151.py
 
-      - name: Apply EstradaPlay alert cache fixes
+      - name: Apply EstradaPlay cache and ES compatibility
         run: python3 estradaplay-app/tools/apply_152_alert_fix.py
 
-      - name: Apply EstradaPlay 1.6 automotive routing
+      - name: Apply 1.6 permission behavior
         run: python3 estradaplay-app/tools/apply_160_automotive.py
 
-      - name: Verify EstradaPlay 1.6 premium automotive architecture
+      - name: Apply 1.6.1 startup stability
+        run: python3 estradaplay-app/tools/apply_161_stability.py
+
+      - name: Verify EstradaPlay 1.6.1 stability and ES alert architecture
         shell: bash
         run: |
           set -e
-          grep -q "versionName '1.6.0'" estradaplay-app/app/build.gradle
-          grep -q 'versionCode 10' estradaplay-app/app/build.gradle
+          grep -q "versionName '1.6.1'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 11' estradaplay-app/app/build.gradle
           grep -q "applicationId 'com.estradaplay.app'" estradaplay-app/app/build.gradle
-          grep -q "storeFile estradaPlayDevKey" estradaplay-app/app/build.gradle
-          grep -q "org.maplibre.gl:android-sdk:13.4.1" estradaplay-app/app/build.gradle
-
-          grep -q 'android:name=".AutomotiveActivity"' estradaplay-app/app/src/main/AndroidManifest.xml
           grep -q 'android:screenOrientation="sensorLandscape"' estradaplay-app/app/src/main/AndroidManifest.xml
-          grep -q 'class AutomotiveActivity extends ComponentActivity' estradaplay-app/app/src/main/java/com/estradaplay/app/AutomotiveActivity.java
-          grep -q 'WindowInsets.Type.statusBars' estradaplay-app/app/src/main/java/com/estradaplay/app/AutomotiveActivity.java
-          grep -q 'Você libera cada recurso por aqui' estradaplay-app/app/src/main/java/com/estradaplay/app/AutomotiveActivity.java
-          grep -q 'requestPermissions(new String\[\]{Manifest.permission.ACCESS_FINE_LOCATION' estradaplay-app/app/src/main/java/com/estradaplay/app/AutomotiveActivity.java
-          grep -q 'Runtime permissions are intentionally NOT requested here' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java
+          grep -q 'new Intent(this, RoadMapActivity.class)' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java
+          grep -q 'showLocationPermissionGate' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'ATIVAR LOCALIZAÇÃO' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          if grep -q 'new Intent(this, AutomotiveActivity.class)' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java; then
+            echo 'Experimental AutomotiveActivity must not be a 1.6.1 navigation target'; exit 1
+          fi
           if grep -q 'requestPermissions' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java; then
-            echo 'GateActivity must not request runtime permissions'; exit 1
+            echo 'Launcher must not request runtime permissions'; exit 1
           fi
-          if grep -q 'requestNotifications();' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java; then
-            echo 'Notifications must not be requested automatically before cockpit explanation'; exit 1
-          fi
-          grep -q 'new Intent(this, AutomotiveActivity.class)' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
-
-          grep -q 'ACTION_DUCK' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
-          grep -q 'alertDuck = 0.22f' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
-          grep -q 'AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'case "PEDAGIO"' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'case "PASSAGEM_NIVEL"' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'case "QUEBRA_MOLAS"' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-          grep -q 'case "SEMAFORO"' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-
-          grep -q 'looksLikeEs' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
-          grep -q 'hazards.length()==0' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'MapLibre.getInstance' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapView.java
           grep -q 'RESERVE_DISTANCE_M = 250000' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'new File(t.localPath)' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
-          if grep -q 'drive_stream.php\|DriveMediaResolver\|HttpURLConnection' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java; then
-            echo 'Player must remain local-only'; exit 1
-          fi
-          if grep -q 'com.mapbox.maps:android' estradaplay-app/app/build.gradle; then
-            echo 'Direct Mapbox Maps SDK must not be required'; exit 1
-          fi
-          if grep -R -q '^import com\.mapbox\.maps' estradaplay-app/app/src/main/java; then
-            echo 'Mapbox map imports found'; exit 1
-          fi
-          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app/app/src/main/java; then
-            echo 'WebView found in EstradaPlay source'; exit 1
-          fi
+          grep -q 'case "PEDAGIO"' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'case "PASSAGEM_NIVEL"' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'overpass.private.coffee' api/road_hazard_db.php
+          grep -q 'road_hazard_sync_es_chunks' api/road_hazard_db.php
+          grep -q 'exactArea' api/road_hazard_db.php
+          if grep -q 'com.mapbox.maps:android' estradaplay-app/app/build.gradle; then exit 1; fi
+          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app/app/src/main/java; then exit 1; fi
 
-      - name: PHP lint road safety endpoints
+      - name: PHP lint alert server files
         run: |
           php -l admin_radares.php
           php -l api/radar_db.php
-          php -l api/radars.php
-          php -l api/import_radars.php
-          php -l importers/RadarImporter.php
-          php -l api/road_pack.php
+          php -l api/road_hazard_db.php
           php -l api/road_safety_pack_helpers.php
           php -l api/road_state_pack.php
           php -l api/road_corridor_pack.php
-          php -l api/road_map_helpers.php
-          php -l api/road_map_state.php
-          php -l api/road_map_corridor.php
 
-      - name: Build EstradaPlay 1.6.0 APK
+      - name: Build EstradaPlay 1.6.1 APK
         working-directory: estradaplay-app
         run: gradle --no-daemon clean assembleDebug
 
@@ -157,9 +119,38 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/apksigner.txt
           grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/apksigner.txt
 
-      - name: Upload EstradaPlay 1.6.0 APK
+      - name: Package 1.6.1 ES server hotfix
+        shell: bash
+        run: |
+          set -e
+          rm -rf /tmp/ep161
+          mkdir -p /tmp/ep161/api
+          cp admin_radares.php /tmp/ep161/
+          cp api/radar_db.php /tmp/ep161/api/
+          cp api/road_hazard_db.php /tmp/ep161/api/
+          cp api/road_safety_pack_helpers.php /tmp/ep161/api/
+          cp api/road_state_pack.php /tmp/ep161/api/
+          cp api/road_corridor_pack.php /tmp/ep161/api/
+          cat > /tmp/ep161/LEIA-PRIMEIRO.txt <<'EOF'
+          EstradaPlay 1.6.1 — HOTFIX ALERTAS ES
+          Extraia na raiz do servidor, sobrescrevendo os arquivos.
+          NÃO apague config.php, MariaDB, usuários ou músicas/metadados.
+          Depois abra Central de Alertas Rodoviários e toque em Sincronizar ES.
+          O sincronizador tenta vários servidores Overpass e usa blocos menores no ES se necessário.
+          EOF
+          (cd /tmp/ep161 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES.zip" .)
+          unzip -t EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES.zip
+
+      - name: Upload EstradaPlay 1.6.1 APK
         uses: actions/upload-artifact@v4
         with:
-          name: EstradaPlay-1.6.0-premium-automotive-landscape-apk
+          name: EstradaPlay-1.6.1-stability-ES-alerts-apk
           path: estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload EstradaPlay 1.6.1 ES hotfix
+        uses: actions/upload-artifact@v4
+        with:
+          name: EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES
+          path: EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES.zip
           if-no-files-found: error
