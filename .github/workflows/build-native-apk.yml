@@ -19,24 +19,15 @@ on:
       - 'api/road_safety_pack_helpers.php'
       - '.github/scripts/**'
       - '.github/workflows/build-native-apk.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'estradaplay-app/**'
-      - 'admin_radares.php'
-      - 'api/radar_db.php'
-      - 'api/road_hazard_db.php'
-      - 'api/road_pack.php'
-      - 'api/road_state_pack.php'
-      - 'api/road_corridor_pack.php'
-      - 'api/road_safety_pack_helpers.php'
-      - '.github/scripts/**'
-      - '.github/workflows/build-native-apk.yml'
   workflow_dispatch:
+
+concurrency:
+  group: estradaplay-native-${{ github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   build-debug-apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -164,7 +155,6 @@ jobs:
           cp estradaplay-app/app/build/outputs/apk/debug/app-debug.apk EstradaPlay-1.7.2.apk
 
       - name: Upload short-lived direct-download artifact
-        if: github.event_name != 'pull_request'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -176,7 +166,6 @@ jobs:
           compression-level: 0
 
       - name: Publish EstradaPlay 1.7.2 release assets
-        if: github.event_name != 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
