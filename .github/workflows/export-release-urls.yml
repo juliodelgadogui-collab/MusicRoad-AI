@@ -12,23 +12,29 @@ on:
 
 jobs:
   export-urls:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - name: Analyze APK transfer size
+      - name: Export temporary signed URLs for EstradaPlay 1.7.3
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl -sSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/octet-stream" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/530917759" \
-            -o /tmp/EstradaPlay-1.7.0.apk
-          cp /tmp/EstradaPlay-1.7.0.apk /tmp/thin.apk
-          zip -dq /tmp/thin.apk 'lib/*' || true
-          echo "FULL_SIZE=$(stat -c%s /tmp/EstradaPlay-1.7.0.apk)"
-          echo "THIN_SIZE=$(stat -c%s /tmp/thin.apk)"
-          echo 'TOP_APK_ENTRIES:'
-          unzip -l /tmp/EstradaPlay-1.7.0.apk | awk 'NF==4 && $1 ~ /^[0-9]+$/ {print $1, $4}' | sort -nr | head -25
+          export_url() {
+            local asset_id="$1"
+            local label="$2"
+            curl -sS \
+              -D "/tmp/${label}.headers" \
+              -o /dev/null \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/octet-stream" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+            local url
+            url="$(tr -d '\r' < "/tmp/${label}.headers" | awk 'BEGIN{IGNORECASE=1} /^location: / {sub(/^location: /, ""); print; exit}')"
+            test -n "$url"
+            echo "${label}_SIGNED_URL=${url}"
+          }
+
+          export_url 531244766 APK
+          export_url 531244765 SERVER
