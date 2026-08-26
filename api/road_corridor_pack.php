@@ -24,6 +24,14 @@ $padLat=$width/110540.0;
 $midLat=array_sum($lats)/max(1,count($lats));
 $padLon=$width/(111320.0*max(0.25,cos(deg2rad($midLat))));
 $minLat=min($lats)-$padLat;$maxLat=max($lats)+$padLat;$minLon=min($lons)-$padLon;$maxLon=max($lons)+$padLon;
+$normalizeLocalType=static function($raw): string {
+    $v=strtoupper(trim((string)$raw));
+    if(stripos($v,'QUEBRA')!==false||stripos($v,'LOMB')!==false)return 'QUEBRA_MOLAS';
+    if(stripos($v,'SEM')===0)return 'SEMAFORO';
+    if(stripos($v,'PED')===0)return 'PEDAGIO';
+    if(stripos($v,'PASS')===0)return 'PASSAGEM_NIVEL';
+    return 'RADAR';
+};
 
 road_hazard_ensure_tables();
 $items=[];$seen=[];$localCount=0;$storedCount=0;$osmOk=false;$message='';
@@ -35,7 +43,7 @@ try{
         if(ep2_distance_to_line($rlat,$rlon,$line)>$width+1200)continue;
         ep2_add($items,$seen,[
             'id'=>!empty($r['external_id'])?(string)$r['external_id']:'db-radar-'.(string)$r['id'],
-            'type'=>'RADAR','lat'=>$rlat,'lon'=>$rlon,'road'=>$r['rodovia']??'',
+            'type'=>$normalizeLocalType($r['tipo']??'RADAR'),'lat'=>$rlat,'lon'=>$rlon,'road'=>$r['rodovia']??'',
             'speed'=>ep2_speed($r['velocidade']??null),
             'heading'=>is_numeric($r['heading']??null)?(float)$r['heading']:ep2_heading($r['sentido']??null),
             'source'=>$r['fonte']??'BASE_LOCAL'
