@@ -57,6 +57,9 @@ if old not in s:
     raise SystemExit('1.6.1 openCockpit anchor not found')
 s = s.replace(old, new, 1)
 
+# Remove every remaining route to the crash-prone experimental cockpit.
+s = s.replace('new Intent(this, AutomotiveActivity.class)', 'new Intent(this, RoadMapActivity.class)')
+
 anchor = '''    private void clearDownloadViews() { downloadTitle = null; downloadState = null; downloadProgress = null; }
 
     @Override protected void onDestroy() {
