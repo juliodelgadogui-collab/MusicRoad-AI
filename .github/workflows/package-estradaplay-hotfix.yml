@@ -1,0 +1,71 @@
+name: Package EstradaPlay 1.5.2 Radar Hotfix
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/workflows/package-estradaplay-hotfix.yml'
+  workflow_dispatch:
+
+jobs:
+  package-hotfix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate PHP files
+        run: |
+          php -l admin_radares.php
+          php -l api/radar_db.php
+          php -l api/radars.php
+          php -l api/import_radars.php
+          php -l api/road_safety_pack_helpers.php
+          php -l api/road_state_pack.php
+          php -l api/road_corridor_pack.php
+          php -l importers/RadarImporter.php
+
+      - name: Build hotfix archive
+        shell: bash
+        run: |
+          set -e
+          mkdir -p hotfix/api hotfix/importers
+          cp admin_radares.php hotfix/
+          cp api/radar_db.php hotfix/api/
+          cp api/radars.php hotfix/api/
+          cp api/import_radars.php hotfix/api/
+          cp api/road_safety_pack_helpers.php hotfix/api/
+          cp api/road_state_pack.php hotfix/api/
+          cp api/road_corridor_pack.php hotfix/api/
+          cp importers/RadarImporter.php hotfix/importers/
+          cat > hotfix/LEIA-PRIMEIRO.txt <<'EOF'
+          EstradaPlay 1.5.2 — HOTFIX RADARES / ESPIRITO SANTO / ADM
+
+          1. Envie este ZIP para a RAIZ do servidor e extraia mantendo as pastas.
+          2. Sobrescreva os arquivos quando solicitado.
+          3. NAO apague config.php, MariaDB, usuarios, biblioteca ou musicas.
+          4. Este pacote NAO contem credenciais, banco de dados, APK ou arquivos de audio.
+
+          Corrige:
+          - pagina admin_radares.php em servidor MariaDB;
+          - gravacao de radares sem sintaxe SQLite no MariaDB;
+          - identificacao ES/RJ na divisa;
+          - UF de radares OSM sem estado preenchido;
+          - pacote estadual ES que podia ficar vazio em cache;
+          - timeout da consulta estadual ao OpenStreetMap;
+          - reserva de alertas de aproximadamente 250 km.
+
+          Depois de instalar o hotfix, instale o APK EstradaPlay 1.5.2.
+          O app descarta automaticamente pacotes estaduais vazios antigos e tenta
+          baixar novamente a base do estado quando houver internet e GPS.
+          EOF
+          (cd hotfix && zip -r -9 ../EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM.zip .)
+          unzip -t EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM.zip
+          sha256sum EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM.zip
+
+      - name: Upload hotfix
+        uses: actions/upload-artifact@v4
+        with:
+          name: EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM
+          path: EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM.zip
+          if-no-files-found: error
