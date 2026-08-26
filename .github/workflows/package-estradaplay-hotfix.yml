@@ -1,10 +1,19 @@
-name: Package EstradaPlay 1.5.2 Radar Hotfix
+name: Package EstradaPlay 1.5.2 Unified Alerts Hotfix
 
 on:
   push:
     branches: [agent/native-apk-build]
     paths:
       - '.github/workflows/package-estradaplay-hotfix.yml'
+      - 'admin_radares.php'
+      - 'api/radar_db.php'
+      - 'api/radars.php'
+      - 'api/import_radars.php'
+      - 'api/road_safety_pack_helpers.php'
+      - 'api/road_hazard_db.php'
+      - 'api/road_state_pack.php'
+      - 'api/road_corridor_pack.php'
+      - 'importers/RadarImporter.php'
   workflow_dispatch:
 
 jobs:
@@ -21,9 +30,19 @@ jobs:
           php -l api/radars.php
           php -l api/import_radars.php
           php -l api/road_safety_pack_helpers.php
+          php -l api/road_hazard_db.php
           php -l api/road_state_pack.php
           php -l api/road_corridor_pack.php
           php -l importers/RadarImporter.php
+
+      - name: Verify unified alert architecture
+        run: |
+          grep -q "road_hazard_sync_state" admin_radares.php
+          grep -q "QUEBRA_MOLAS" admin_radares.php
+          grep -q "road_hazard_state_rows" api/road_state_pack.php
+          grep -q "road_hazard_bbox_rows" api/road_corridor_pack.php
+          grep -q "CREATE TABLE IF NOT EXISTS road_hazards" api/road_hazard_db.php
+          grep -q "Sincronização retornou zero itens" api/road_hazard_db.php
 
       - name: Build hotfix archive
         shell: bash
@@ -35,37 +54,42 @@ jobs:
           cp api/radars.php hotfix/api/
           cp api/import_radars.php hotfix/api/
           cp api/road_safety_pack_helpers.php hotfix/api/
+          cp api/road_hazard_db.php hotfix/api/
           cp api/road_state_pack.php hotfix/api/
           cp api/road_corridor_pack.php hotfix/api/
           cp importers/RadarImporter.php hotfix/importers/
           cat > hotfix/LEIA-PRIMEIRO.txt <<'EOF'
-          EstradaPlay 1.5.2 — HOTFIX RADARES / ESPIRITO SANTO / ADM
+          EstradaPlay 1.5.2 — HOTFIX BASE UNIFICADA DE ALERTAS
 
           1. Envie este ZIP para a RAIZ do servidor e extraia mantendo as pastas.
           2. Sobrescreva os arquivos quando solicitado.
           3. NAO apague config.php, MariaDB, usuarios, biblioteca ou musicas.
           4. Este pacote NAO contem credenciais, banco de dados, APK ou arquivos de audio.
 
-          Corrige:
-          - pagina admin_radares.php em servidor MariaDB;
-          - gravacao de radares sem sintaxe SQLite no MariaDB;
-          - identificacao ES/RJ na divisa;
-          - UF de radares OSM sem estado preenchido;
-          - pacote estadual ES que podia ficar vazio em cache;
-          - timeout da consulta estadual ao OpenStreetMap;
-          - reserva de alertas de aproximadamente 250 km.
+          O que muda:
+          - Central de Radares vira Central de Alertas Rodoviarios;
+          - mostra radares, quebra-molas, semaforos, pedagios e passagens de nivel;
+          - cria base persistente leve road_hazards no MariaDB/SQLite;
+          - botoes para sincronizar ES, RJ, MG e SP diretamente pelo ADM;
+          - dados do OpenStreetMap ficam salvos como coordenadas/metadados;
+          - se uma sincronizacao retornar zero itens, a base anterior NAO e apagada;
+          - pacote estadual e corredor reutilizam a base persistente;
+          - alertas locais mantem o tipo correto (quebra-molas nao vira radar);
+          - fallback por caixa geografica quando a consulta administrativa do OSM falhar.
 
-          Depois de instalar o hotfix, instale o APK EstradaPlay 1.5.2.
-          O app descarta automaticamente pacotes estaduais vazios antigos e tenta
-          baixar novamente a base do estado quando houver internet e GPS.
+          Depois de instalar:
+          1. Abra ADM > Central de Alertas Rodoviarios.
+          2. Toque em Sincronizar ES.
+          3. Aguarde o resultado e confirme os contadores por tipo.
+          4. Repita para RJ, MG e SP quando desejar.
           EOF
-          (cd hotfix && zip -r -9 ../EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM.zip .)
-          unzip -t EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM.zip
-          sha256sum EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM.zip
+          (cd hotfix && zip -r -9 ../EstradaPlay-1.5.2-HOTFIX-ALERTAS-UNIFICADOS.zip .)
+          unzip -t EstradaPlay-1.5.2-HOTFIX-ALERTAS-UNIFICADOS.zip
+          sha256sum EstradaPlay-1.5.2-HOTFIX-ALERTAS-UNIFICADOS.zip
 
       - name: Upload hotfix
         uses: actions/upload-artifact@v4
         with:
-          name: EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM
-          path: EstradaPlay-1.5.2-HOTFIX-RADARES-ES-ADM.zip
+          name: EstradaPlay-1.5.2-HOTFIX-ALERTAS-UNIFICADOS
+          path: EstradaPlay-1.5.2-HOTFIX-ALERTAS-UNIFICADOS.zip
           if-no-files-found: error
