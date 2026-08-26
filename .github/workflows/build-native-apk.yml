@@ -1,4 +1,5 @@
 # EstradaPlay 1.7.1 — touch-safe automotive UI + resilient ES alerts
+# Rebuild with robust touch transform b8475804
 name: Build EstradaPlay Native APK
 
 permissions:
