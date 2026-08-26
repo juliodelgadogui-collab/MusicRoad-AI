@@ -1,6 +1,10 @@
 # EstradaPlay 1.6.1 — startup stability + resilient Espírito Santo alerts
 name: Build EstradaPlay Native APK
 
+permissions:
+  contents: read
+  actions: write
+
 on:
   push:
     branches: [agent/native-apk-build]
@@ -141,12 +145,28 @@ jobs:
           (cd /tmp/ep161 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES.zip" .)
           unzip -t EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES.zip
 
+      - name: Free obsolete EstradaPlay artifact storage
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          echo 'Removendo somente artifacts antigos do EstradaPlay para liberar cota...'
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.name | startswith("EstradaPlay-")) | .id' > /tmp/ep-artifact-ids.txt || true
+          while read -r id; do
+            [ -z "$id" ] && continue
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || true
+          done < /tmp/ep-artifact-ids.txt
+          echo "Artifacts EstradaPlay removidos: $(wc -l < /tmp/ep-artifact-ids.txt)"
+          sleep 8
+
       - name: Upload EstradaPlay 1.6.1 APK
         uses: actions/upload-artifact@v4
         with:
           name: EstradaPlay-1.6.1-stability-ES-alerts-apk
           path: estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
 
       - name: Upload EstradaPlay 1.6.1 ES hotfix
         uses: actions/upload-artifact@v4
@@ -154,3 +174,4 @@ jobs:
           name: EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES
           path: EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES.zip
           if-no-files-found: error
+          retention-days: 7
