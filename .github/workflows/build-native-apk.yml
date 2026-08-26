@@ -1,4 +1,4 @@
-# EstradaPlay 1.6.1 — startup stability + resilient Espírito Santo alerts
+# EstradaPlay 1.7.0 — responsive automotive UI from scratch + resilient ES alerts
 name: Build EstradaPlay Native APK
 
 permissions:
@@ -74,19 +74,28 @@ jobs:
       - name: Apply 1.6.1 startup stability
         run: python3 estradaplay-app/tools/apply_161_stability.py
 
-      - name: Verify EstradaPlay 1.6.1 stability and ES alert architecture
+      - name: Apply 1.7 responsive UI from scratch
+        run: python3 estradaplay-app/tools/apply_170_responsive_ui.py
+
+      - name: Verify EstradaPlay 1.7 responsive architecture
         shell: bash
         run: |
           set -e
-          grep -q "versionName '1.6.1'" estradaplay-app/app/build.gradle
-          grep -q 'versionCode 11' estradaplay-app/app/build.gradle
+          grep -q "versionName '1.7.0'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 12' estradaplay-app/app/build.gradle
           grep -q "applicationId 'com.estradaplay.app'" estradaplay-app/app/build.gradle
           grep -q 'android:screenOrientation="sensorLandscape"' estradaplay-app/app/src/main/AndroidManifest.xml
           grep -q 'new Intent(this, RoadMapActivity.class)' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java
+          grep -q 'ADAPTIVE_COCKPIT_V170' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'screenSize()' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'ratio < 1.64f' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'LinearLayout.HORIZONTAL' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'buildRail' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'buildMapPane' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'buildRightPanel' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
           grep -q 'showLocationPermissionGate' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
-          grep -q 'ATIVAR LOCALIZAÇÃO' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
           if grep -q 'new Intent(this, AutomotiveActivity.class)' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java; then
-            echo 'Experimental AutomotiveActivity must not be a 1.6.1 navigation target'; exit 1
+            echo 'Experimental AutomotiveActivity must not be a navigation target'; exit 1
           fi
           if grep -q 'requestPermissions' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java; then
             echo 'Launcher must not request runtime permissions'; exit 1
@@ -111,7 +120,7 @@ jobs:
           php -l api/road_state_pack.php
           php -l api/road_corridor_pack.php
 
-      - name: Build EstradaPlay 1.6.1 APK
+      - name: Build EstradaPlay 1.7.0 APK
         working-directory: estradaplay-app
         run: gradle --no-daemon clean assembleDebug
 
@@ -123,40 +132,39 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/apksigner.txt
           grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/apksigner.txt
 
-      - name: Package 1.6.1 ES server hotfix
+      - name: Package 1.7.0 server files
         shell: bash
         run: |
           set -e
-          rm -rf /tmp/ep161
-          mkdir -p /tmp/ep161/api
-          cp admin_radares.php /tmp/ep161/
-          cp api/radar_db.php /tmp/ep161/api/
-          cp api/road_hazard_db.php /tmp/ep161/api/
-          cp api/road_safety_pack_helpers.php /tmp/ep161/api/
-          cp api/road_state_pack.php /tmp/ep161/api/
-          cp api/road_corridor_pack.php /tmp/ep161/api/
-          cat > /tmp/ep161/LEIA-PRIMEIRO.txt <<'EOF'
-          EstradaPlay 1.6.1 — HOTFIX ALERTAS ES
-          Extraia na raiz do servidor, sobrescrevendo os arquivos.
-          NÃO apague config.php, MariaDB, usuários ou músicas/metadados.
-          Depois abra Central de Alertas Rodoviários e toque em Sincronizar ES.
-          O sincronizador tenta vários servidores Overpass e usa blocos menores no ES se necessário.
+          rm -rf /tmp/ep170
+          mkdir -p /tmp/ep170/api
+          cp admin_radares.php /tmp/ep170/
+          cp api/radar_db.php /tmp/ep170/api/
+          cp api/road_hazard_db.php /tmp/ep170/api/
+          cp api/road_safety_pack_helpers.php /tmp/ep170/api/
+          cp api/road_state_pack.php /tmp/ep170/api/
+          cp api/road_corridor_pack.php /tmp/ep170/api/
+          cat > /tmp/ep170/LEIA-PRIMEIRO.txt <<'EOF'
+          EstradaPlay 1.7.0 — ARQUIVOS DO SERVIDOR
+          Extraia na raiz do servidor, sobrescrevendo os arquivos existentes.
+          NÃO apague config.php, MariaDB, usuários, músicas ou metadados.
+          Mantém a sincronização resiliente dos alertas do Espírito Santo.
           EOF
-          (cd /tmp/ep161 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES.zip" .)
-          unzip -t EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES.zip
-          cp estradaplay-app/app/build/outputs/apk/debug/app-debug.apk EstradaPlay-1.6.1.apk
+          (cd /tmp/ep170 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.7.0-SERVIDOR.zip" .)
+          unzip -t EstradaPlay-1.7.0-SERVIDOR.zip
+          cp estradaplay-app/app/build/outputs/apk/debug/app-debug.apk EstradaPlay-1.7.0.apk
 
-      - name: Publish EstradaPlay 1.6.1 release assets
+      - name: Publish EstradaPlay 1.7.0 release assets
         if: github.event_name != 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          TAG="estradaplay-1.6.1-build-${GITHUB_RUN_NUMBER}"
+          TAG="estradaplay-1.7.0-build-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title "EstradaPlay 1.6.1 · build ${GITHUB_RUN_NUMBER}" \
-            --notes "Build de teste da 1.6.1: estabilidade na abertura, permissão de localização dentro do app e sincronização resiliente dos alertas do Espírito Santo. Inclui APK e hotfix do servidor ES." \
-            EstradaPlay-1.6.1.apk \
-            EstradaPlay-1.6.1-HOTFIX-ALERTAS-ES.zip
+            --title "EstradaPlay 1.7.0 · design automotivo responsivo" \
+            --notes "Redesign automotivo criado do zero para telas horizontais: barra lateral sem menu inferior, mapa central, painel de condução adaptativo por proporção real da tela e manutenção dos alertas/offline do ES. Inclui APK e arquivos do servidor." \
+            EstradaPlay-1.7.0.apk \
+            EstradaPlay-1.7.0-SERVIDOR.zip
