@@ -14,6 +14,14 @@ if(!in_array($uf,$allowed,true))json_response(['ok'=>false,'error'=>'Estado aind
 road_hazard_ensure_tables();
 $items=[];$seen=[];$localCount=0;$storedCount=0;$syncAttempted=false;$syncOk=false;$message='';
 [$minLat,$minLon,$maxLat,$maxLon]=ep2_state_bounds($uf);
+$normalizeLocalType=static function($raw): string {
+    $v=strtoupper(trim((string)$raw));
+    if(stripos($v,'QUEBRA')!==false||stripos($v,'LOMB')!==false)return 'QUEBRA_MOLAS';
+    if(stripos($v,'SEM')===0)return 'SEMAFORO';
+    if(stripos($v,'PED')===0)return 'PEDAGIO';
+    if(stripos($v,'PASS')===0)return 'PASSAGEM_NIVEL';
+    return 'RADAR';
+};
 
 try{
     $stmt=db()->prepare('SELECT id, external_id, latitude, longitude, uf, rodovia, heading, sentido, velocidade, tipo, fonte FROM radars WHERE ativo = 1 AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? LIMIT 30000');
@@ -25,7 +33,7 @@ try{
         if($storedUf==='' && ep2_guess_uf($rlat,$rlon)!==$uf)continue;
         ep2_add($items,$seen,[
             'id'=>!empty($r['external_id'])?(string)$r['external_id']:'db-radar-'.(string)$r['id'],
-            'type'=>'RADAR','lat'=>$rlat,'lon'=>$rlon,
+            'type'=>$normalizeLocalType($r['tipo']??'RADAR'),'lat'=>$rlat,'lon'=>$rlon,
             'road'=>$r['rodovia']??'','speed'=>ep2_speed($r['velocidade']??null),
             'heading'=>is_numeric($r['heading']??null)?(float)$r['heading']:ep2_heading($r['sentido']??null),
             'source'=>$r['fonte']??'BASE_LOCAL'
