@@ -154,6 +154,18 @@ jobs:
           unzip -t EstradaPlay-1.7.0-SERVIDOR.zip
           cp estradaplay-app/app/build/outputs/apk/debug/app-debug.apk EstradaPlay-1.7.0.apk
 
+      - name: Upload short-lived direct-download artifact
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: EstradaPlay-1.7.0-direct-${{ github.run_number }}
+          path: |
+            EstradaPlay-1.7.0.apk
+            EstradaPlay-1.7.0-SERVIDOR.zip
+          retention-days: 1
+          compression-level: 0
+
       - name: Publish EstradaPlay 1.7.0 release assets
         if: github.event_name != 'pull_request'
         shell: bash
