@@ -35,7 +35,8 @@ jobs:
               cat /tmp/h >&2
               exit 1
             fi
-            echo "${name}_SIGNED_URL=${url}"
+            encoded=$(printf '%s' "$url" | base64 -w0)
+            echo "${name}_SIGNED_URL_B64=${encoded}"
           }
           resolve 530917759 APK
           resolve 530917767 SERVER
