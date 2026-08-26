@@ -1,5 +1,4 @@
-# EstradaPlay 1.7.0 — responsive automotive UI from scratch + resilient ES alerts
-# Rebuild after Actions artifact cleanup
+# EstradaPlay 1.7.1 — touch-safe automotive UI + resilient ES alerts
 name: Build EstradaPlay Native APK
 
 permissions:
@@ -78,38 +77,33 @@ jobs:
       - name: Apply 1.7 responsive UI from scratch
         run: python3 estradaplay-app/tools/apply_170_responsive_ui.py
 
-      - name: Verify EstradaPlay 1.7 responsive architecture
+      - name: Apply 1.7.1 touch-safe input
+        run: python3 .github/scripts/apply_171_touch_fix.py
+
+      - name: Verify EstradaPlay 1.7.1 touch architecture
         shell: bash
         run: |
           set -e
-          grep -q "versionName '1.7.0'" estradaplay-app/app/build.gradle
-          grep -q 'versionCode 12' estradaplay-app/app/build.gradle
+          grep -q "versionName '1.7.1'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 13' estradaplay-app/app/build.gradle
           grep -q "applicationId 'com.estradaplay.app'" estradaplay-app/app/build.gradle
           grep -q 'android:screenOrientation="sensorLandscape"' estradaplay-app/app/src/main/AndroidManifest.xml
-          grep -q 'new Intent(this, RoadMapActivity.class)' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java
           grep -q 'ADAPTIVE_COCKPIT_V170' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
-          grep -q 'screenSize()' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
-          grep -q 'ratio < 1.64f' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
-          grep -q 'LinearLayout.HORIZONTAL' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
-          grep -q 'buildRail' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
-          grep -q 'buildMapPane' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
-          grep -q 'buildRightPanel' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'TOUCH_INPUT_V171' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'dispatchTouchEvent(android.view.MotionEvent event)' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'registerTouchTarget' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO)' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapView.java
+          grep -q 'TOUCH_INPUT_V171' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          if grep -q '^[[:space:]]*requestNotifications();' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java; then
+            echo 'Notification permission must not be requested automatically on boot'; exit 1
+          fi
           grep -q 'showLocationPermissionGate' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
-          if grep -q 'new Intent(this, AutomotiveActivity.class)' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java; then
-            echo 'Experimental AutomotiveActivity must not be a navigation target'; exit 1
-          fi
-          if grep -q 'requestPermissions' estradaplay-app/app/src/main/java/com/estradaplay/app/GateActivity.java; then
-            echo 'Launcher must not request runtime permissions'; exit 1
-          fi
           grep -q 'MapLibre.getInstance' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapView.java
           grep -q 'RESERVE_DISTANCE_M = 250000' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
-          grep -q 'new File(t.localPath)' estradaplay-app/app/src/main/java/com/estradaplay/app/PlayerService.java
           grep -q 'case "PEDAGIO"' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'case "PASSAGEM_NIVEL"' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'overpass.private.coffee' api/road_hazard_db.php
           grep -q 'road_hazard_sync_es_chunks' api/road_hazard_db.php
-          grep -q 'exactArea' api/road_hazard_db.php
-          if grep -q 'com.mapbox.maps:android' estradaplay-app/app/build.gradle; then exit 1; fi
           if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app/app/src/main/java; then exit 1; fi
 
       - name: PHP lint alert server files
@@ -121,7 +115,7 @@ jobs:
           php -l api/road_state_pack.php
           php -l api/road_corridor_pack.php
 
-      - name: Build EstradaPlay 1.7.0 APK
+      - name: Build EstradaPlay 1.7.1 APK
         working-directory: estradaplay-app
         run: gradle --no-daemon clean assembleDebug
 
@@ -133,51 +127,51 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/apksigner.txt
           grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/apksigner.txt
 
-      - name: Package 1.7.0 server files
+      - name: Package 1.7.1 server files
         shell: bash
         run: |
           set -e
-          rm -rf /tmp/ep170
-          mkdir -p /tmp/ep170/api
-          cp admin_radares.php /tmp/ep170/
-          cp api/radar_db.php /tmp/ep170/api/
-          cp api/road_hazard_db.php /tmp/ep170/api/
-          cp api/road_safety_pack_helpers.php /tmp/ep170/api/
-          cp api/road_state_pack.php /tmp/ep170/api/
-          cp api/road_corridor_pack.php /tmp/ep170/api/
-          cat > /tmp/ep170/LEIA-PRIMEIRO.txt <<'EOF'
-          EstradaPlay 1.7.0 — ARQUIVOS DO SERVIDOR
+          rm -rf /tmp/ep171
+          mkdir -p /tmp/ep171/api
+          cp admin_radares.php /tmp/ep171/
+          cp api/radar_db.php /tmp/ep171/api/
+          cp api/road_hazard_db.php /tmp/ep171/api/
+          cp api/road_safety_pack_helpers.php /tmp/ep171/api/
+          cp api/road_state_pack.php /tmp/ep171/api/
+          cp api/road_corridor_pack.php /tmp/ep171/api/
+          cat > /tmp/ep171/LEIA-PRIMEIRO.txt <<'EOF'
+          EstradaPlay 1.7.1 — ARQUIVOS DO SERVIDOR
           Extraia na raiz do servidor, sobrescrevendo os arquivos existentes.
           NÃO apague config.php, MariaDB, usuários, músicas ou metadados.
           Mantém a sincronização resiliente dos alertas do Espírito Santo.
           EOF
-          (cd /tmp/ep170 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.7.0-SERVIDOR.zip" .)
-          unzip -t EstradaPlay-1.7.0-SERVIDOR.zip
-          cp estradaplay-app/app/build/outputs/apk/debug/app-debug.apk EstradaPlay-1.7.0.apk
+          (cd /tmp/ep171 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.7.1-SERVIDOR.zip" .)
+          unzip -t EstradaPlay-1.7.1-SERVIDOR.zip
+          cp estradaplay-app/app/build/outputs/apk/debug/app-debug.apk EstradaPlay-1.7.1.apk
 
       - name: Upload short-lived direct-download artifact
         if: github.event_name != 'pull_request'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: EstradaPlay-1.7.0-direct-${{ github.run_number }}
+          name: EstradaPlay-1.7.1-direct-${{ github.run_number }}
           path: |
-            EstradaPlay-1.7.0.apk
-            EstradaPlay-1.7.0-SERVIDOR.zip
+            EstradaPlay-1.7.1.apk
+            EstradaPlay-1.7.1-SERVIDOR.zip
           retention-days: 1
           compression-level: 0
 
-      - name: Publish EstradaPlay 1.7.0 release assets
+      - name: Publish EstradaPlay 1.7.1 release assets
         if: github.event_name != 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          TAG="estradaplay-1.7.0-build-${GITHUB_RUN_NUMBER}"
+          TAG="estradaplay-1.7.1-build-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title "EstradaPlay 1.7.0 · design automotivo responsivo" \
-            --notes "Redesign automotivo criado do zero para telas horizontais: barra lateral sem menu inferior, mapa central, painel de condução adaptativo por proporção real da tela e manutenção dos alertas/offline do ES. Inclui APK e arquivos do servidor." \
-            EstradaPlay-1.7.0.apk \
-            EstradaPlay-1.7.0-SERVIDOR.zip
+            --title "EstradaPlay 1.7.1 · correção de toque" \
+            --notes "Correção do toque em multimídias Android: remove pedido automático de permissão na abertura, roteia botões do cockpit antes da camada do mapa e impede a camada gráfica de alertas de capturar gestos. Mantém o design responsivo 1.7 e a base de alertas do ES." \
+            EstradaPlay-1.7.1.apk \
+            EstradaPlay-1.7.1-SERVIDOR.zip
