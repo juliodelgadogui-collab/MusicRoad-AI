@@ -4,12 +4,13 @@ require __DIR__.'/bootstrap.php';
 require_login();
 require __DIR__.'/road_safety_pack_helpers.php';
 require __DIR__.'/road_hazard_db.php';
-@set_time_limit(160);
+@set_time_limit(220);
 header('Cache-Control: private, max-age=1800');
 
 $uf=strtoupper(trim((string)($_GET['uf']??'')));
 $allowed=['SP','RJ','MG','ES'];
 if(!in_array($uf,$allowed,true))json_response(['ok'=>false,'error'=>'Estado ainda não disponível para pacote offline.'],422);
+$forceRefresh=$uf==='ES' && !empty($_GET['refresh']);
 
 road_hazard_ensure_tables();
 $items=[];$seen=[];$localCount=0;$storedCount=0;$syncAttempted=false;$syncOk=false;$message='';
@@ -44,12 +45,13 @@ try{
 
 try{
     $stored=road_hazard_state_rows($uf);
-    if(count($stored)===0){
+    if(count($stored)===0 || $forceRefresh){
         $syncAttempted=true;
         $sync=road_hazard_sync_state($uf);
         $syncOk=!empty($sync['ok']);
         if($syncOk){
             $stored=road_hazard_state_rows($uf);
+            if($forceRefresh)$message='Base do Espírito Santo atualizada pelo modo resiliente '.(string)($sync['mode']??'').'.';
         }else{
             $message=$message!==''?$message:(string)($sync['error']??'Não foi possível atualizar a base rodoviária.');
         }
@@ -77,7 +79,7 @@ foreach($items as $h){$t=(string)($h['type']??'OUTRO');$typeCounts[$t]=($typeCou
 $ok=count($items)>0;
 json_response([
     'ok'=>$ok,
-    'version'=>'1.2',
+    'version'=>'1.3',
     'kind'=>'state',
     'uf'=>$uf,
     'generated_at'=>gmdate('c'),
@@ -88,6 +90,7 @@ json_response([
         'local_radars'=>$localCount,
         'stored_hazards'=>$storedCount,
         'sync_attempted'=>$syncAttempted,
+        'forced_refresh'=>$forceRefresh,
         'osm_ok'=>$syncOk,
         'total'=>count($items),
         'by_type'=>$typeCounts,
