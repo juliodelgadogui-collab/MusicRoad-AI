@@ -3,23 +3,34 @@ from pathlib import Path
 repo = Path(__file__).resolve().parents[2]
 app = repo / 'estradaplay-app'
 
-# MainActivity: do not open a system permission dialog during boot.
-# Some automotive Android ROMs can leave an invisible modal surface above the app.
+# MainActivity: preserve the existing 1.6 behavior that already prevents an
+# automatic notification permission dialog during boot. Add a build marker
+# without depending on a fragile three-line text sequence.
 p = app / 'app/src/main/java/com/estradaplay/app/MainActivity.java'
 s = p.read_text(encoding='utf-8')
-old = '''        registerAppReceivers();
-        requestNotifications();
-        boot();
-'''
-new = '''        registerAppReceivers();
-        // TOUCH_INPUT_V171: runtime permissions are never requested automatically during boot.
-        // Location is already requested only after an explicit in-app action. Notification
-        // permission can be offered later from settings without blocking the first screen.
-        boot();
-'''
-if old not in s:
-    raise SystemExit('1.7.1 MainActivity boot permission anchor not found')
-s = s.replace(old, new, 1)
+if '        requestNotifications();\n' in s:
+    s = s.replace(
+        '        requestNotifications();\n',
+        '        // TOUCH_INPUT_V171: no automatic runtime permission dialog during boot.\n',
+        1,
+    )
+elif 'TOUCH_INPUT_V171' not in s:
+    anchor = '        // Permissions are requested from inside the automotive cockpit.\n'
+    if anchor in s:
+        s = s.replace(
+            anchor,
+            '        // TOUCH_INPUT_V171: no automatic runtime permission dialog during boot.\n' + anchor,
+            1,
+        )
+    else:
+        boot_call = '        boot();\n'
+        if boot_call not in s:
+            raise SystemExit('1.7.1 MainActivity boot marker anchor not found')
+        s = s.replace(
+            boot_call,
+            '        // TOUCH_INPUT_V171: no automatic runtime permission dialog during boot.\n' + boot_call,
+            1,
+        )
 p.write_text(s, encoding='utf-8')
 
 # RoadMapActivity: route cockpit button taps before MapLibre/overlay dispatch.
@@ -109,7 +120,7 @@ action_new = '''        b.setStateListAnimator(null);
     }
 
     @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
-        if (event == null) return super.dispatchTouchEvent(null);
+        if (event == null) return false;
         final int action = event.getActionMasked();
         final float rawX = event.getRawX();
         final float rawY = event.getRawY();
