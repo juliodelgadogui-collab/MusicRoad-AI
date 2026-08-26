@@ -1,4 +1,5 @@
 # EstradaPlay 1.7.2 — touch-safe automotive UI + GPS speed/radar fix
+# Queue-optimized runner trigger v2
 name: Build EstradaPlay Native APK
 
 permissions:
