@@ -3,14 +3,16 @@ declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 require_login();
 require __DIR__.'/road_safety_pack_helpers.php';
-@set_time_limit(150);
+require __DIR__.'/road_hazard_db.php';
+@set_time_limit(160);
 header('Cache-Control: private, max-age=1800');
 
 $uf=strtoupper(trim((string)($_GET['uf']??'')));
 $allowed=['SP','RJ','MG','ES'];
 if(!in_array($uf,$allowed,true))json_response(['ok'=>false,'error'=>'Estado ainda não disponível para pacote offline.'],422);
 
-$items=[];$seen=[];$localCount=0;$osmOk=false;$message='';
+road_hazard_ensure_tables();
+$items=[];$seen=[];$localCount=0;$storedCount=0;$syncAttempted=false;$syncOk=false;$message='';
 [$minLat,$minLon,$maxLat,$maxLon]=ep2_state_bounds($uf);
 
 try{
@@ -30,37 +32,57 @@ try{
         ]);
         $localCount++;
     }
-}catch(Throwable $e){$message='Base local indisponível: '.$e->getMessage();}
+}catch(Throwable $e){$message='Base local de radares indisponível: '.$e->getMessage();}
 
 try{
-    $selector='area["ISO3166-2"="BR-'.$uf.'"][boundary="administrative"]->.eparea;';
-    $query=ep2_osm_query_for_area($selector);
-    $osm=ep2_overpass_json($query,$uf==='ES'?120:105);
-    if(is_array($osm)){
-        $osmOk=true;
-        foreach(($osm['elements']??[]) as $el){
-            if(count($items)>=65000)break;
-            $h=ep2_osm_to_hazard($el);if($h!==null)ep2_add($items,$seen,$h);
+    $stored=road_hazard_state_rows($uf);
+    if(count($stored)===0){
+        $syncAttempted=true;
+        $sync=road_hazard_sync_state($uf);
+        $syncOk=!empty($sync['ok']);
+        if($syncOk){
+            $stored=road_hazard_state_rows($uf);
+        }else{
+            $message=$message!==''?$message:(string)($sync['error']??'Não foi possível atualizar a base rodoviária.');
         }
     }else{
-        $message=$message!==''?$message:'OpenStreetMap não respondeu a tempo; mantendo somente a base local.';
+        $syncOk=true;
     }
-}catch(Throwable $e){$message=$message!==''?$message:'Falha ao atualizar dados do OpenStreetMap.';}
+    foreach($stored as $h){
+        if(count($items)>=65000)break;
+        ep2_add($items,$seen,[
+            'id'=>(string)$h['hazard_key'],
+            'type'=>(string)$h['type'],
+            'lat'=>(float)$h['latitude'],
+            'lon'=>(float)$h['longitude'],
+            'road'=>$h['road']??'',
+            'speed'=>$h['speed']??null,
+            'heading'=>$h['heading']??null,
+            'source'=>$h['source']??'OPENSTREETMAP'
+        ]);
+        $storedCount++;
+    }
+}catch(Throwable $e){$message=$message!==''?$message:'Falha ao consultar a base unificada de alertas.';}
 
+$typeCounts=[];
+foreach($items as $h){$t=(string)($h['type']??'OUTRO');$typeCounts[$t]=($typeCounts[$t]??0)+1;}
 $ok=count($items)>0;
 json_response([
     'ok'=>$ok,
-    'version'=>'1.1',
+    'version'=>'1.2',
     'kind'=>'state',
     'uf'=>$uf,
     'generated_at'=>gmdate('c'),
-    'expires_in_s'=>$osmOk?2592000:21600,
+    'expires_in_s'=>$storedCount>0?2592000:21600,
     'hazards'=>$items,
     'coverage'=>[
         'uf'=>$uf,
         'local_radars'=>$localCount,
-        'osm_ok'=>$osmOk,
+        'stored_hazards'=>$storedCount,
+        'sync_attempted'=>$syncAttempted,
+        'osm_ok'=>$syncOk,
         'total'=>count($items),
+        'by_type'=>$typeCounts,
         'truncated'=>count($items)>=65000,
         'bounds'=>['south'=>$minLat,'west'=>$minLon,'north'=>$maxLat,'east'=>$maxLon]
     ],
