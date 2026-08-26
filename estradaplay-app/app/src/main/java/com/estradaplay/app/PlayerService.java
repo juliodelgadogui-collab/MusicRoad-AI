@@ -20,6 +20,8 @@ public final class PlayerService extends Service {
     static final String ACTION_TOGGLE = "com.estradaplay.app.PLAYER_TOGGLE";
     static final String ACTION_NEXT = "com.estradaplay.app.PLAYER_NEXT";
     static final String ACTION_PREVIOUS = "com.estradaplay.app.PLAYER_PREVIOUS";
+    static final String ACTION_DUCK = "com.estradaplay.app.PLAYER_DUCK";
+    static final String ACTION_UNDUCK = "com.estradaplay.app.PLAYER_UNDUCK";
     static final String ACTION_STATE = "com.estradaplay.app.PLAYER_STATE";
     static final String EXTRA_KEY = "track_key";
     static final String EXTRA_FOLDER = "folder";
@@ -31,6 +33,7 @@ public final class PlayerService extends Service {
     private MediaPlayer player;
     private int index = -1;
     private boolean prepared;
+    private float alertDuck = 1f;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -53,6 +56,8 @@ public final class PlayerService extends Service {
         } else if (ACTION_TOGGLE.equals(action)) toggle();
         else if (ACTION_NEXT.equals(action)) next();
         else if (ACTION_PREVIOUS.equals(action)) previous();
+        else if (ACTION_DUCK.equals(action)) { alertDuck = 0.22f; applyVolume(); }
+        else if (ACTION_UNDUCK.equals(action)) { alertDuck = 1f; applyVolume(); }
         return START_NOT_STICKY;
     }
 
@@ -86,6 +91,7 @@ public final class PlayerService extends Service {
             player.setOnPreparedListener(mp -> {
                 prepared = true;
                 requestFocus();
+                applyVolume();
                 mp.start();
                 startForeground(NOTIFICATION_ID, notification(t, true));
                 broadcast(t.title, true, "OFFLINE");
@@ -109,7 +115,7 @@ public final class PlayerService extends Service {
                 player.pause();
                 if (t != null) { updateNotification(notification(t, false)); broadcast(t.title, false, "Pausado"); }
             } else {
-                requestFocus(); player.start();
+                requestFocus(); applyVolume(); player.start();
                 if (t != null) { updateNotification(notification(t, true)); broadcast(t.title, true, "OFFLINE"); }
             }
         } catch (Exception ignored) {}
@@ -128,6 +134,11 @@ public final class PlayerService extends Service {
         } catch (Exception ignored) {}
         index = (index - 1 + queue.size()) % queue.size();
         prepareAndPlay();
+    }
+
+    private void applyVolume() {
+        if (player == null) return;
+        try { player.setVolume(alertDuck, alertDuck); } catch (Throwable ignored) {}
     }
 
     private void requestFocus() {
