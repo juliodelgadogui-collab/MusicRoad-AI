@@ -51,6 +51,7 @@ function road_hazard_overpass_urls(): array {
     foreach([
         'https://overpass.private.coffee/api/interpreter',
         'https://overpass-api.de/api/interpreter',
+        'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
         'https://overpass.kumi.systems/api/interpreter'
     ] as $u) if(!in_array($u,$urls,true))$urls[]=$u;
     return $urls;
@@ -119,11 +120,21 @@ function road_hazard_collect_elements(array $elements,string $uf,bool $exactArea
 }
 
 function road_hazard_sync_es_chunks(array &$items,array &$seen): bool {
-    [$s,$w,$n,$e]=ep2_state_bounds('ES');$midLat=($s+$n)/2.0;$midLon=($w+$e)/2.0;$ok=false;
-    foreach([[$s,$w,$midLat,$midLon],[$s,$midLon,$midLat,$e],[$midLat,$w,$n,$midLon],[$midLat,$midLon,$n,$e]] as $b){
+    [$s,$w,$n,$e]=ep2_state_bounds('ES');
+    $lat1=$s+($n-$s)/3.0;$lat2=$s+2.0*($n-$s)/3.0;$midLon=($w+$e)/2.0;$ok=false;
+    $chunks=[
+        [$s,$w,$lat1,$midLon],[$s,$midLon,$lat1,$e],
+        [$lat1,$w,$lat2,$midLon],[$lat1,$midLon,$lat2,$e],
+        [$lat2,$w,$n,$midLon],[$lat2,$midLon,$n,$e]
+    ];
+    foreach($chunks as $b){
         $osm=road_hazard_overpass_request(road_hazard_bbox_query_values($b[0],$b[1],$b[2],$b[3]),45);
         if(!is_array($osm)||empty($osm['elements']))continue;
-        $ok=true;road_hazard_collect_elements($osm['elements'],'ES',false,$items,$seen);
+        $ok=true;
+        // Rescue chunks intentionally do not run the old approximate UF filter.
+        // It was excluding valid western/northern ES points. A small border spill
+        // is preferable to silently losing real road alerts.
+        road_hazard_collect_elements($osm['elements'],'ES',true,$items,$seen);
     }
     return $ok;
 }
@@ -141,7 +152,10 @@ function road_hazard_sync_state(string $uf): array {
 
     if(count($items)===0){
         $mode='bbox';$osm=road_hazard_overpass_request(road_hazard_bbox_query($uf),$uf==='ES'?85:70);
-        if(is_array($osm)&&!empty($osm['elements']))road_hazard_collect_elements($osm['elements'],$uf,false,$items,$seen);
+        if(is_array($osm)&&!empty($osm['elements'])){
+            // For ES, bypass the legacy approximate UF classifier on bbox rescue.
+            road_hazard_collect_elements($osm['elements'],$uf,$uf==='ES',$items,$seen);
+        }
     }
     if(count($items)===0&&$uf==='ES'){
         $mode='chunks';road_hazard_sync_es_chunks($items,$seen);
