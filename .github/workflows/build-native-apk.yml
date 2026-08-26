@@ -1,4 +1,5 @@
 # EstradaPlay 1.7.0 — responsive automotive UI from scratch + resilient ES alerts
+# Rebuild after Actions artifact cleanup
 name: Build EstradaPlay Native APK
 
 permissions:
