@@ -10,11 +10,11 @@ import androidx.activity.ComponentActivity;
 import org.json.JSONObject;
 
 /**
- * Lightweight launcher gate.
+ * Crash-safe launcher gate for EstradaPlay 1.6.1.
  *
- * Runtime permissions are intentionally NOT requested here. The user first
- * enters EstradaPlay and authorizes GPS/notifications from the cockpit itself,
- * after seeing an explanation inside the app.
+ * The proven RoadMapActivity is used as the automotive shell while the larger
+ * cockpit remains available for later hardening. Runtime permissions continue
+ * to be requested only from inside the app.
  */
 public final class GateActivity extends ComponentActivity {
     private static final String UI_PREFS = "estradaplay_ui_v1";
@@ -27,8 +27,13 @@ public final class GateActivity extends ComponentActivity {
 
         LibraryStore library = new LibraryStore(this);
         Intent next;
-        if (hasAccount() && library.hasSetupDone()) next = new Intent(this, AutomotiveActivity.class);
-        else next = new Intent(this, MainActivity.class);
+        if (hasAccount() && library.hasSetupDone()) {
+            // RoadMapActivity is the stable 1.5 map shell and is now used as
+            // the 1.6.1 automotive entrypoint to eliminate the startup crash.
+            next = new Intent(this, RoadMapActivity.class);
+        } else {
+            next = new Intent(this, MainActivity.class);
+        }
         startActivity(next);
         finish();
     }
