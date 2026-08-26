@@ -78,6 +78,61 @@ function ep2_add(array &$items,array &$seen,array $h): void {
     $items[]=['id'=>$id,'type'=>$type,'lat'=>$lat,'lon'=>$lon,'road'=>trim((string)($h['road']??'')),'speed'=>isset($h['speed'])&&is_numeric($h['speed'])?(int)$h['speed']:null,'heading'=>isset($h['heading'])&&is_numeric($h['heading'])?round((float)$h['heading'],1):null,'source'=>(string)($h['source']??'BASE_LOCAL')];
 }
 
+function ep2_state_bounds(string $uf): array {
+    return match (strtoupper($uf)) {
+        'ES' => [-21.35, -41.95, -17.75, -39.55],
+        'RJ' => [-23.45, -44.95, -20.65, -40.75],
+        'SP' => [-25.45, -53.25, -19.65, -44.00],
+        'MG' => [-23.00, -51.15, -14.10, -39.75],
+        default => [-90.0, -180.0, 90.0, 180.0],
+    };
+}
+
+function ep2_is_es(float $lat,float $lon): bool {
+    if($lat < -21.35 || $lat > -17.75 || $lon < -41.95 || $lon > -39.55)return false;
+    if($lat > -19.0 && $lon < -40.98)return false;
+    if($lat > -20.0 && $lat <= -19.0 && $lon < -41.32)return false;
+    if($lat > -21.0 && $lat <= -20.0 && $lon < -41.90)return false;
+    if($lat <= -21.0){
+        if($lon > -40.96)return $lat >= -21.33;
+        if($lon >= -41.75){
+            $border=-21.30 - 0.25*($lon+40.96);
+            return $lat >= $border;
+        }
+        return $lat >= -20.92;
+    }
+    return true;
+}
+
+function ep2_guess_uf(float $lat,float $lon): string {
+    if(ep2_is_es($lat,$lon))return 'ES';
+    if($lat>=-23.45&&$lat<=-20.65&&$lon>=-44.95&&$lon<=-40.75)return 'RJ';
+    if($lat>=-25.45&&$lat<=-19.65&&$lon>=-53.25&&$lon<=-44.00)return 'SP';
+    if($lat>=-23.00&&$lat<=-14.10&&$lon>=-51.15&&$lon<=-39.75)return 'MG';
+    return '';
+}
+
+function ep2_overpass_json(string $query,int $timeout=90): ?array {
+    global $config;
+    $url=(string)($config['routing']['overpass_url']??'');
+    if($url==='')return null;
+    $timeout=max(20,min(140,$timeout));
+    $body='data='.urlencode($query);
+    $headers=['User-Agent: '.($config['routing']['user_agent']??'EstradaPlay/1.5'),'Accept: application/json','Content-Type: application/x-www-form-urlencoded'];
+    if(!function_exists('curl_init')){
+        $ctx=stream_context_create(['http'=>['method'=>'POST','header'=>implode("\r\n",$headers),'content'=>$body,'timeout'=>$timeout,'ignore_errors'=>true]]);
+        $raw=@file_get_contents($url,false,$ctx);
+        $data=$raw?json_decode($raw,true):null;
+        return is_array($data)?$data:null;
+    }
+    $ch=curl_init($url);
+    curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_CONNECTTIMEOUT=>12,CURLOPT_TIMEOUT=>$timeout,CURLOPT_HTTPHEADER=>$headers,CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>$body,CURLOPT_ENCODING=>'']);
+    $raw=curl_exec($ch);$status=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);curl_close($ch);
+    if(!$raw||$status>=400)return null;
+    $data=json_decode((string)$raw,true);
+    return is_array($data)?$data:null;
+}
+
 function ep2_osm_query_for_area(string $selector): string {
     return '[out:json][timeout:90];'.$selector.'('
         .'node["highway"="speed_camera"](area.eparea);'
