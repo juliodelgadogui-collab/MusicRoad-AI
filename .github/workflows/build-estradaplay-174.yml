@@ -1,0 +1,78 @@
+name: Build EstradaPlay 1.7.4
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/scripts/apply_174_touch_musicroad_radars_fix.py'
+      - '.github/workflows/build-estradaplay-174.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estradaplay-174
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer and apply 1.7.4 chain
+        shell: bash
+        run: |
+          set -e
+          base64 -d estradaplay-app/signing/estradaplay-dev.keystore.b64 > estradaplay-app/signing/estradaplay-dev.keystore
+          python3 estradaplay-app/tools/apply_151.py
+          python3 estradaplay-app/tools/apply_152_alert_fix.py
+          python3 estradaplay-app/tools/apply_160_automotive.py
+          python3 estradaplay-app/tools/apply_161_stability.py
+          python3 estradaplay-app/tools/apply_170_responsive_ui.py
+          python3 .github/scripts/apply_171_touch_fix.py
+          python3 .github/scripts/apply_172_gps_radar_fix.py
+          python3 .github/scripts/apply_173_touch_compat_fix.py
+          python3 .github/scripts/apply_174_touch_musicroad_radars_fix.py
+          grep -q "versionName '1.7.4'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 16' estradaplay-app/app/build.gradle
+          grep -q 'TOUCH_BRIDGE_V174' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'fetchMusicRoadStateRadars' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'api/offline_state.php?kind=radars' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'ensureApiSession' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app/app/src/main/java; then exit 1; fi
+
+      - name: Build APK
+        working-directory: estradaplay-app
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify signature and package
+        shell: bash
+        run: |
+          set -e
+          APK=estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
+          grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/cert.txt
+          cp "$APK" EstradaPlay-1.7.4.apk
+          rm -rf /tmp/ep174 && mkdir -p /tmp/ep174/api
+          cp admin_radares.php /tmp/ep174/
+          cp api/radar_db.php api/road_hazard_db.php api/road_pack.php api/road_safety_pack_helpers.php api/road_state_pack.php api/road_corridor_pack.php /tmp/ep174/api/
+          printf '%s\n' 'EstradaPlay 1.7.4' 'Usa primeiro a mesma fonte estadual de radares do MusicRoad (api/offline_state.php).' 'Se esse endpoint já estiver instalado, a correção principal está no APK.' > /tmp/ep174/LEIA-PRIMEIRO.txt
+          (cd /tmp/ep174 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.7.4-SERVIDOR.zip" .)
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="estradaplay-1.7.4-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "EstradaPlay 1.7.4 · toque + radares MusicRoad" --notes "Ponte de toque dedicada para centrais Android e radares pela mesma fonte estadual usada pelo MusicRoad. Mantém a correção de velocidade." EstradaPlay-1.7.4.apk EstradaPlay-1.7.4-SERVIDOR.zip
