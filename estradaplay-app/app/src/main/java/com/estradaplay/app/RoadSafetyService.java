@@ -11,10 +11,16 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +39,7 @@ public final class RoadSafetyService extends Service {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final AtomicBoolean fetching = new AtomicBoolean(false);
     private final Map<String, Long> alertedAt = new HashMap<>();
+    private final Handler main = new Handler(Looper.getMainLooper());
 
     private LocationManager locationManager;
     private RoadPackStore packs;
@@ -40,9 +47,13 @@ public final class RoadSafetyService extends Service {
     private ApiClient api;
     private TextToSpeech tts;
     private boolean ttsReady;
+    private AudioManager audioManager;
+    private AudioFocusRequest alertFocusRequest;
     private Location previous;
     private float lastHeading = Float.NaN;
     private long lastNotificationAt;
+
+    private final Runnable restoreAudioFallback = this::restoreAudioAfterVoice;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -50,12 +61,22 @@ public final class RoadSafetyService extends Service {
         mapRoads = new OfflineRoadStore(this);
         api = new ApiClient(this);
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
+        audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
         createChannel();
         startForeground(NOTIFICATION_ID, notification("Proteção na estrada ativa", "GPS aguardando localização", false));
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
                 ttsReady = true;
-                try { tts.setLanguage(new Locale("pt", "BR")); } catch (Throwable ignored) {}
+                try {
+                    tts.setLanguage(new Locale("pt", "BR"));
+                    tts.setSpeechRate(1.0f);
+                    tts.setPitch(1.0f);
+                    tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                        @Override public void onStart(String utteranceId) {}
+                        @Override public void onDone(String utteranceId) { main.post(RoadSafetyService.this::restoreAudioAfterVoice); }
+                        @Override public void onError(String utteranceId) { main.post(RoadSafetyService.this::restoreAudioAfterVoice); }
+                    });
+                } catch (Throwable ignored) {}
             }
         });
         startLocation();
@@ -72,7 +93,7 @@ public final class RoadSafetyService extends Service {
         if (locationManager == null) return;
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
                 checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            updateNotification("Proteção pausada", "Permita a localização para detectar a estrada", true);
+            updateNotification("Proteção pausada", "Autorize a localização dentro do EstradaPlay", true);
             stopSelf();
             return;
         }
@@ -122,8 +143,7 @@ public final class RoadSafetyService extends Service {
 
         if (best != null && shouldAlert(best)) {
             rememberAlert(best);
-            String spoken = voice(best, bestForward);
-            speak(spoken);
+            speak(voice(best, bestForward));
             String title = best.label() + " à frente";
             String detail = distanceText(bestForward);
             if (best.speed > 0 && "RADAR".equals(best.type)) detail += " · " + best.speed + " km/h";
@@ -234,26 +254,77 @@ public final class RoadSafetyService extends Service {
     }
 
     private void speak(String text) {
-        if (!ttsReady || tts == null || text == null || text.isEmpty()) return;
-        try { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "road-alert"); } catch (Throwable ignored) {}
+        if (!ttsReady || tts == null || text == null || text.trim().isEmpty()) return;
+        duckOwnPlayer(true);
+        requestVoiceFocus();
+        main.removeCallbacks(restoreAudioFallback);
+        main.postDelayed(restoreAudioFallback, 8000L);
+        try {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "road-alert-" + System.currentTimeMillis());
+        } catch (Throwable e) {
+            restoreAudioAfterVoice();
+        }
     }
 
     private String voice(RoadHazard h, double forward) {
-        StringBuilder s = new StringBuilder();
+        String distance = distanceSpeech(forward);
         switch (h.type) {
-            case "SEMAFORO": s.append("Semáforo à frente"); break;
-            case "QUEBRA_MOLAS": s.append("Quebra-molas à frente"); break;
-            case "PEDAGIO": s.append("Pedágio à frente"); break;
-            case "PASSAGEM_NIVEL": s.append("Passagem de nível à frente"); break;
-            default: s.append("Radar à frente"); break;
+            case "SEMAFORO":
+                return "Atenção. Semáforo à frente, a " + distance + ".";
+            case "QUEBRA_MOLAS":
+                return "Reduza. Quebra-molas à frente, a " + distance + ".";
+            case "PEDAGIO":
+                return "Pedágio à frente, a " + distance + ". Prepare-se para a praça de pedágio.";
+            case "PASSAGEM_NIVEL":
+                return "Atenção. Passagem de nível à frente, a " + distance + ". Reduza a velocidade e observe a sinalização.";
+            default:
+                if (h.speed > 0) return "Radar à frente, a " + distance + ". Limite de " + h.speed + " quilômetros por hora.";
+                return "Radar à frente, a " + distance + ".";
         }
-        s.append(", a ").append(distanceSpeech(forward));
-        if ("RADAR".equals(h.type) && h.speed > 0) s.append(", limite de ").append(h.speed).append(" quilômetros por hora");
-        return s.toString();
+    }
+
+    private void duckOwnPlayer(boolean duck) {
+        try {
+            Intent i = new Intent(this, PlayerService.class).setAction(duck ? PlayerService.ACTION_DUCK : PlayerService.ACTION_UNDUCK);
+            startService(i);
+        } catch (Throwable ignored) {}
+    }
+
+    private void requestVoiceFocus() {
+        if (audioManager == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                if (alertFocusRequest == null) {
+                    AudioAttributes attrs = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build();
+                    alertFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                            .setAudioAttributes(attrs)
+                            .setAcceptsDelayedFocusGain(false)
+                            .setWillPauseWhenDucked(false)
+                            .build();
+                }
+                audioManager.requestAudioFocus(alertFocusRequest);
+            } else {
+                audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private void restoreAudioAfterVoice() {
+        main.removeCallbacks(restoreAudioFallback);
+        duckOwnPlayer(false);
+        if (audioManager == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 26 && alertFocusRequest != null) audioManager.abandonAudioFocusRequest(alertFocusRequest);
+            else audioManager.abandonAudioFocus(null);
+        } catch (Throwable ignored) {}
     }
 
     private String distanceSpeech(double m) {
         if (m < 120) return Math.max(30, (int)(Math.round(m / 10.0) * 10)) + " metros";
+        if (m >= 1000) return String.format(Locale.getDefault(), "%.1f quilômetros", m / 1000.0);
         return Math.max(100, (int)(Math.round(m / 50.0) * 50)) + " metros";
     }
 
@@ -305,7 +376,7 @@ public final class RoadSafetyService extends Service {
     }
 
     private Notification notification(String title, String text, boolean alert) {
-        Intent open = new Intent(this, RoadMapActivity.class);
+        Intent open = new Intent(this, AutomotiveActivity.class);
         PendingIntent pi = PendingIntent.getActivity(this, 10, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         b.setSmallIcon(android.R.drawable.ic_menu_mylocation)
@@ -336,6 +407,7 @@ public final class RoadSafetyService extends Service {
     }
 
     @Override public void onDestroy() {
+        restoreAudioAfterVoice();
         try { if (locationManager != null) locationManager.removeUpdates(listener); } catch (Throwable ignored) {}
         try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Throwable ignored) {}
         io.shutdownNow();
