@@ -9,6 +9,7 @@ on:
     paths:
       - '.github/scripts/apply_174b_direct_touch_musicroad_radars.py'
       - '.github/workflows/build-estradaplay-174.yml'
+      - 'api/offline_state.php'
   workflow_dispatch:
 
 concurrency:
@@ -50,6 +51,7 @@ jobs:
           grep -q 'fetchMusicRoadStateRadars' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'api/offline_state.php?kind=radars' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'ensureApiSession' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          php -l api/offline_state.php
           if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app/app/src/main/java; then exit 1; fi
 
       - name: Build APK
@@ -67,7 +69,7 @@ jobs:
           rm -rf /tmp/ep174 && mkdir -p /tmp/ep174/api
           cp admin_radares.php /tmp/ep174/
           cp api/radar_db.php api/road_hazard_db.php api/road_pack.php api/road_safety_pack_helpers.php api/road_state_pack.php api/road_corridor_pack.php api/offline_state.php /tmp/ep174/api/
-          printf '%s\n' 'EstradaPlay 1.7.4' 'Usa primeiro a mesma fonte estadual de radares do MusicRoad (api/offline_state.php).' 'Toque do cockpit usa os próprios botões Android, sem interceptador global de coordenadas.' > /tmp/ep174/LEIA-PRIMEIRO.txt
+          printf '%s\n' 'EstradaPlay 1.7.4' 'Usa a mesma base estadual de radares do MusicRoad, com compatibilidade em api/offline_state.php.' 'Toque do cockpit usa os próprios botões Android, sem interceptador global de coordenadas.' > /tmp/ep174/LEIA-PRIMEIRO.txt
           (cd /tmp/ep174 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.7.4-SERVIDOR.zip" .)
 
       - name: Publish release
@@ -75,4 +77,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="estradaplay-1.7.4-build-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" --target "$GITHUB_SHA" --title "EstradaPlay 1.7.4 · toque direto + radares MusicRoad" --notes "Remove o interceptador global de toque do cockpit. Os próprios botões Android executam no primeiro DOWN e também aceitam mouse/stylus. Radares usam primeiro o mesmo pacote estadual offline_state.php do MusicRoad. Mantém a correção de velocidade." EstradaPlay-1.7.4.apk EstradaPlay-1.7.4-SERVIDOR.zip
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "EstradaPlay 1.7.4 · toque direto + radares MusicRoad" --notes "Remove o interceptador global de toque do cockpit. Os próprios botões Android executam no primeiro DOWN e também aceitam mouse/stylus. Inclui endpoint compatível com a base estadual de radares do MusicRoad. Mantém a correção de velocidade." EstradaPlay-1.7.4.apk EstradaPlay-1.7.4-SERVIDOR.zip
