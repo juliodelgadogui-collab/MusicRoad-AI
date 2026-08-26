@@ -1,4 +1,4 @@
-// EstradaPlay 1.7.1 touch-fix rebuild
+// EstradaPlay 1.7.2 optimized build trigger
 plugins {
     id 'com.android.application' version '8.7.3' apply false
 }
