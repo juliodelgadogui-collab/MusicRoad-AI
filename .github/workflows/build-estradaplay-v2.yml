@@ -39,6 +39,25 @@ jobs:
           set -euo pipefail
           base64 -d estradaplay-app-v2/signing/estradaplay-dev.keystore.b64 > estradaplay-app-v2/signing/estradaplay-dev.keystore
 
+      - name: Generate embedded EstradaPlay voice
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 \
+            -o "$MODEL" \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "439e3a5f55a43ed70f918492acf5729dd35dde2d61a6c7956f04a8eee1f2c51f  $MODEL" | sha256sum -c -
+          rm -rf /tmp/estradaplay-voice
+          mkdir -p /tmp/estradaplay-voice
+          tar -xjf "$MODEL" -C /tmp/estradaplay-voice
+          python3 estradaplay-app-v2/tools/generate_voice_bank.py \
+            --model-root /tmp/estradaplay-voice \
+            --output estradaplay-app-v2/app/src/main/res/raw \
+            --metadata-output estradaplay-app-v2/app/src/main/assets/estradaplay_voice
+          test "$(find estradaplay-app-v2/app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 70
+
       - name: Verify source architecture
         shell: bash
         run: |
@@ -50,9 +69,15 @@ jobs:
           grep -q 'AUTOMOTIVE_INPUT_V177' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
           grep -q 'OSM_DIRECT_RADARS_V200' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'OSM_DIRECT_MAP_V200' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/OfflineRoadStore.java
-          if grep -q "versionName '2.0.1'" estradaplay-app-v2/app/build.gradle; then
-            grep -q 'ANR_GUARD_V201' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/OfflineRoadStore.java
-            grep -q 'ANR_GUARD_V201' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'ANR_GUARD_V201' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'ROAD_LIMIT_V202' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/EstradaPlayOfflineVoice.java
+          grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/tools/generate_voice_bank.py
+          if grep -q "versionName '2.0.4'" estradaplay-app-v2/app/build.gradle; then
+            grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+            test -s estradaplay-app-v2/app/src/main/res/raw/ep_radar_frente.wav
+            test -s estradaplay-app-v2/app/src/main/res/raw/ep_limite_via.wav
+            test -s estradaplay-app-v2/app/src/main/res/raw/ep_speed_060.wav
           fi
 
       - name: Build APK directly
@@ -90,6 +115,9 @@ jobs:
           NOTES="Compilado diretamente de estradaplay-app-v2, sem aplicar patches da série 1.x."
           if [ "$VERSION" = "2.0.1" ]; then
             NOTES="Hotfix do ANR visto no Android: remove leitura/parse de GeoJSON grande do caminho principal do GPS, reduz trabalho repetitivo do serviço e limita o mapa OSM de emergência para centrais mais fracas. Mantém toque, velocidade, radares, música e suporte horizontal/vertical da 2.0."
+          fi
+          if [ "$VERSION" = "2.0.4" ]; then
+            NOTES="Versão de teste com voz EstradaPlay embarcada e offline: o banco pt-BR é sintetizado no build e os alertas reproduzem os mesmos áudios em qualquer central. Android TTS fica apenas como fallback para valores não previstos. Mantém limite da via, limite do radar, aviso único de excesso, correção de ANR, toque e horizontal/vertical."
           fi
           gh release create "$TAG" --target "$GITHUB_SHA" \
             --title "EstradaPlay ${VERSION} · build direto" \
