@@ -8,6 +8,10 @@ on:
     branches: [agent/native-apk-build]
     paths:
       - 'estradaplay-app-v2/**'
+      - 'api/library.php'
+      - 'api/native_app.php'
+      - 'api/native_auth.php'
+      - 'api/native_library_sync.php'
       - '.github/workflows/build-estradaplay-v2.yml'
   workflow_dispatch:
 
@@ -74,13 +78,21 @@ jobs:
           grep -q 'ANR_GUARD_V201' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'ROAD_LIMIT_V202' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/EstradaPlayOfflineVoice.java
+          grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/tools/generate_voice_bank.py
-          if grep -q "versionName '2.0.4'" estradaplay-app-v2/app/build.gradle; then
-            grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
-            test -s estradaplay-app-v2/app/src/main/res/raw/ep_radar_frente.wav
-            test -s estradaplay-app-v2/app/src/main/res/raw/ep_limite_via.wav
-            test -s estradaplay-app-v2/app/src/main/res/raw/ep_speed_060.wav
-          fi
+          grep -q 'X-EstradaPlay-Device' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/ApiClient.java
+          test -s estradaplay-app-v2/app/src/main/res/raw/ep_radar_frente.wav
+          test -s estradaplay-app-v2/app/src/main/res/raw/ep_limite_via.wav
+          test -s estradaplay-app-v2/app/src/main/res/raw/ep_speed_060.wav
+
+      - name: Verify server patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l api/library.php
+          php -l api/native_app.php
+          php -l api/native_auth.php
+          php -l api/native_library_sync.php
 
       - name: Build APK directly
         working-directory: estradaplay-app-v2
@@ -98,12 +110,34 @@ jobs:
           sha256sum "EstradaPlay-${VERSION}.apk"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      - name: Package server patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=/tmp/estradaplay-server
+          rm -rf "$PKG"
+          mkdir -p "$PKG/api"
+          cp api/library.php "$PKG/api/"
+          cp api/native_app.php "$PKG/api/"
+          cp api/native_auth.php "$PKG/api/"
+          cp api/native_library_sync.php "$PKG/api/"
+          cat > "$PKG/LEIA-PRIMEIRO.txt" <<'EOF'
+          EstradaPlay 2.0.5 - correção de biblioteca
+          Extraia na raiz do servidor e permita sobrescrever somente os arquivos incluídos.
+          Não apague config.php, banco de dados, músicas, usuários ou demais arquivos.
+          Esta atualização restaura sessão por dispositivo e sincroniza novas pastas do Google Drive.
+          EOF
+          (cd "$PKG" && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-${VERSION}-SERVIDOR.zip" .)
+          sha256sum "EstradaPlay-${VERSION}-SERVIDOR.zip"
+
       - name: Try temporary artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: EstradaPlay-${{ env.VERSION }}-APK
-          path: EstradaPlay-${{ env.VERSION }}.apk
+          path: |
+            EstradaPlay-${{ env.VERSION }}.apk
+            EstradaPlay-${{ env.VERSION }}-SERVIDOR.zip
           retention-days: 1
           compression-level: 0
 
@@ -121,10 +155,14 @@ jobs:
           if [ "$VERSION" = "2.0.4" ]; then
             NOTES="Versão de teste com voz EstradaPlay embarcada e offline: o banco pt-BR é sintetizado no build e os alertas reproduzem os mesmos áudios em qualquer central. Android TTS fica apenas como fallback para valores não previstos. Mantém limite da via, limite do radar, aviso único de excesso, correção de ANR, toque e horizontal/vertical."
           fi
+          if [ "$VERSION" = "2.0.5" ]; then
+            NOTES="Corrige a biblioteca após reinstalação e a descoberta de novas pastas do Google Drive. O app envia uma identidade estável do aparelho em toda chamada; o servidor reconstrói a sessão, refaz a varredura das pastas ativas e mantém fallback da biblioteca já salva. Inclui pacote de servidor."
+          fi
           gh release create "$TAG" --target "$GITHUB_SHA" \
             --title "EstradaPlay ${VERSION} · build direto" \
             --notes "$NOTES" \
-            "EstradaPlay-${VERSION}.apk"
+            "EstradaPlay-${VERSION}.apk" \
+            "EstradaPlay-${VERSION}-SERVIDOR.zip"
 
       - name: Record build result
         if: always()
@@ -150,6 +188,7 @@ jobs:
           release_tag=${TAG}
           apk_sha256=${APK_SHA}
           release_asset=https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK_FILE}
+          server_asset=https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/EstradaPlay-${VERSION_NOW}-SERVIDOR.zip
           EOF
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
