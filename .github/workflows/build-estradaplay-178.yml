@@ -1,0 +1,88 @@
+name: Build EstradaPlay 1.7.8
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/scripts/apply_178_stationary_speed_fix.py'
+      - '.github/workflows/build-estradaplay-178.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estradaplay-178
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer and apply 1.7.8 chain
+        shell: bash
+        run: |
+          set -e
+          base64 -d estradaplay-app/signing/estradaplay-dev.keystore.b64 > estradaplay-app/signing/estradaplay-dev.keystore
+          python3 estradaplay-app/tools/apply_151.py
+          python3 estradaplay-app/tools/apply_152_alert_fix.py
+          python3 estradaplay-app/tools/apply_160_automotive.py
+          python3 estradaplay-app/tools/apply_161_stability.py
+          python3 estradaplay-app/tools/apply_170_responsive_ui.py
+          python3 .github/scripts/apply_171_touch_fix.py
+          python3 .github/scripts/apply_172_gps_radar_fix.py
+          python3 .github/scripts/apply_173_touch_compat_fix.py
+          python3 .github/scripts/apply_174b_direct_touch_musicroad_radars.py
+          python3 .github/scripts/apply_175_touch_window_hardening.py
+          python3 .github/scripts/apply_176_dual_orientation_native_touch.py
+          python3 .github/scripts/apply_177_audit_fixes.py
+          python3 .github/scripts/apply_178_stationary_speed_fix.py
+
+          grep -q "versionName '1.7.8'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 20' estradaplay-app/app/build.gradle
+          grep -q 'STATIONARY_SPEED_V178' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'stationaryConfirmed' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'staleSpeedWatchdog' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'broadcast(loc, speedKmh, null, 0, state);' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'AUTOMOTIVE_INPUT_V177' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'MUSICROAD_NEAR_RADARS_V177' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'android:resizeableActivity="true"' estradaplay-app/app/src/main/AndroidManifest.xml
+          if grep -q 'sensorLandscape' estradaplay-app/app/src/main/AndroidManifest.xml; then exit 1; fi
+          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app/app/src/main/java; then exit 1; fi
+          php -l api/offline_state.php
+          php -l api/radars.php
+
+      - name: Build APK
+        working-directory: estradaplay-app
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify signature
+        shell: bash
+        run: |
+          set -e
+          APK=estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
+          grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/cert.txt
+          cp "$APK" EstradaPlay-1.7.8.apk
+          sha256sum EstradaPlay-1.7.8.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="estradaplay-1.7.8-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "EstradaPlay 1.7.8 · velocidade parada corrigida" \
+            --notes "Corrige velocidade antiga presa quando o veículo está parado. A velocidade passa a ser transmitida a cada amostra GPS, confirma parada por deslocamento líquido em vários segundos e zera automaticamente se os fixes pararem. Mantém toque, horizontal/vertical, música e correções de radares da 1.7.7." \
+            EstradaPlay-1.7.8.apk
