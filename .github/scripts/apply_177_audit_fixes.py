@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 repo = Path(__file__).resolve().parents[2]
 app = repo / 'estradaplay-app'
@@ -10,8 +9,10 @@ app = repo / 'estradaplay-app'
 # 2) Native controls support touchscreen + mouse/stylus/rotary style input.
 # 3) API redirects do not hide expired sessions behind a 200 HTML login page.
 # 4) Radar loading retries authentication and falls back to MusicRoad radars.php.
-# 5) Empty state packs cannot suppress radar refresh for 30 days.
-# 6) Failed music downloads do not mark an empty library as configured.
+# 5) Failed music downloads do not mark an empty library as configured.
+#
+# Empty-state pack handling was already hardened by apply_152_alert_fix.py. Do
+# not patch it again here: this script intentionally targets the final chain.
 # -----------------------------------------------------------------------------
 
 # --- ApiClient: behave like the working MusicRoad NativeApiClient. ---
@@ -93,8 +94,7 @@ new = '''    private void registerTouchTarget(View view) {
         });
         view.setOnGenericMotionListener((v, event) -> {
             if (event == null) return false;
-            int action = event.getActionMasked();
-            if (action == android.view.MotionEvent.ACTION_BUTTON_PRESS) {
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_BUTTON_PRESS) {
                 v.performClick();
                 return true;
             }
@@ -177,7 +177,6 @@ if old not in s:
     raise SystemExit('1.7.7 final showHome anchor not found')
 s = s.replace(old, new, 1)
 
-# Add a reusable input compatibility helper before UI primitives.
 marker = '    // ---- UI primitives ----\n'
 helper = '''    // AUTOMOTIVE_INPUT_ALL_SCREENS_V177
     private void automotiveInput(View view) {
@@ -259,7 +258,6 @@ if old not in s:
     raise SystemExit('1.7.7 chipButton anchor not found')
 s = s.replace(old, new, 1)
 
-# miniCard is used as a clickable shortcut for Library/Account.
 old = '''        l.addView(text(subtitle, 10, MUTED, false));
         return l;
     }
@@ -274,7 +272,6 @@ new = '''        l.addView(text(subtitle, 10, MUTED, false));
 if old in s:
     s = s.replace(old, new, 1)
 
-# launchMode=singleTask can deliver a new target without recreating MainActivity.
 marker = '    @Override protected void onDestroy() {\n'
 onnew = '''    @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -303,7 +300,6 @@ new = '''            try {
                 boolean mapOk = !mapNeeds || mapRoads.prepare(api, lat, lon, heading);
                 if (!alertOk || !mapOk) {
                     // Cookie can exist locally while PHP session already expired.
-                    // Refresh device session once and retry only failed downloads.
                     ensureApiSession(true);
                     if (alertNeeds && !alertOk) packs.prepareTravelReserve(api, lat, lon, heading);
                     if (mapNeeds && !mapOk) mapRoads.prepare(api, lat, lon, heading);
@@ -355,25 +351,6 @@ p.write_text(s, encoding='utf-8')
 p = app / 'app/src/main/java/com/estradaplay/app/RoadPackStore.java'
 s = p.read_text(encoding='utf-8')
 
-# Empty state packs must not suppress refresh.
-old = '        for(Pack p:packs)if("state".equals(p.kind)&&uf.equals(p.uf)&&now-p.fetchedAt<=freshMs(p))return true;\n'
-new = '        for(Pack p:packs)if("state".equals(p.kind)&&uf.equals(p.uf)&&now-p.fetchedAt<=freshMs(p)&&p.hazards!=null&&!p.hazards.isEmpty())return true;\n'
-if old not in s:
-    raise SystemExit('1.7.7 hasFreshStateLocked anchor not found')
-s = s.replace(old, new, 1)
-
-old = '            if(!response.ok()||!json.optBoolean("ok",false)||hazards==null)return false;\n'
-# Only replace the state coverage occurrence (the first remaining exact compact occurrence after corridor).
-idx = s.find('    private boolean fetchStateCoverage')
-if idx < 0:
-    raise SystemExit('1.7.7 fetchStateCoverage marker missing')
-sub = s[idx:]
-if old not in sub:
-    raise SystemExit('1.7.7 fetchStateCoverage condition anchor not found')
-sub = sub.replace(old, '            if(!response.ok()||!json.optBoolean("ok",false)||hazards==null||hazards.length()==0)return false;\n', 1)
-s = s[:idx] + sub
-
-# Insert direct MusicRoad near-radar loader before the state loader added in 1.7.4.
 marker = '    private boolean fetchMusicRoadStateRadars(ApiClient api, String uf) {\n'
 if marker not in s:
     raise SystemExit('1.7.7 MusicRoad state loader marker missing')
@@ -416,7 +393,6 @@ loader = r'''    // MUSICROAD_NEAR_RADARS_V177: use the endpoint already used by
 '''
 s = s.replace(marker, loader + marker, 1)
 
-# When road_pack fails/missing/empty, prefer the already-deployed MusicRoad API.
 old = '''                String uf = resolveUf(lat, lon);
                 return isSupportedUf(uf) && fetchMusicRoadStateRadars(api, uf);
 '''
@@ -424,11 +400,26 @@ new = '''                if (fetchMusicRoadNearRadars(api, lat, lon)) return tru
                 String uf = resolveUf(lat, lon);
                 return isSupportedUf(uf) && fetchMusicRoadStateRadars(api, uf);
 '''
-count = s.count(old)
-if count < 1:
-    raise SystemExit('1.7.7 fetchCoverage fallback anchor not found')
-s = s.replace(old, new)
+if old not in s:
+    raise SystemExit('1.7.7 fetchCoverage invalid-response fallback anchor not found')
+s = s.replace(old, new, 1)
 
+old = '''            String uf = resolveUf(lat, lon);
+            return isSupportedUf(uf) && fetchMusicRoadStateRadars(api, uf);
+        }
+    }
+
+    private boolean fetchCorridor'''
+new = '''            if (fetchMusicRoadNearRadars(api, lat, lon)) return true;
+            String uf = resolveUf(lat, lon);
+            return isSupportedUf(uf) && fetchMusicRoadStateRadars(api, uf);
+        }
+    }
+
+    private boolean fetchCorridor'''
+if old not in s:
+    raise SystemExit('1.7.7 fetchCoverage catch fallback anchor not found')
+s = s.replace(old, new, 1)
 p.write_text(s, encoding='utf-8')
 
 # --- DownloadService: do not claim setup succeeded when every file failed. ---
@@ -447,7 +438,8 @@ if old not in s:
 s = s.replace(old, new, 1)
 p.write_text(s, encoding='utf-8')
 
-# --- Server endpoint: native clients receive JSON 401 instead of HTML redirect. ---
+# Native EstradaPlay state endpoint returns an explicit JSON auth error. With
+# redirects disabled the Android client can distinguish stale session from data.
 p = repo / 'api/offline_state.php'
 s = p.read_text(encoding='utf-8')
 if 'require_login();' in s:
