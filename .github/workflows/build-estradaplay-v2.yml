@@ -1,0 +1,89 @@
+name: Build EstradaPlay 2.x Direct
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - 'estradaplay-app-v2/**'
+      - '.github/workflows/build-estradaplay-v2.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estradaplay-v2-direct
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d estradaplay-app-v2/signing/estradaplay-dev.keystore.b64 > estradaplay-app-v2/signing/estradaplay-dev.keystore
+
+      - name: Verify source architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "versionName '2." estradaplay-app-v2/app/build.gradle
+          grep -q 'android:resizeableActivity="true"' estradaplay-app-v2/app/src/main/AndroidManifest.xml
+          if grep -q 'sensorLandscape' estradaplay-app-v2/app/src/main/AndroidManifest.xml; then exit 1; fi
+          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app-v2/app/src/main/java; then exit 1; fi
+          grep -q 'AUTOMOTIVE_INPUT_V177' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'OSM_DIRECT_RADARS_V200' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'OSM_DIRECT_MAP_V200' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/OfflineRoadStore.java
+
+      - name: Build APK directly
+        working-directory: estradaplay-app-v2
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify signature and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=estradaplay-app-v2/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
+          grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/cert.txt
+          VERSION=$(grep -o "versionName '[^']*'" estradaplay-app-v2/app/build.gradle | head -1 | cut -d"'" -f2)
+          cp "$APK" "EstradaPlay-${VERSION}.apk"
+          sha256sum "EstradaPlay-${VERSION}.apk"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Try temporary artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: EstradaPlay-${{ env.VERSION }}-APK
+          path: EstradaPlay-${{ env.VERSION }}.apk
+          retention-days: 1
+          compression-level: 0
+
+      - name: Publish direct-build release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estradaplay-${VERSION}-direct-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "EstradaPlay ${VERSION} · build direto" \
+            --notes "Compilado diretamente de estradaplay-app-v2, sem aplicar patches da série 1.x." \
+            "EstradaPlay-${VERSION}.apk"
