@@ -28,6 +28,10 @@ final class OfflineRoadStore {
     private static final int MAX_CORRIDORS = 8;
 
     private final File dir;
+    // ROAD_LIMIT_INDEX_V202: lightweight in-memory speed-limit segments, rebuilt only when map files change.
+    private final ArrayList<SpeedSegment> speedSegments = new ArrayList<>();
+    private long speedIndexRevision = Long.MIN_VALUE;
+    private String speedIndexUf = "";
 
     OfflineRoadStore(android.content.Context context) {
         dir = new File(context.getApplicationContext().getFilesDir(), "offline_road_map");
@@ -102,6 +106,128 @@ final class OfflineRoadStore {
         return "Mapa livre · aguardando pacote offline";
     }
 
+    synchronized int speedLimitAt(double lat, double lon, float heading) {
+        String uf = guessUfFast(lat, lon);
+        long rev = revision();
+        if (rev != speedIndexRevision || !uf.equals(speedIndexUf)) {
+            rebuildSpeedIndex(lat, lon, uf, rev);
+        }
+        double best = Double.MAX_VALUE;
+        int limit = 0;
+        for (SpeedSegment s : speedSegments) {
+            if (Math.abs(s.lat1 - lat) > 0.004 || Math.abs(s.lon1 - lon) > 0.004 ||
+                    Math.abs(s.lat2 - lat) > 0.004 || Math.abs(s.lon2 - lon) > 0.004) continue;
+            if (Float.isFinite(heading)) {
+                double segHeading = bearing(s.lat1, s.lon1, s.lat2, s.lon2);
+                double diff = Math.min(angleDiff(heading, segHeading), angleDiff(heading, (segHeading + 180.0) % 360.0));
+                if (diff > 65.0) continue;
+            }
+            double d = pointSegmentDistanceM(lat, lon, s.lat1, s.lon1, s.lat2, s.lon2);
+            if (d < best) { best = d; limit = s.limitKmh; }
+        }
+        return best <= 55.0 ? limit : 0;
+    }
+
+    private void rebuildSpeedIndex(double lat, double lon, String uf, long rev) {
+        speedSegments.clear();
+        File[] files = corridorFiles();
+        if (files != null) {
+            Arrays.sort(files, Comparator.comparingLong(File::lastModified).reversed());
+            int used = 0;
+            for (File f : files) {
+                CorridorMeta meta = corridorMeta(f);
+                if (meta == null || RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) > 75000) continue;
+                appendSpeedSegments(f, lat, lon, 5000);
+                if (++used >= 3 || speedSegments.size() >= 18000) break;
+            }
+        }
+        speedIndexUf = uf == null ? "" : uf;
+        speedIndexRevision = rev;
+    }
+
+    private void appendSpeedSegments(File file, double lat, double lon, int maxSegments) {
+        if (file == null || !file.isFile() || speedSegments.size() >= maxSegments) return;
+        try {
+            JSONObject root = new JSONObject(readText(file));
+            JSONObject roads = root.optJSONObject("roads"); if (roads == null) return;
+            JSONArray features = roads.optJSONArray("features"); if (features == null) return;
+            for (int i = 0; i < features.length() && speedSegments.size() < maxSegments; i++) {
+                JSONObject f = features.optJSONObject(i); if (f == null) continue;
+                JSONObject props = f.optJSONObject("properties"); if (props == null) props = new JSONObject();
+                int limit = speedFromProperties(props);
+                if (limit <= 0) continue;
+                JSONObject geometry = f.optJSONObject("geometry"); if (geometry == null) continue;
+                if (!"LineString".equalsIgnoreCase(geometry.optString("type", ""))) continue;
+                JSONArray coords = geometry.optJSONArray("coordinates"); if (coords == null || coords.length() < 2) continue;
+                for (int j = 1; j < coords.length() && speedSegments.size() < maxSegments; j++) {
+                    JSONArray a = coords.optJSONArray(j - 1), b = coords.optJSONArray(j);
+                    if (a == null || b == null || a.length() < 2 || b.length() < 2) continue;
+                    double lon1 = a.optDouble(0, Double.NaN), lat1 = a.optDouble(1, Double.NaN);
+                    double lon2 = b.optDouble(0, Double.NaN), lat2 = b.optDouble(1, Double.NaN);
+                    if (!Double.isFinite(lat1) || !Double.isFinite(lon1) || !Double.isFinite(lat2) || !Double.isFinite(lon2)) continue;
+                    double midLat = (lat1 + lat2) * 0.5, midLon = (lon1 + lon2) * 0.5;
+                    if (RoadPackStore.distanceM(lat, lon, midLat, midLon) > 45000) continue;
+                    speedSegments.add(new SpeedSegment(lat1, lon1, lat2, lon2, limit));
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static int speedFromProperties(JSONObject p) {
+        String[] keys = {"maxspeed", "maxspeed:forward", "maxspeed:backward", "max_speed", "speed_limit", "speed_kmh", "limit"};
+        for (String key : keys) {
+            int v = parseSpeedLimit(p.optString(key, ""));
+            if (v > 0) return v;
+        }
+        return 0;
+    }
+
+    private static int parseSpeedLimit(String raw) {
+        if (raw == null) return 0;
+        String t = raw.trim().toLowerCase(Locale.ROOT);
+        StringBuilder digits = new StringBuilder();
+        for (int i = 0; i < t.length(); i++) {
+            char c = t.charAt(i);
+            if (c >= '0' && c <= '9') digits.append(c);
+            else if (digits.length() > 0) break;
+        }
+        if (digits.length() == 0) return 0;
+        try {
+            int v = Integer.parseInt(digits.toString());
+            if (t.contains("mph")) v = (int)Math.round(v * 1.609344);
+            return v >= 10 && v <= 180 ? v : 0;
+        } catch (Throwable ignored) { return 0; }
+    }
+
+    private static double pointSegmentDistanceM(double lat, double lon, double lat1, double lon1, double lat2, double lon2) {
+        double cos = Math.max(0.25, Math.cos(Math.toRadians(lat)));
+        double x1 = (lon1 - lon) * 111320.0 * cos, y1 = (lat1 - lat) * 110540.0;
+        double x2 = (lon2 - lon) * 111320.0 * cos, y2 = (lat2 - lat) * 110540.0;
+        double dx = x2 - x1, dy = y2 - y1;
+        double den = dx * dx + dy * dy;
+        double t = den <= 0.0001 ? 0.0 : -(x1 * dx + y1 * dy) / den;
+        t = Math.max(0.0, Math.min(1.0, t));
+        double x = x1 + t * dx, y = y1 + t * dy;
+        return Math.hypot(x, y);
+    }
+
+    private static double bearing(double lat1, double lon1, double lat2, double lon2) {
+        double p1 = Math.toRadians(lat1), p2 = Math.toRadians(lat2);
+        double dl = Math.toRadians(lon2 - lon1);
+        double y = Math.sin(dl) * Math.cos(p2);
+        double x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+        double b = Math.toDegrees(Math.atan2(y, x));
+        return (b + 360.0) % 360.0;
+    }
+
+    private static final class SpeedSegment {
+        final double lat1, lon1, lat2, lon2;
+        final int limitKmh;
+        SpeedSegment(double lat1, double lon1, double lat2, double lon2, int limitKmh) {
+            this.lat1 = lat1; this.lon1 = lon1; this.lat2 = lat2; this.lon2 = lon2; this.limitKmh = limitKmh;
+        }
+    }
+
     private boolean fetchState(ApiClient api, String uf) {
         try {
             ApiClient.Response response = api.getLong("api/road_map_state.php?uf=" + uf);
@@ -174,6 +300,9 @@ final class OfflineRoadStore {
                 JSONObject props = new JSONObject();
                 props.put("highway", tags.optString("highway", "road"));
                 props.put("name", tags.optString("name", "")); props.put("ref", tags.optString("ref", ""));
+                props.put("maxspeed", tags.optString("maxspeed", ""));
+                props.put("maxspeed:forward", tags.optString("maxspeed:forward", ""));
+                props.put("maxspeed:backward", tags.optString("maxspeed:backward", ""));
                 feature.put("properties", props); features.put(feature);
             }
             if (features.length() == 0) return false;

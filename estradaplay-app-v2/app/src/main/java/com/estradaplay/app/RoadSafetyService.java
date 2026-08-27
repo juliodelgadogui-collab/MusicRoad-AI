@@ -39,6 +39,7 @@ public final class RoadSafetyService extends Service {
     private static final long ALERT_COOLDOWN_MS = 8L * 60L * 1000L;
 
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService limitIo = Executors.newSingleThreadExecutor();
     private final AtomicBoolean fetching = new AtomicBoolean(false);
     private final Map<String, Long> alertedAt = new HashMap<>();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -64,6 +65,12 @@ public final class RoadSafetyService extends Service {
     private long lastCoverageCheckAt;
     private long lastStateRefreshAt;
     private String lastStateText = "GPS ativo · preparando proteção";
+    // ROAD_LIMIT_V202: announce road limit changes, radar limits and one-shot overspeed.
+    private final AtomicBoolean roadLimitResolving = new AtomicBoolean(false);
+    private volatile int currentRoadLimitKmh;
+    private int announcedRoadLimitKmh;
+    private boolean roadOverspeedWarned;
+    private long lastRoadLimitCheckAt;
 
     private final Runnable restoreAudioFallback = this::restoreAudioAfterVoice;
 
@@ -161,6 +168,8 @@ public final class RoadSafetyService extends Service {
         main.postDelayed(staleSpeedWatchdog, 4500L);
         previous = new Location(loc);
 
+        maybeResolveRoadLimit(loc.getLatitude(), loc.getLongitude(), heading);
+        evaluateRoadLimit(speedKmh);
         ensureCoverage(loc.getLatitude(), loc.getLongitude(), heading);
         List<RoadHazard> nearby = packs.nearby(loc.getLatitude(), loc.getLongitude(), 1900);
         RoadHazard best = null;
@@ -203,6 +212,47 @@ public final class RoadSafetyService extends Service {
             // Speed is live telemetry, not a notification. Broadcast every accepted
             // location sample so the cockpit cannot display an old value for 7+ sec.
             broadcast(loc, speedKmh, null, 0, state);
+        }
+    }
+
+    private void maybeResolveRoadLimit(double lat, double lon, float heading) {
+        long now = System.currentTimeMillis();
+        if (now - lastRoadLimitCheckAt < 7000L || roadLimitResolving.get()) return;
+        lastRoadLimitCheckAt = now;
+        if (!roadLimitResolving.compareAndSet(false, true)) return;
+        limitIo.execute(() -> {
+            int limit = 0;
+            try {
+                if (mapRoads != null) limit = mapRoads.speedLimitAt(lat, lon, heading);
+            } catch (Throwable ignored) {}
+            final int resolved = limit;
+            main.post(() -> applyRoadLimit(resolved));
+            roadLimitResolving.set(false);
+        });
+    }
+
+    private void applyRoadLimit(int limitKmh) {
+        if (limitKmh < 10 || limitKmh > 180) return;
+        boolean changed = currentRoadLimitKmh != limitKmh;
+        currentRoadLimitKmh = limitKmh;
+        if (changed) roadOverspeedWarned = false;
+        if (limitKmh != announcedRoadLimitKmh && ttsReady) {
+            announcedRoadLimitKmh = limitKmh;
+            speak("Limite da via, " + limitKmh + " quilômetros por hora.");
+        }
+    }
+
+    private void evaluateRoadLimit(double speedKmh) {
+        int limit = currentRoadLimitKmh;
+        if (limit <= 0 || !Double.isFinite(speedKmh)) return;
+        if (speedKmh <= limit) {
+            roadOverspeedWarned = false;
+            return;
+        }
+        // Small GPS tolerance prevents a 60/61 oscillation from becoming a false warning.
+        if (!roadOverspeedWarned && speedKmh >= limit + 2.0 && ttsReady) {
+            roadOverspeedWarned = true;
+            speak("Atenção. Você passou do limite da via. Limite de " + limit + " quilômetros por hora.");
         }
     }
 
@@ -409,7 +459,7 @@ public final class RoadSafetyService extends Service {
             case "PASSAGEM_NIVEL":
                 return "Atenção. Passagem de nível à frente, a " + distance + ". Reduza a velocidade e observe a sinalização.";
             default:
-                if (h.speed > 0) return "Radar à frente, a " + distance + ". Limite de " + h.speed + " quilômetros por hora.";
+                if (h.speed > 0) return "Radar à frente, a " + distance + ". Limite do radar, " + h.speed + " quilômetros por hora.";
                 return "Radar à frente, a " + distance + ".";
         }
     }
@@ -473,6 +523,7 @@ public final class RoadSafetyService extends Service {
             i.putExtra("road", h.road);
             i.putExtra("distance_m", distance);
             i.putExtra("limit_kmh", h.speed);
+            i.putExtra("radar_limit_kmh", h.speed);
         }
         sendBroadcast(i);
     }
@@ -488,6 +539,7 @@ public final class RoadSafetyService extends Service {
         i.putExtra("lat", lat);
         i.putExtra("lon", lon);
         i.putExtra("speed_kmh", speedKmh);
+        i.putExtra("road_limit_kmh", currentRoadLimitKmh);
         i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f);
         i.putExtra("pack_count", packs.packCount());
         i.putExtra("state_pack_count", packs.statePackCount());
@@ -545,6 +597,7 @@ public final class RoadSafetyService extends Service {
         try { if (locationManager != null) locationManager.removeUpdates(listener); } catch (Throwable ignored) {}
         try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Throwable ignored) {}
         io.shutdownNow();
+        limitIo.shutdownNow();
         super.onDestroy();
     }
 
