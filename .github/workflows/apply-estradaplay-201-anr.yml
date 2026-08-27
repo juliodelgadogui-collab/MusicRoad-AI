@@ -1,0 +1,46 @@
+name: Apply EstradaPlay 2.0.1 ANR Fix
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/scripts/apply_201_anr_fix.py'
+      - '.github/workflows/apply-estradaplay-201-anr.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estradaplay-201-anr-migration
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply fix to definitive v2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply_201_anr_fix.py
+          grep -q "versionName '2.0.1'" estradaplay-app-v2/app/build.gradle
+          grep -q 'versionCode 201' estradaplay-app-v2/app/build.gradle
+          grep -q 'ANR_GUARD_V201' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/OfflineRoadStore.java
+          grep -q 'ANR_GUARD_V201' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          if grep -n 'hasFreshCorridor' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/OfflineRoadStore.java >/dev/null; then true; fi
+
+      - name: Commit corrected definitive source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add estradaplay-app-v2
+          git diff --cached --stat
+          git commit -m 'EstradaPlay 2.0.1: prevent GPS map ANR'
+          git push origin HEAD:agent/native-apk-build
