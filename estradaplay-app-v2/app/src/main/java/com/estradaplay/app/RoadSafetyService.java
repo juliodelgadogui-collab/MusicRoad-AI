@@ -21,9 +21,12 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.Voice;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -100,8 +103,11 @@ public final class RoadSafetyService extends Service {
                 ttsReady = true;
                 try {
                     tts.setLanguage(new Locale("pt", "BR"));
-                    tts.setSpeechRate(1.0f);
-                    tts.setPitch(1.0f);
+                    // ESTRADAPLAY_VOICE_V203: branded automotive profile.
+                    // Slightly lower pitch + calmer pace makes road warnings firm and distinct.
+                    tts.setSpeechRate(0.93f);
+                    tts.setPitch(0.88f);
+                    selectEstradaPlayVoice();
                     tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                         @Override public void onStart(String utteranceId) {}
                         @Override public void onDone(String utteranceId) { main.post(RoadSafetyService.this::restoreAudioAfterVoice); }
@@ -434,6 +440,29 @@ public final class RoadSafetyService extends Service {
         return chosen;
     }
 
+    private void selectEstradaPlayVoice() {
+        if (tts == null || Build.VERSION.SDK_INT < 21) return;
+        try {
+            java.util.Set<Voice> voices = tts.getVoices();
+            if (voices == null || voices.isEmpty()) return;
+            ArrayList<Voice> pt = new ArrayList<>();
+            for (Voice v : voices) {
+                if (v == null || v.getLocale() == null) continue;
+                String lang = v.getLocale().getLanguage();
+                String country = v.getLocale().getCountry();
+                if (!"pt".equalsIgnoreCase(lang)) continue;
+                if (!country.isEmpty() && !"BR".equalsIgnoreCase(country)) continue;
+                pt.add(v);
+            }
+            if (pt.isEmpty()) return;
+            pt.sort(Comparator
+                    .comparing((Voice v) -> v.isNetworkConnectionRequired())
+                    .thenComparing((Voice v) -> -v.getQuality())
+                    .thenComparing(Voice::getName));
+            tts.setVoice(pt.get(0));
+        } catch (Throwable ignored) {}
+    }
+
     private void speak(String text) {
         if (!ttsReady || tts == null || text == null || text.trim().isEmpty()) return;
         duckOwnPlayer(true);
@@ -451,16 +480,16 @@ public final class RoadSafetyService extends Service {
         String distance = distanceSpeech(forward);
         switch (h.type) {
             case "SEMAFORO":
-                return "Atenção. Semáforo à frente, a " + distance + ".";
+                return "Atenção. Semáforo à frente. " + distance + ".";
             case "QUEBRA_MOLAS":
-                return "Reduza. Quebra-molas à frente, a " + distance + ".";
+                return "Reduza. Quebra-molas à frente. " + distance + ".";
             case "PEDAGIO":
-                return "Pedágio à frente, a " + distance + ". Prepare-se para a praça de pedágio.";
+                return "Pedágio à frente. " + distance + ".";
             case "PASSAGEM_NIVEL":
-                return "Atenção. Passagem de nível à frente, a " + distance + ". Reduza a velocidade e observe a sinalização.";
+                return "Atenção. Passagem de nível à frente. " + distance + ". Reduza.";
             default:
                 if (h.speed > 0) return "Radar à frente, a " + distance + ". Limite do radar, " + h.speed + " quilômetros por hora.";
-                return "Radar à frente, a " + distance + ".";
+                return "Radar à frente. " + distance + ".";
         }
     }
 
