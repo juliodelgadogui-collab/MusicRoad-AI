@@ -125,3 +125,34 @@ jobs:
             --title "EstradaPlay ${VERSION} · build direto" \
             --notes "$NOTES" \
             "EstradaPlay-${VERSION}.apk"
+
+      - name: Record build result
+        if: always()
+        env:
+          BUILD_RESULT: ${{ job.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_NOW=$(grep -o "versionName '[^']*'" estradaplay-app-v2/app/build.gradle | head -1 | cut -d"'" -f2)
+          TAG="estradaplay-${VERSION_NOW}-direct-${GITHUB_RUN_NUMBER}"
+          APK_FILE="EstradaPlay-${VERSION_NOW}.apk"
+          APK_SHA=""
+          if [ -f "$APK_FILE" ]; then
+            APK_SHA=$(sha256sum "$APK_FILE" | awk '{print $1}')
+          fi
+          mkdir -p .build-status
+          cat > .build-status/estradaplay-v2-latest.txt <<EOF
+          status=${BUILD_RESULT}
+          version=${VERSION_NOW}
+          run_id=${GITHUB_RUN_ID}
+          run_number=${GITHUB_RUN_NUMBER}
+          source_sha=${GITHUB_SHA}
+          release_tag=${TAG}
+          apk_sha256=${APK_SHA}
+          release_asset=https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK_FILE}
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .build-status/estradaplay-v2-latest.txt
+          git commit -m "Record EstradaPlay ${VERSION_NOW} build ${GITHUB_RUN_NUMBER} [skip ci]" || exit 0
+          git push origin HEAD:agent/native-apk-build
