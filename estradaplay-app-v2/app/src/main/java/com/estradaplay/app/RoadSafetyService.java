@@ -52,6 +52,8 @@ public final class RoadSafetyService extends Service {
     private OfflineRoadStore mapRoads;
     private ApiClient api;
     private TextToSpeech tts;
+    // OFFLINE_VOICE_V204: primary deterministic voice; Android TTS is fallback only.
+    private EstradaPlayOfflineVoice offlineVoice;
     private boolean ttsReady;
     private AudioManager audioManager;
     private AudioFocusRequest alertFocusRequest;
@@ -94,6 +96,7 @@ public final class RoadSafetyService extends Service {
         packs = new RoadPackStore(this);
         mapRoads = new OfflineRoadStore(this);
         api = new ApiClient(this);
+        offlineVoice = new EstradaPlayOfflineVoice(this);
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
         audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
         createChannel();
@@ -196,7 +199,7 @@ public final class RoadSafetyService extends Service {
 
         if (best != null && shouldAlert(best)) {
             rememberAlert(best);
-            speak(voice(best, bestForward));
+            speakHazardVoice(best, bestForward);
             String title = best.label() + " à frente";
             String detail = distanceText(bestForward);
             if (best.speed > 0 && "RADAR".equals(best.type)) detail += " · " + best.speed + " km/h";
@@ -242,9 +245,8 @@ public final class RoadSafetyService extends Service {
         boolean changed = currentRoadLimitKmh != limitKmh;
         currentRoadLimitKmh = limitKmh;
         if (changed) roadOverspeedWarned = false;
-        if (limitKmh != announcedRoadLimitKmh && ttsReady) {
+        if (limitKmh != announcedRoadLimitKmh && speakRoadLimitVoice(limitKmh)) {
             announcedRoadLimitKmh = limitKmh;
-            speak("Limite da via, " + limitKmh + " quilômetros por hora.");
         }
     }
 
@@ -256,9 +258,8 @@ public final class RoadSafetyService extends Service {
             return;
         }
         // Small GPS tolerance prevents a 60/61 oscillation from becoming a false warning.
-        if (!roadOverspeedWarned && speedKmh >= limit + 2.0 && ttsReady) {
+        if (!roadOverspeedWarned && speedKmh >= limit + 2.0 && speakOverspeedVoice(limit)) {
             roadOverspeedWarned = true;
-            speak("Atenção. Você passou do limite da via. Limite de " + limit + " quilômetros por hora.");
         }
     }
 
@@ -463,8 +464,52 @@ public final class RoadSafetyService extends Service {
         } catch (Throwable ignored) {}
     }
 
+    private void prepareEmbeddedVoice() {
+        try { if (tts != null) tts.stop(); } catch (Throwable ignored) {}
+        duckOwnPlayer(true);
+        requestVoiceFocus();
+        main.removeCallbacks(restoreAudioFallback);
+        main.postDelayed(restoreAudioFallback, 8000L);
+    }
+
+    private boolean speakRoadLimitVoice(int limitKmh) {
+        if (offlineVoice != null) {
+            prepareEmbeddedVoice();
+            if (offlineVoice.playRoadLimit(limitKmh, this::restoreAudioAfterVoice)) return true;
+            restoreAudioAfterVoice();
+        }
+        if (ttsReady) {
+            speak("Limite da via, " + limitKmh + " quilômetros por hora.");
+            return true;
+        }
+        return false;
+    }
+
+    private boolean speakOverspeedVoice(int limitKmh) {
+        if (offlineVoice != null) {
+            prepareEmbeddedVoice();
+            if (offlineVoice.playOverspeed(limitKmh, this::restoreAudioAfterVoice)) return true;
+            restoreAudioAfterVoice();
+        }
+        if (ttsReady) {
+            speak("Atenção. Você passou do limite da via. Limite de " + limitKmh + " quilômetros por hora.");
+            return true;
+        }
+        return false;
+    }
+
+    private void speakHazardVoice(RoadHazard h, double forwardM) {
+        if (offlineVoice != null && h != null) {
+            prepareEmbeddedVoice();
+            if (offlineVoice.playHazard(h.type, forwardM, h.speed, this::restoreAudioAfterVoice)) return;
+            restoreAudioAfterVoice();
+        }
+        speak(voice(h, forwardM));
+    }
+
     private void speak(String text) {
         if (!ttsReady || tts == null || text == null || text.trim().isEmpty()) return;
+        if (offlineVoice != null) offlineVoice.stop();
         duckOwnPlayer(true);
         requestVoiceFocus();
         main.removeCallbacks(restoreAudioFallback);
@@ -624,6 +669,7 @@ public final class RoadSafetyService extends Service {
         main.removeCallbacks(staleSpeedWatchdog);
         restoreAudioAfterVoice();
         try { if (locationManager != null) locationManager.removeUpdates(listener); } catch (Throwable ignored) {}
+        try { if (offlineVoice != null) offlineVoice.release(); } catch (Throwable ignored) {}
         try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Throwable ignored) {}
         io.shutdownNow();
         limitIo.shutdownNow();
