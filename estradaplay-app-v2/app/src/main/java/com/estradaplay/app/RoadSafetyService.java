@@ -60,6 +60,10 @@ public final class RoadSafetyService extends Service {
     private long motionAnchorWallMs;
     private boolean stationaryConfirmed;
     private long lastNotificationAt;
+    // ANR_GUARD_V201: keep repetitive disk/status/coverage work out of the 1 Hz GPS hot path.
+    private long lastCoverageCheckAt;
+    private long lastStateRefreshAt;
+    private String lastStateText = "GPS ativo · preparando proteção";
 
     private final Runnable restoreAudioFallback = this::restoreAudioAfterVoice;
 
@@ -186,9 +190,13 @@ public final class RoadSafetyService extends Service {
             broadcast(loc, speedKmh, best, bestDistance, detail);
         } else {
             long now = System.currentTimeMillis();
-            String state = packs.hasAnyCoverage(loc.getLatitude(), loc.getLongitude())
-                    ? packs.status(loc.getLatitude(), loc.getLongitude()) + " · " + mapRoads.status(loc.getLatitude(), loc.getLongitude())
-                    : (fetching.get() ? "Preparando alertas e mapa offline…" : "Aguardando proteção offline desta região");
+            if (now - lastStateRefreshAt >= 5000L || lastStateText == null || lastStateText.isEmpty()) {
+                lastStateText = packs.hasAnyCoverage(loc.getLatitude(), loc.getLongitude())
+                        ? packs.status(loc.getLatitude(), loc.getLongitude()) + " · " + mapRoads.status(loc.getLatitude(), loc.getLongitude())
+                        : (fetching.get() ? "Preparando alertas e mapa offline…" : "Aguardando proteção offline desta região");
+                lastStateRefreshAt = now;
+            }
+            String state = lastStateText;
             if (now - lastNotificationAt > 7000L) {
                 updateNotification("Proteção na estrada ativa", state, false);
             }
@@ -199,6 +207,9 @@ public final class RoadSafetyService extends Service {
     }
 
     private void ensureCoverage(double lat, double lon, float heading) {
+        long now = System.currentTimeMillis();
+        if (now - lastCoverageCheckAt < 5000L) return;
+        lastCoverageCheckAt = now;
         boolean alertNeeds = packs.needsPreparation(lat, lon, heading);
         boolean mapNeeds = mapRoads.needsPreparation(lat, lon, heading);
         if ((!alertNeeds && !mapNeeds) || fetching.get()) return;

@@ -63,17 +63,11 @@ final class OfflineRoadStore {
         if (files != null) {
             Arrays.sort(files, Comparator.comparingLong(File::lastModified).reversed());
             for (File f : files) {
-                try {
-                    JSONObject root = new JSONObject(readText(f));
-                    JSONObject start = root.optJSONObject("start");
-                    if (start == null) continue;
-                    double slat = start.optDouble("lat", Double.NaN);
-                    double slon = start.optDouble("lon", Double.NaN);
-                    if (!Double.isFinite(slat) || !Double.isFinite(slon)) continue;
-                    if (RoadPackStore.distanceM(lat, lon, slat, slon) > 190000) continue;
-                    appendFeatures(root, unique, 18000);
-                    if (unique.size() >= 18000) break;
-                } catch (Throwable ignored) {}
+                CorridorMeta meta = corridorMeta(f);
+                if (meta == null) continue;
+                if (RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) > 190000) continue;
+                appendFeatures(f, unique, 9000);
+                if (unique.size() >= 9000) break;
             }
         }
 
@@ -134,12 +128,12 @@ final class OfflineRoadStore {
         } catch (Throwable ignored) { return false; }
     }
 
-    // OSM_DIRECT_MAP_V200: local fallback (~30 km) when server offline packs
+    // OSM_DIRECT_MAP_V200: local fallback (~18 km) when server offline packs
     // are unavailable. It is intentionally smaller than the server 250 km pack.
     private boolean fetchDirectLocalMap(double lat, double lon, float heading) {
         try {
             String query = String.format(Locale.US,
-                    "[out:json][timeout:35];way(around:30000,%.6f,%.6f)[\"highway\"~\"motorway|trunk|primary|secondary|tertiary\"];out geom tags;",
+                    "[out:json][timeout:35];way(around:18000,%.6f,%.6f)[\"highway\"~\"motorway|trunk|primary|secondary|tertiary\"];out geom tags;",
                     lat, lon);
             String target = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(query, "UTF-8");
             HttpURLConnection c = (HttpURLConnection)new URL(target).openConnection();
@@ -153,7 +147,7 @@ final class OfflineRoadStore {
                 byte[] buf = new byte[32768]; int n;
                 while ((n = in.read(buf)) > 0) {
                     out.write(buf, 0, n);
-                    if (out.size() > 22_000_000) throw new Exception("Mapa OSM grande demais");
+                    if (out.size() > 10_000_000) throw new Exception("Mapa OSM grande demais");
                 }
                 osm = new JSONObject(new String(out.toByteArray(), StandardCharsets.UTF_8));
             } finally { c.disconnect(); }
@@ -161,7 +155,7 @@ final class OfflineRoadStore {
             JSONArray elements = osm.optJSONArray("elements");
             if (elements == null || elements.length() == 0) return false;
             JSONArray features = new JSONArray();
-            for (int i = 0; i < elements.length() && features.length() < 7000; i++) {
+            for (int i = 0; i < elements.length() && features.length() < 2500; i++) {
                 JSONObject e = elements.optJSONObject(i); if (e == null) continue;
                 JSONArray geom = e.optJSONArray("geometry"); if (geom == null || geom.length() < 2) continue;
                 JSONArray coords = new JSONArray();
@@ -196,20 +190,17 @@ final class OfflineRoadStore {
         } catch (Throwable ignored) { return false; }
     }
 
+    // ANR_GUARD_V201: these methods run from the GPS/service path. Corridor position
+    // is encoded in the file name, so never read/parse the large road GeoJSON here.
     private boolean hasFreshCorridor(double lat, double lon, float heading) {
         File[] files = corridorFiles();
         if (files == null) return false;
         long now = System.currentTimeMillis();
         for (File f : files) {
             if (now - f.lastModified() > CORRIDOR_FRESH_MS) continue;
-            try {
-                JSONObject j = new JSONObject(readText(f));
-                JSONObject start = j.optJSONObject("start"); if (start == null) continue;
-                double slat = start.optDouble("lat", Double.NaN), slon = start.optDouble("lon", Double.NaN);
-                double sh = start.optDouble("heading", Double.NaN);
-                if (!Double.isFinite(slat) || !Double.isFinite(slon) || !Double.isFinite(sh)) continue;
-                if (RoadPackStore.distanceM(lat, lon, slat, slon) <= 45000 && angleDiff(heading, sh) <= 35.0) return true;
-            } catch (Throwable ignored) {}
+            CorridorMeta meta = corridorMeta(f);
+            if (meta == null) continue;
+            if (RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) <= 52000 && angleDiff(heading, meta.heading) <= 45.0) return true;
         }
         return false;
     }
@@ -220,14 +211,38 @@ final class OfflineRoadStore {
         long now = System.currentTimeMillis();
         for (File f : files) {
             if (now - f.lastModified() > 10L * 24L * 60L * 60L * 1000L) continue;
-            try {
-                JSONObject j = new JSONObject(readText(f));
-                JSONObject start = j.optJSONObject("start"); if (start == null) continue;
-                double slat = start.optDouble("lat", Double.NaN), slon = start.optDouble("lon", Double.NaN);
-                if (Double.isFinite(slat) && Double.isFinite(slon) && RoadPackStore.distanceM(lat, lon, slat, slon) <= 120000) return true;
-            } catch (Throwable ignored) {}
+            CorridorMeta meta = corridorMeta(f);
+            if (meta != null && RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) <= 135000) return true;
         }
         return false;
+    }
+
+    private static CorridorMeta corridorMeta(File file) {
+        if (file == null) return null;
+        try {
+            String n = file.getName();
+            if (!n.startsWith("corr_") || !n.endsWith(".json")) return null;
+            String core = n.substring(5, n.length() - 5);
+            String[] p = core.split("_");
+            if (p.length != 5) return null;
+            double lat = decodeCoord(p[0], p[1]);
+            double lon = decodeCoord(p[2], p[3]);
+            double heading = Double.parseDouble(p[4]);
+            if (!Double.isFinite(lat) || !Double.isFinite(lon) || !Double.isFinite(heading)) return null;
+            return new CorridorMeta(lat, lon, heading);
+        } catch (Throwable ignored) { return null; }
+    }
+
+    private static double decodeCoord(String whole, String fraction) {
+        if (whole == null || whole.length() < 2) return Double.NaN;
+        char sign = whole.charAt(0);
+        double value = Double.parseDouble(whole.substring(1) + "." + fraction);
+        return sign == 'm' ? -value : value;
+    }
+
+    private static final class CorridorMeta {
+        final double lat, lon, heading;
+        CorridorMeta(double lat, double lon, double heading) { this.lat = lat; this.lon = lon; this.heading = heading; }
     }
 
     private void appendFeatures(File file, LinkedHashMap<String, JSONObject> out, int limit) {
