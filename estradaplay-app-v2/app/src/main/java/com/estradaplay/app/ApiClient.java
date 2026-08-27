@@ -57,6 +57,8 @@ final class ApiClient {
         c.setRequestProperty("Accept-Encoding", "gzip");
         c.setRequestProperty("User-Agent", "EstradaPlay/" + BuildConfig.VERSION_NAME + " Android");
         c.setRequestProperty("X-MusicRoad-Native", "1");
+        c.setRequestProperty("X-EstradaPlay-Device", DeviceIdentity.token(app));
+        c.setRequestProperty("X-EstradaPlay-Device-Label", DeviceIdentity.label());
         String cookie = cookie();
         if (cookie != null && !cookie.trim().isEmpty()) c.setRequestProperty("Cookie", cookie.trim());
         if (data != null) {
