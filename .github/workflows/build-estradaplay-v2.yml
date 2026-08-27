@@ -50,6 +50,10 @@ jobs:
           grep -q 'AUTOMOTIVE_INPUT_V177' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
           grep -q 'OSM_DIRECT_RADARS_V200' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadPackStore.java
           grep -q 'OSM_DIRECT_MAP_V200' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/OfflineRoadStore.java
+          if grep -q "versionName '2.0.1'" estradaplay-app-v2/app/build.gradle; then
+            grep -q 'ANR_GUARD_V201' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/OfflineRoadStore.java
+            grep -q 'ANR_GUARD_V201' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          fi
 
       - name: Build APK directly
         working-directory: estradaplay-app-v2
@@ -83,7 +87,11 @@ jobs:
         run: |
           set -euo pipefail
           TAG="estradaplay-${VERSION}-direct-${GITHUB_RUN_NUMBER}"
+          NOTES="Compilado diretamente de estradaplay-app-v2, sem aplicar patches da série 1.x."
+          if [ "$VERSION" = "2.0.1" ]; then
+            NOTES="Hotfix do ANR visto no Android: remove leitura/parse de GeoJSON grande do caminho principal do GPS, reduz trabalho repetitivo do serviço e limita o mapa OSM de emergência para centrais mais fracas. Mantém toque, velocidade, radares, música e suporte horizontal/vertical da 2.0."
+          fi
           gh release create "$TAG" --target "$GITHUB_SHA" \
             --title "EstradaPlay ${VERSION} · build direto" \
-            --notes "Compilado diretamente de estradaplay-app-v2, sem aplicar patches da série 1.x." \
+            --notes "$NOTES" \
             "EstradaPlay-${VERSION}.apk"
