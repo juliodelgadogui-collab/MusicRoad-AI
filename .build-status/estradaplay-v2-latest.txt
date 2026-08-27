@@ -1,0 +1,8 @@
+status=success
+version=2.0.4
+run_id=33107835650
+run_number=8
+source_sha=881a29e6ffcdbdcaf54b34392eda91bca001b2d5
+release_tag=estradaplay-2.0.4-direct-8
+apk_sha256=9db8780ad26b7dcc90064383a666ae4717511fa15fd4ec541961d492e0ff8577
+release_asset=https://github.com/juliobji6-ship-it/MusicRoad-AI/releases/download/estradaplay-2.0.4-direct-8/EstradaPlay-2.0.4.apk
