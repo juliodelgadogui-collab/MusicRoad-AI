@@ -17,7 +17,7 @@ function native_device_label_from_request(?array $data = null): string
     $label = is_array($data) ? trim((string)($data['device_label'] ?? '')) : '';
     if ($label === '') $label = trim((string)($_SERVER['HTTP_X_ESTRADAPLAY_DEVICE_LABEL'] ?? ''));
     if ($label === '') $label = 'EstradaPlay Android';
-    return mb_substr($label, 0, 160);
+    return function_exists('mb_substr') ? mb_substr($label, 0, 160) : substr($label, 0, 160);
 }
 
 function native_account_payload(array $user): array
