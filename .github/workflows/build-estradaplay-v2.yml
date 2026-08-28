@@ -8,6 +8,7 @@ on:
     branches: [agent/native-apk-build]
     paths:
       - 'estradaplay-app-v2/**'
+      - 'api/bootstrap.php'
       - 'api/library.php'
       - 'api/native_app.php'
       - 'api/native_auth.php'
@@ -68,7 +69,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q "versionName '2." estradaplay-app-v2/app/build.gradle
+          grep -q "versionName '2.0.7'" estradaplay-app-v2/app/build.gradle
           grep -q 'android:resizeableActivity="true"' estradaplay-app-v2/app/src/main/AndroidManifest.xml
           if grep -q 'sensorLandscape' estradaplay-app-v2/app/src/main/AndroidManifest.xml; then exit 1; fi
           if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app-v2/app/src/main/java; then exit 1; fi
@@ -81,14 +82,24 @@ jobs:
           grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/tools/generate_voice_bank.py
           grep -q 'X-EstradaPlay-Device' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/ApiClient.java
+          grep -q 'LIBRARY_NONBLOCKING_V207' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'LIBRARY_FAST_V207' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/ApiClient.java
+          grep -q 'ATUALIZAR DO SERVIDOR' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'X-EstradaPlay-Device' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/DownloadService.java
           test -s estradaplay-app-v2/app/src/main/res/raw/ep_radar_frente.wav
           test -s estradaplay-app-v2/app/src/main/res/raw/ep_limite_via.wav
           test -s estradaplay-app-v2/app/src/main/res/raw/ep_speed_060.wav
 
-      - name: Verify server patch
+      - name: Verify server recovery
         shell: bash
         run: |
           set -euo pipefail
+          grep -q 'DB_COMPAT_V207' api/bootstrap.php
+          grep -q 'LIBRARY_FAST_V207' api/library.php
+          grep -q 'DRIVE_SYNC_V207' api/native_library_sync.php
+          grep -q "library_fast" api/native_app.php
+          grep -q "library_sync" api/native_app.php
+          php -l api/bootstrap.php
           php -l api/library.php
           php -l api/native_app.php
           php -l api/native_auth.php
@@ -110,22 +121,32 @@ jobs:
           sha256sum "EstradaPlay-${VERSION}.apk"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Package server patch
+      - name: Package server recovery
         shell: bash
         run: |
           set -euo pipefail
           PKG=/tmp/estradaplay-server
           rm -rf "$PKG"
           mkdir -p "$PKG/api"
+          cp api/bootstrap.php "$PKG/api/"
           cp api/library.php "$PKG/api/"
           cp api/native_app.php "$PKG/api/"
           cp api/native_auth.php "$PKG/api/"
           cp api/native_library_sync.php "$PKG/api/"
           cat > "$PKG/LEIA-PRIMEIRO.txt" <<'EOF'
-          EstradaPlay 2.0.5 - correção de biblioteca
-          Extraia na raiz do servidor e permita sobrescrever somente os arquivos incluídos.
-          Não apague config.php, banco de dados, músicas, usuários ou demais arquivos.
-          Esta atualização restaura sessão por dispositivo e sincroniza novas pastas do Google Drive.
+          EstradaPlay 2.0.7 - recuperação da biblioteca
+
+          Extraia este ZIP na RAIZ da instalação do EstradaPlay e permita sobrescrever SOMENTE os arquivos incluídos.
+
+          O pacote NÃO contém config/config.php, banco de dados, músicas, usuários ou pastas de mídia.
+          Portanto não apaga sua configuração nem seus dados.
+
+          Correções principais:
+          - listagem da biblioteca responde imediatamente sem varrer o Google Drive;
+          - sincronização do Google Drive acontece separadamente;
+          - compatibilidade de bootstrap com SQLite e MySQL/MariaDB;
+          - recuperação da sessão pelo aparelho;
+          - scanner público do Drive mais robusto e com timeouts menores.
           EOF
           (cd "$PKG" && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-${VERSION}-SERVIDOR.zip" .)
           sha256sum "EstradaPlay-${VERSION}-SERVIDOR.zip"
@@ -148,16 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="estradaplay-${VERSION}-direct-${GITHUB_RUN_NUMBER}"
-          NOTES="Compilado diretamente de estradaplay-app-v2, sem aplicar patches da série 1.x."
-          if [ "$VERSION" = "2.0.1" ]; then
-            NOTES="Hotfix do ANR visto no Android: remove leitura/parse de GeoJSON grande do caminho principal do GPS, reduz trabalho repetitivo do serviço e limita o mapa OSM de emergência para centrais mais fracas. Mantém toque, velocidade, radares, música e suporte horizontal/vertical da 2.0."
-          fi
-          if [ "$VERSION" = "2.0.4" ]; then
-            NOTES="Versão de teste com voz EstradaPlay embarcada e offline: o banco pt-BR é sintetizado no build e os alertas reproduzem os mesmos áudios em qualquer central. Android TTS fica apenas como fallback para valores não previstos. Mantém limite da via, limite do radar, aviso único de excesso, correção de ANR, toque e horizontal/vertical."
-          fi
-          if [ "$VERSION" = "2.0.5" ]; then
-            NOTES="Corrige a biblioteca após reinstalação e a descoberta de novas pastas do Google Drive. O app envia uma identidade estável do aparelho em toda chamada; o servidor reconstrói a sessão, refaz a varredura das pastas ativas e mantém fallback da biblioteca já salva. Inclui pacote de servidor."
-          fi
+          NOTES="Versão de teste focada em biblioteca: abre catálogo salvo imediatamente, separa listagem rápida da sincronização do Google Drive, recupera sessão do aparelho, adiciona atualização manual da biblioteca, evita carregamento infinito, reforça downloads autenticados e inclui correção SQLite/MySQL/MariaDB no servidor."
           gh release create "$TAG" --target "$GITHUB_SHA" \
             --title "EstradaPlay ${VERSION} · build direto" \
             --notes "$NOTES" \
