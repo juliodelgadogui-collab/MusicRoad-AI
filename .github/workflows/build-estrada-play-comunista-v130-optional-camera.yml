@@ -1,0 +1,157 @@
+name: Estrada Play Comunista 1.3.0 Optional Camera
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - agent/estrada-play-comunista
+    paths:
+      - 'tools/patch_estrada_play_comunista_optional_camera_v130.py'
+      - '.github/workflows/build-estrada-play-comunista-v130-optional-camera.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Generate optional camera editions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/create_estrada_play_comunista.py
+          python3 tools/fix_estrada_play_comunista_generated.py
+          python3 tools/patch_estrada_play_comunista_design_v110.py
+          python3 tools/fix_estrada_play_comunista_splash_v110.py
+          python3 tools/patch_estrada_play_comunista_design_v120.py
+          python3 tools/patch_estrada_play_comunista_orientation_split_v121.py
+          python3 tools/patch_estrada_play_comunista_safety_overlay_v122.py
+          python3 tools/patch_estrada_play_comunista_optional_camera_v130.py
+
+      - name: Verify optional camera architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          GRADLE=estrada-play-comunista-app/app/build.gradle
+          MANIFEST=estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          JAVA=estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista
+          grep -q "versionName '1.3.0'" "$GRADLE"
+          grep -q 'versionCode 130' "$GRADLE"
+          grep -q "applicationIdSuffix '.vertical'" "$GRADLE"
+          grep -q "applicationIdSuffix '.horizontal'" "$GRADLE"
+          grep -q "androidx.camera:camera-view:1.4.2" "$GRADLE"
+          grep -q 'android.permission.CAMERA' "$MANIFEST"
+          grep -q 'android.hardware.camera.any' "$MANIFEST"
+          grep -q 'android:required="false"' "$MANIFEST"
+          grep -q 'android:name=".CameraActivity"' "$MANIFEST"
+          grep -q 'class CameraActivity' "$JAVA/CameraActivity.java"
+          grep -q 'ATIVAR CÂMERA' "$JAVA/CameraActivity.java"
+          grep -q 'Nenhum vídeo é enviado ao servidor' "$JAVA/CameraActivity.java"
+          grep -q 'getExternalFilesDir' "$JAVA/CameraActivity.java"
+          grep -q 'SafetyAlertOverlay.show(CameraActivity.this' "$JAVA/CameraActivity.java"
+          grep -q 'OPTIONAL_CAMERA_V130_HOME' "$JAVA/MainActivity.java"
+          grep -q 'CameraActivity.class' "$JAVA/MainActivity.java"
+          grep -q 'CAMERA_MONITORAMENTO' "$JAVA/RoadHazard.java"
+          grep -q "versionName '2.0.11'" estradaplay-app-v2/app/build.gradle
+          if grep -R -q 'android.webkit.WebView\|new WebView' estrada-play-comunista-app/app/src/main/java; then exit 1; fi
+
+      - name: Commit generated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estrada-play-comunista-app
+          git commit -m "Create Comunista 1.3.0 optional camera [skip ci]" || true
+          git push origin HEAD:agent/estrada-play-comunista
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d estrada-play-comunista-app/signing/estradaplay-dev.keystore.b64 > estrada-play-comunista-app/signing/estradaplay-dev.keystore
+
+      - name: Generate embedded safety voice fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          rm -rf /tmp/epc-voice
+          mkdir -p /tmp/epc-voice
+          tar -xjf "$MODEL" -C /tmp/epc-voice
+          python3 estrada-play-comunista-app/tools/generate_voice_bank.py --model-root /tmp/epc-voice --output estrada-play-comunista-app/app/src/main/res/raw --metadata-output estrada-play-comunista-app/app/src/main/assets/estradaplay_voice
+          test "$(find estrada-play-comunista-app/app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 71
+
+      - name: Build both APKs
+        working-directory: estrada-play-comunista-app
+        run: gradle --no-daemon clean assembleVerticalDebug assembleHorizontalDebug
+
+      - name: Verify APK identities permissions and signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=estrada-play-comunista-app/app/build/outputs/apk/vertical/debug/app-vertical-debug.apk
+          H=estrada-play-comunista-app/app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk
+          test -f "$V"
+          test -f "$H"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$V" | tee /tmp/vertical.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/horizontal.txt
+          grep -q "package: name='com.estradaplay.comunista.vertical' versionCode='130' versionName='1.3.0'" /tmp/vertical.txt
+          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='130' versionName='1.3.0'" /tmp/horizontal.txt
+          grep -q "application-label:'Estrada Play Comunista Vertical'" /tmp/vertical.txt
+          grep -q "application-label:'Estrada Play Comunista Horizontal'" /tmp/horizontal.txt
+          grep -q "uses-permission: name='android.permission.CAMERA'" /tmp/vertical.txt
+          grep -q "uses-permission: name='android.permission.CAMERA'" /tmp/horizontal.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$V" >/tmp/vertical-cert.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H" >/tmp/horizontal-cert.txt
+          cp "$V" Estrada-Play-Comunista-Vertical-1.3.0.apk
+          cp "$H" Estrada-Play-Comunista-Horizontal-1.3.0.apk
+          sha256sum Estrada-Play-Comunista-Vertical-1.3.0.apk Estrada-Play-Comunista-Horizontal-1.3.0.apk | tee /tmp/sha.txt
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-1.3.0-camera-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" \
+            --title "Estrada Play Comunista 1.3.0 - Câmera Opcional" \
+            --notes "Vertical e Horizontal continuam independentes. Novo módulo Câmera de Bordo desligado por padrão: o app não pede CAMERA no primeiro acesso e só solicita a permissão quando o usuário toca em ATIVAR CÂMERA. A visão usa a câmera traseira via CameraX. Gravação é manual e fica somente na pasta local do app, sem upload ao servidor. Ao abrir a câmera, radares, quebra-molas e câmeras de monitoramento continuam exibindo o alerta central sobre a visão. O módulo pode ser desativado a qualquer momento. GPS e toda a proteção funcionam sem câmera. EstradaPlay 2.0.11 não alterado." \
+            Estrada-Play-Comunista-Vertical-1.3.0.apk \
+            Estrada-Play-Comunista-Horizontal-1.3.0.apk
+
+      - name: Temporary artifacts
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-1.3.0-Vertical-Horizontal
+          path: |
+            Estrada-Play-Comunista-Vertical-1.3.0.apk
+            Estrada-Play-Comunista-Horizontal-1.3.0.apk
+          retention-days: 1
+          compression-level: 0
