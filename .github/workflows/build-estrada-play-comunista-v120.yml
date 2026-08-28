@@ -1,0 +1,127 @@
+name: Estrada Play Comunista 1.2.0
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - agent/estrada-play-comunista
+    paths:
+      - 'tools/patch_estrada_play_comunista_design_v120.py'
+      - '.github/workflows/build-estrada-play-comunista-v120.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Generate Comunista 1.2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/create_estrada_play_comunista.py
+          python3 tools/fix_estrada_play_comunista_generated.py
+          python3 tools/patch_estrada_play_comunista_design_v110.py
+          python3 tools/fix_estrada_play_comunista_splash_v110.py
+          python3 tools/patch_estrada_play_comunista_design_v120.py
+
+      - name: Verify independent visual architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "applicationId 'com.estradaplay.comunista'" estrada-play-comunista-app/app/build.gradle
+          grep -q "versionCode 120" estrada-play-comunista-app/app/build.gradle
+          grep -q "versionName '1.2.0'" estrada-play-comunista-app/app/build.gradle
+          grep -q 'CENTRAL DE VIAGEM' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MainActivity.java
+          grep -q 'RODAR\\nLIVRE' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MainActivity.java
+          grep -q 'PAINEL CENTRAL' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/AppMenuOverlay.java
+          grep -q 'CENTRAL 04' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java
+          grep -q 'CENTRAL DA ESTRADA' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java
+          grep -q 'android:icon="@mipmap/ic_launcher"' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q '<adaptive-icon' estrada-play-comunista-app/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          grep -q "versionName '2.0.11'" estradaplay-app-v2/app/build.gradle
+          if grep -R -q 'android.webkit.WebView\|new WebView' estrada-play-comunista-app/app/src/main/java; then exit 1; fi
+
+      - name: Commit generated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estrada-play-comunista-app
+          git commit -m "Create Estrada Play Comunista 1.2.0 independent UI [skip ci]" || true
+          git push origin HEAD:agent/estrada-play-comunista
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d estrada-play-comunista-app/signing/estradaplay-dev.keystore.b64 > estrada-play-comunista-app/signing/estradaplay-dev.keystore
+
+      - name: Generate embedded safety voice fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          rm -rf /tmp/epc-voice
+          mkdir -p /tmp/epc-voice
+          tar -xjf "$MODEL" -C /tmp/epc-voice
+          python3 estrada-play-comunista-app/tools/generate_voice_bank.py --model-root /tmp/epc-voice --output estrada-play-comunista-app/app/src/main/res/raw --metadata-output estrada-play-comunista-app/app/src/main/assets/estradaplay_voice
+          test "$(find estrada-play-comunista-app/app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 70
+
+      - name: Build APK
+        working-directory: estrada-play-comunista-app
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify APK identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=estrada-play-comunista-app/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/badging.txt
+          grep -q "package: name='com.estradaplay.comunista' versionCode='120' versionName='1.2.0'" /tmp/badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
+          cp "$APK" Estrada-Play-Comunista-1.2.0.apk
+          sha256sum Estrada-Play-Comunista-1.2.0.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-1.2.0-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" --title "Estrada Play Comunista 1.2.0" --notes "Redesign estrutural para afastar o produto do EstradaPlay original. Home virou Central de Viagem, navegação virou Painel Central em tela cheia sem drawer e o mapa vertical agora é um cockpit de mapa integral com instrumentos flutuantes. Paleta vinho/preto/marfim/dourado, geometria própria e nenhum PNG/JPG/WebP novo. Package independente preservado, assim como destino opcional, radares, offline, música e copiloto. O EstradaPlay 2.0.11 não foi alterado." Estrada-Play-Comunista-1.2.0.apk
+
+      - name: Temporary artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-1.2.0-APK
+          path: Estrada-Play-Comunista-1.2.0.apk
+          retention-days: 1
+          compression-level: 0
