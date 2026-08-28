@@ -11,6 +11,7 @@ on:
       - 'tools/create_estrada_play_comunista.py'
       - 'tools/fix_estrada_play_comunista_generated.py'
       - 'tools/patch_estrada_play_comunista_design_v110.py'
+      - 'tools/fix_estrada_play_comunista_splash_v110.py'
       - '.github/workflows/build-estrada-play-comunista.yml'
   workflow_dispatch:
 
@@ -30,6 +31,7 @@ jobs:
           python3 tools/create_estrada_play_comunista.py
           python3 tools/fix_estrada_play_comunista_generated.py
           python3 tools/patch_estrada_play_comunista_design_v110.py
+          python3 tools/fix_estrada_play_comunista_splash_v110.py
 
       - name: Verify product separation and native design
         shell: bash
@@ -45,6 +47,7 @@ jobs:
           grep -q 'NAVEGAÇÃO  ·  MÚSICA  ·  PROTEÇÃO' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/GateActivity.java
           grep -q '<adaptive-icon' estrada-play-comunista-app/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
           grep -q '<vector' estrada-play-comunista-app/app/src/main/res/mipmap-anydpi/ic_launcher.xml
+          if grep -q 'postSplashScreenTheme' estrada-play-comunista-app/app/src/main/res/values-v31/styles.xml; then exit 1; fi
           grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/CommunistCopilot.java
           grep -q 'class DestinationActivity' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationActivity.java
           grep -q 'router.project-osrm.org' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RouteEngine.java
