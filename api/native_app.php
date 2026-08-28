@@ -60,10 +60,44 @@ if ($action === 'device_login') {
     json_response(['ok'=>true,'account'=>native_account_payload($user),'csrf'=>csrf_token()]);
 }
 
+if ($action === 'library_page') {
+    $user = native_require_json_user($data);
+    $page = max(1, (int)($_GET['page'] ?? 1));
+    $limit = max(100, min(750, (int)($_GET['limit'] ?? 500)));
+    $total = (int)db()->query('SELECT COUNT(*) FROM music_library')->fetchColumn();
+    $offset = ($page - 1) * $limit;
+    $sql = 'SELECT id,title,artist,album,origin,origin_ref,source_url,mime_type,file_size,folder,duration FROM music_library ORDER BY id ASC LIMIT '.(int)$limit.' OFFSET '.(int)$offset;
+    $rows = db()->query($sql)->fetchAll() ?: [];
+    $hasMore = ($offset + count($rows)) < $total;
+    json_response([
+        'ok'=>true,
+        'tracks'=>native_library_rows($rows),
+        'paging'=>[
+            'page'=>$page,
+            'limit'=>$limit,
+            'returned'=>count($rows),
+            'total'=>$total,
+            'has_more'=>$hasMore,
+            'next_page'=>$hasMore ? $page + 1 : null,
+        ],
+        'meta'=>native_library_meta(),
+        'account'=>native_account_payload($user),
+        'csrf'=>csrf_token(),
+    ]);
+}
+
+// Legacy full-catalog actions remain for APK 2.0.7 compatibility.
 if ($action === 'library_fast' || $action === 'library') {
     $user = native_require_json_user($data);
     $rows = db()->query('SELECT * FROM music_library ORDER BY title ASC LIMIT 5000')->fetchAll() ?: [];
     json_response(['ok'=>true,'tracks'=>native_library_rows($rows),'meta'=>native_library_meta(),'account'=>native_account_payload($user),'csrf'=>csrf_token()]);
+}
+
+if ($action === 'library_sync_only') {
+    $user = native_require_json_user($data);
+    try { $sync = native_library_sync_active_drive_folders(); }
+    catch (Throwable $e) { json_response(['ok'=>false,'error'=>'Falha ao sincronizar o Google Drive.','detail'=>$e->getMessage(),'meta'=>native_library_meta()],502); }
+    json_response(['ok'=>true,'sync'=>$sync,'meta'=>native_library_meta(),'account'=>native_account_payload($user),'csrf'=>csrf_token()]);
 }
 
 if ($action === 'library_sync') {

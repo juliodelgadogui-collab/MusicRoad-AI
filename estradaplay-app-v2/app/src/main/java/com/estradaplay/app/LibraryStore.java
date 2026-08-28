@@ -7,7 +7,11 @@ import android.os.Environment;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -21,30 +25,81 @@ final class LibraryStore {
     private static final String KEY_CATALOG = "catalog";
     private static final String KEY_DOWNLOADED = "downloaded";
     private static final String KEY_SETUP = "initial_music_setup_done";
+    private static final int MAX_CATALOG_BYTES = 32 * 1024 * 1024;
     private final Context app;
     private final SharedPreferences prefs;
+    private final File catalogFile;
 
     LibraryStore(Context context) {
         app = context.getApplicationContext();
         prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        File dir = new File(app.getFilesDir(), "estradaplay_library");
+        catalogFile = new File(dir, "catalog.json");
     }
 
-    void saveCatalog(List<Track> tracks) {
+    // CATALOG_FILE_V208: large catalogs are stored atomically as a file, not in SharedPreferences.
+    synchronized void saveCatalog(List<Track> tracks) {
         JSONArray arr = new JSONArray();
         if (tracks != null) for (Track t : tracks) if (t != null) arr.put(t.toStored());
-        prefs.edit().putString(KEY_CATALOG, arr.toString()).apply();
+        byte[] bytes = arr.toString().getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > MAX_CATALOG_BYTES) return;
+        File dir = catalogFile.getParentFile();
+        if (dir != null && !dir.exists() && !dir.mkdirs()) return;
+        File tmp = new File(catalogFile.getAbsolutePath() + ".tmp");
+        try (FileOutputStream out = new FileOutputStream(tmp)) {
+            out.write(bytes);
+            out.flush();
+        } catch (Exception e) {
+            tmp.delete();
+            return;
+        }
+        if (catalogFile.exists() && !catalogFile.delete()) { tmp.delete(); return; }
+        if (!tmp.renameTo(catalogFile)) { tmp.delete(); return; }
+        prefs.edit().remove(KEY_CATALOG).apply();
     }
 
-    List<Track> catalog() {
+    synchronized List<Track> catalog() {
         ArrayList<Track> out = new ArrayList<>();
+        String raw = readCatalogFile();
+        if (raw == null || raw.isEmpty()) {
+            raw = prefs.getString(KEY_CATALOG, "[]");
+            if (raw != null && raw.length() > 2) {
+                try {
+                    JSONArray legacy = new JSONArray(raw);
+                    ArrayList<Track> migrated = new ArrayList<>();
+                    for (int i = 0; i < legacy.length(); i++) {
+                        JSONObject o = legacy.optJSONObject(i);
+                        if (o != null) migrated.add(Track.fromStored(o));
+                    }
+                    if (!migrated.isEmpty()) saveCatalog(migrated);
+                } catch (Exception ignored) {}
+            }
+        }
         try {
-            JSONArray arr = new JSONArray(prefs.getString(KEY_CATALOG, "[]"));
+            JSONArray arr = new JSONArray(raw == null ? "[]" : raw);
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.optJSONObject(i);
                 if (o != null) out.add(Track.fromStored(o));
             }
         } catch (Exception ignored) {}
         return out;
+    }
+
+    private String readCatalogFile() {
+        if (!catalogFile.isFile() || catalogFile.length() <= 0 || catalogFile.length() > MAX_CATALOG_BYTES) return null;
+        try (FileInputStream in = new FileInputStream(catalogFile); ByteArrayOutputStream out = new ByteArrayOutputStream((int)Math.min(catalogFile.length(), 1024 * 1024))) {
+            byte[] buf = new byte[32768];
+            int n;
+            int total = 0;
+            while ((n = in.read(buf)) > 0) {
+                total += n;
+                if (total > MAX_CATALOG_BYTES) return null;
+                out.write(buf, 0, n);
+            }
+            return out.toString(StandardCharsets.UTF_8.name());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     void saveDownloaded(Track track, File file) {

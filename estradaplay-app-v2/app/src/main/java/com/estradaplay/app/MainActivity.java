@@ -371,7 +371,10 @@ ui.post(() -> { showHome(); syncCatalogInBackground(); });
 
 
 
-// LIBRARY_NONBLOCKING_V207: fast catalog + separate sync + device-session recovery.
+// LIBRARY_PAGED_V208: fetch the catalog in bounded pages so library size cannot break the app.
+private static final int LIBRARY_PAGE_SIZE = 500;
+private static final int LIBRARY_MAX_PAGES = 100;
+
 private ArrayList<Track> decodeCatalog(JSONObject j) {
     ArrayList<Track> tracks = new ArrayList<>();
     JSONArray arr = j == null ? null : j.optJSONArray("tracks");
@@ -397,26 +400,63 @@ private boolean restoreLibrarySession() {
     return false;
 }
 
-private ArrayList<Track> fetchCatalogFast() throws Exception {
-    ApiClient.Response r = api.getFast("api/native_app.php?action=library_fast");
-    if (r.code == 401 && restoreLibrarySession()) r = api.getFast("api/native_app.php?action=library_fast");
+private ApiClient.Response libraryPageRequest(int page) throws Exception {
+    String path = "api/native_app.php?action=library_page&page=" + page + "&limit=" + LIBRARY_PAGE_SIZE;
+    ApiClient.Response r = api.getFast(path);
+    if (r.code == 401 && restoreLibrarySession()) r = api.getFast(path);
+    return r;
+}
+
+private ArrayList<Track> fetchLegacyCatalog() throws Exception {
+    ApiClient.Response r = api.getCatalogLegacy("api/native_app.php?action=library_fast");
+    if (r.code == 401 && restoreLibrarySession()) r = api.getCatalogLegacy("api/native_app.php?action=library_fast");
     JSONObject j = r.json();
-    if (!r.ok() || j.optJSONArray("tracks") == null) return new ArrayList<>();
+    if (!r.ok() || j.optJSONArray("tracks") == null) {
+        throw new Exception("HTTP " + r.code + " · " + j.optString("error", "Biblioteca indisponível"));
+    }
     return decodeCatalog(j);
 }
 
-private ArrayList<Track> forceCatalogSync() throws Exception {
-    ApiClient.Response r = api.getLong("api/native_app.php?action=library_sync");
-    if (r.code == 401 && restoreLibrarySession()) r = api.getLong("api/native_app.php?action=library_sync");
-    JSONObject j = r.json();
-    if (r.ok() && j.optJSONArray("tracks") != null) return decodeCatalog(j);
+private ArrayList<Track> fetchCatalogFast() throws Exception {
+    ArrayList<Track> all = new ArrayList<>();
+    int page = 1;
+    while (page <= LIBRARY_MAX_PAGES) {
+        ApiClient.Response r = libraryPageRequest(page);
+        JSONObject j = r.json();
+        if (!r.ok()) {
+            // Server 2.0.7 compatibility until the matching server ZIP is installed.
+            if (r.code == 400 || r.code == 404) return fetchLegacyCatalog();
+            throw new Exception("HTTP " + r.code + " · " + j.optString("error", "Falha ao carregar biblioteca"));
+        }
+        JSONArray raw = j.optJSONArray("tracks");
+        if (raw == null) throw new Exception("Resposta da biblioteca sem faixas");
+        all.addAll(decodeCatalog(j));
 
-    // Server 2.0.6 compatibility while the server patch has not yet been applied.
-    r = api.getLong("api/native_app.php?action=library");
-    if (r.code == 401 && restoreLibrarySession()) r = api.getLong("api/native_app.php?action=library");
-    j = r.json();
-    if (r.ok() && j.optJSONArray("tracks") != null) return decodeCatalog(j);
-    throw new Exception(j.optString("error", "Biblioteca indisponível"));
+        JSONObject paging = j.optJSONObject("paging");
+        boolean hasMore = paging != null && paging.optBoolean("has_more", false);
+        if (!hasMore) return all;
+        int next = paging.optInt("next_page", page + 1);
+        if (next <= page) next = page + 1;
+        page = next;
+    }
+    throw new Exception("Biblioteca excedeu o limite de páginas de segurança");
+}
+
+private ArrayList<Track> forceCatalogSync() throws Exception {
+    ApiClient.Response r = api.getLong("api/native_app.php?action=library_sync_only");
+    if (r.code == 401 && restoreLibrarySession()) r = api.getLong("api/native_app.php?action=library_sync_only");
+    JSONObject j = r.json();
+    if (r.ok() && j.optBoolean("ok", false)) return fetchCatalogFast();
+
+    // Server 2.0.7 compatibility: old sync endpoint returns the whole catalog.
+    if (r.code == 400 || r.code == 404) {
+        r = api.getLong("api/native_app.php?action=library_sync");
+        if (r.code == 401 && restoreLibrarySession()) r = api.getLong("api/native_app.php?action=library_sync");
+        j = r.json();
+        if (r.ok() && j.optJSONArray("tracks") != null) return decodeCatalog(j);
+        return fetchLegacyCatalog();
+    }
+    throw new Exception("HTTP " + r.code + " · " + j.optString("error", "Falha ao sincronizar biblioteca"));
 }
 
 private boolean librarySyncDue() {

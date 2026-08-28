@@ -5,7 +5,7 @@ require_once __DIR__ . '/bootstrap.php';
 
 function native_library_sync_active_drive_folders(): array
 {
-    // DRIVE_SYNC_V207: this runs outside the UI request path.
+    // DRIVE_SYNC_V208: resilient root/subfolder sync; one bad public subfolder cannot abort the library.
     if (function_exists('set_time_limit')) @set_time_limit(180);
     ensure_runtime_tables();
     $roots = db()->query('SELECT id,name,folder_id,folder_link FROM drive_folders WHERE active = 1 ORDER BY id ASC')->fetchAll() ?: [];
@@ -15,8 +15,12 @@ function native_library_sync_active_drive_folders(): array
         $visited = [];
         $rootName = trim((string)($root['name'] ?? '')) ?: 'Google Drive';
         try {
+            $beforeTracks = (int)$stats['tracks'];
+            $beforeErrors = count($stats['errors']);
             native_library_scan_folder((string)$root['folder_id'], [$rootName], $apiKey, $visited, $stats, 0);
-            $status = 'OK: '.$stats['tracks'].' músicas verificadas';
+            $rootTracks = max(0, (int)$stats['tracks'] - $beforeTracks);
+            $rootWarnings = max(0, count($stats['errors']) - $beforeErrors);
+            $status = 'OK: '.$rootTracks.' músicas verificadas'.($rootWarnings > 0 ? ' | '.$rootWarnings.' aviso(s)' : '');
             $u = db()->prepare('UPDATE drive_folders SET last_import_at = ?, last_status = ? WHERE id = ?');
             $u->execute([date('Y-m-d H:i:s'), $status, (int)$root['id']]);
         } catch (Throwable $e) {
@@ -42,14 +46,19 @@ function native_library_scan_folder(string $folderId, array $path, string $apiKe
 
     foreach ($entries as $entry) {
         if (($entry['kind'] ?? '') === 'folder') {
-            native_library_scan_folder((string)$entry['id'], array_merge($path, [(string)($entry['name'] ?: 'Subpasta')]), $apiKey, $visited, $stats, $depth + 1);
+            $childPath = array_merge($path, [(string)($entry['name'] ?: 'Subpasta')]);
+            try {
+                native_library_scan_folder((string)$entry['id'], $childPath, $apiKey, $visited, $stats, $depth + 1);
+            } catch (Throwable $e) {
+                $stats['errors'][] = implode(' / ', $childPath).': '.$e->getMessage();
+            }
             continue;
         }
         $name = trim((string)($entry['name'] ?? ''));
         $mime = trim((string)($entry['mime_type'] ?? ''));
         if (!native_library_is_audio($name, $mime)) continue;
         native_library_save_track($entry, $path, $stats);
-        if ($stats['tracks'] >= 5000) return;
+        if ($stats['tracks'] >= 20000) return;
     }
 }
 
@@ -120,7 +129,7 @@ function native_library_list_public(string $folderId): array
 
 function native_library_http_text(string $url): ?string
 {
-    $headers = ['User-Agent: Mozilla/5.0 EstradaPlay/2.0.7','Accept: text/html,application/xhtml+xml,*/*;q=0.8','Accept-Language: pt-BR,pt;q=0.9'];
+    $headers = ['User-Agent: Mozilla/5.0 EstradaPlay/2.0.8','Accept: text/html,application/xhtml+xml,*/*;q=0.8','Accept-Language: pt-BR,pt;q=0.9'];
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_CONNECTTIMEOUT=>4,CURLOPT_TIMEOUT=>10,CURLOPT_HTTPHEADER=>$headers,CURLOPT_ENCODING=>'']);
@@ -145,6 +154,8 @@ function native_library_unique_entries(array $entries): array
     foreach ($entries as $e) {
         $id = (string)($e['id'] ?? ''); $kind = (string)($e['kind'] ?? '');
         if ($id === '' || $kind === '') continue;
+        $name = trim((string)($e['name'] ?? ''));
+        if ($kind === 'folder' && ($name === '' || preg_match('~(?:^https?://|(?:^|\.)google(?:usercontent)?\.com$|clients[0-9]*\.google\.com|appsgrowthpromo|googleapis\.com)~i', $name))) continue;
         $key = $kind.':'.$id;
         if (isset($seen[$key])) continue;
         $seen[$key] = true; $out[] = $e;
