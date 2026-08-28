@@ -10,9 +10,17 @@ if (!$allowed) {
 }
 if (!$allowed) json_response(['ok'=>false,'error'=>'Chave de cron inválida.'],403);
 
-$sync = native_library_sync_active_drive_folders(false);
-if (PHP_SAPI === 'cli') {
-    echo json_encode(['ok'=>true,'sync'=>$sync], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-    exit;
+try {
+    $sync = native_library_sync_active_drive_folders(false, [], 'cron');
+    if (PHP_SAPI === 'cli') {
+        echo json_encode(['ok'=>true,'sync'=>$sync], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+        exit;
+    }
+    json_response(['ok'=>true,'sync'=>$sync]);
+} catch (Throwable $e) {
+    if (PHP_SAPI === 'cli') {
+        fwrite(STDERR, $e->getMessage() . PHP_EOL);
+        exit(1);
+    }
+    json_response(['ok'=>false,'error'=>'Falha na sincronização automática.'],500);
 }
-json_response(['ok'=>true,'sync'=>$sync]);
