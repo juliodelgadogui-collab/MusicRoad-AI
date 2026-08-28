@@ -21,7 +21,11 @@ jobs:
           fetch-depth: 0
 
       - name: Apply ANR patch
-        run: python3 tools/patch_210_anr.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/patch_210_anr.py
+          python3 tools/fix_210_java_strings.py
 
       - name: Verify patched source
         shell: bash
@@ -31,6 +35,7 @@ jobs:
           grep -q 'ANR_LIBRARY_INDEX_V210' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/LibraryStore.java
           grep -q 'ANR_FOLDER_UI_V210' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
           grep -q 'FolderDownloadAdapter' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'Selecionado:.*\\nLivre:' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
           if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app-v2/app/src/main/java; then exit 1; fi
 
       - name: Commit source repair
@@ -42,7 +47,7 @@ jobs:
           git add estradaplay-app-v2/app/build.gradle
           git add estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
           git add estradaplay-app-v2/app/src/main/java/com/estradaplay/app/LibraryStore.java
-          git commit -m "Fix EstradaPlay 2.0.10 large-library ANR"
+          git commit -m "Finalize EstradaPlay 2.0.10 large-library ANR fix" || true
           git push origin HEAD:agent/native-apk-build
           echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
