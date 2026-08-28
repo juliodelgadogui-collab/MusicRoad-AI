@@ -639,8 +639,7 @@ private void refreshLibraryAndOpenChooser() {
             long known = selectedBytes(selected, stats);
             long free = library.freeBytes();
             if (known > 0 && known > free * 0.92) {
-                alert("Espaço insuficiente", "Selecionado: " + bytes(known) + "
-Livre: " + bytes(free));
+                alert("Espaço insuficiente", "Selecionado: " + bytes(known) + "\nLivre: " + bytes(free));
                 return;
             }
             startFolderDownload(selected, initial);
@@ -705,9 +704,7 @@ Livre: " + bytes(free));
                 box.addView(remove, lp(88, 42));
                 remove.setOnClickListener(v -> new AlertDialog.Builder(MainActivity.this)
                         .setTitle("Remover download?")
-                        .setMessage(shortFolder(stat.name) + "
-
-As músicas continuam no Google Drive e podem ser baixadas novamente.")
+                        .setMessage(shortFolder(stat.name) + "\n\nAs músicas continuam no Google Drive e podem ser baixadas novamente.")
                         .setNegativeButton("Cancelar", null)
                         .setPositiveButton("Remover", (d, w) -> {
                             showLoading("Removendo cópia offline…");
