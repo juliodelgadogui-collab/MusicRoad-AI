@@ -41,11 +41,27 @@ jobs:
           s = p.read_text(encoding='utf-8')
           old = "return ['tracks'=>$tracks,'active_roots'=>$roots,'last_sync'=>app_setting('native_library_last_sync',''),'db_driver'=>(string)db()->getAttribute(PDO::ATTR_DRIVER_NAME)];"
           new = "return ['tracks'=>$tracks,'active_roots'=>$roots,'last_sync'=>app_setting('native_library_last_sync',''),'catalog_version'=>server_catalog_version(),'catalog_changed_at'=>app_setting('catalog_changed_at',''),'db_driver'=>(string)db()->getAttribute(PDO::ATTR_DRIVER_NAME)];"
-          if 'catalog_version'=>server_catalog_version() if False else False:
-              pass
           if 'catalog_version' not in s:
               if old not in s:
                   raise SystemExit('native_library_meta anchor not found')
+              s = s.replace(old, new, 1)
+              p.write_text(s, encoding='utf-8')
+
+          p = Path('admin_server.php')
+          s = p.read_text(encoding='utf-8')
+          old = "if (($_GET['format'] ?? '') === 'json') {\n    json_response(['ok'=>true,'diagnostic'=>$diag,'folders'=>$folders,'history'=>$history]);\n}"
+          new = """if (($_GET['format'] ?? '') === 'json') {
+    $safeDiag = $diag;
+    if (isset($safeDiag['health']) && is_array($safeDiag['health'])) unset($safeDiag['health']['cron_url']);
+    $safeFolders = array_map(static function(array $row): array {
+        unset($row['folder_id']);
+        return $row;
+    }, $folders);
+    json_response(['ok'=>true,'diagnostic'=>$safeDiag,'folders'=>$safeFolders,'history'=>$history]);
+}"""
+          if '$safeFolders' not in s:
+              if old not in s:
+                  raise SystemExit('admin_server json anchor not found')
               s = s.replace(old, new, 1)
               p.write_text(s, encoding='utf-8')
           PY
@@ -63,6 +79,8 @@ jobs:
           grep -q 'last_sync_inserted' api/server_500mb.php
           grep -q 'Central do Servidor' admin.php
           grep -q 'Diagnóstico permanente' admin_server.php
+          grep -q '\$safeFolders' admin_server.php
+          grep -q "unset(\$safeDiag\['health'\]\['cron_url'\])" admin_server.php
           grep -q 'catalog_version' api/native_app.php
           grep -q "'cron'" api/cron_drive_sync.php
           ! git diff --name-only | grep -E '^(estradaplay-app|android-app)'
@@ -73,7 +91,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add admin.php api/native_app.php
+          git add admin.php admin_server.php api/native_app.php
           git commit -m "Integrate EstradaPlay Server Control Center v2 [skip ci]" || true
           git push origin HEAD:agent/native-apk-build
 
