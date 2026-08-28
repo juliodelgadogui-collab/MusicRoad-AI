@@ -6,7 +6,6 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -14,190 +13,138 @@ import android.widget.TextView;
 final class AppMenuOverlay {
     interface Listener { void onSelect(int index); }
 
-    private static final int PANEL = Color.rgb(10, 14, 19);
-    private static final int SURFACE = Color.rgb(18, 24, 31);
-    private static final int BORDER = Color.rgb(42, 52, 64);
-    private static final int TEXT = Color.rgb(244, 247, 251);
-    private static final int MUTED = Color.rgb(139, 151, 164);
-    private static final int ACCENT = Color.rgb(255, 107, 44);
-    private static final int ACCENT_SOFT = Color.rgb(62, 31, 21);
-    private static final int GREEN = Color.rgb(69, 212, 131);
+    private static final int BG = Color.rgb(8, 5, 7);
+    private static final int PANEL = Color.rgb(18, 9, 12);
+    private static final int SURFACE = Color.rgb(28, 14, 18);
+    private static final int BORDER = Color.rgb(82, 39, 45);
+    private static final int TEXT = Color.rgb(246, 238, 224);
+    private static final int MUTED = Color.rgb(174, 151, 146);
+    private static final int RED = Color.rgb(190, 18, 38);
+    private static final int GOLD = Color.rgb(226, 185, 76);
+    private static final int GREEN = Color.rgb(72, 212, 134);
 
     private AppMenuOverlay() {}
 
     static void show(Context context, FrameLayout host, String currentScreen, Listener listener) {
         if (context == null || host == null) return;
-        View old = host.findViewWithTag("estradaplay-menu-overlay");
+        View old = host.findViewWithTag("epc-central-overlay");
         if (old != null) host.removeView(old);
 
         FrameLayout overlay = new FrameLayout(context);
-        overlay.setTag("estradaplay-menu-overlay");
+        overlay.setTag("epc-central-overlay");
+        overlay.setBackgroundColor(Color.argb(238, 3, 2, 3));
         overlay.setClickable(true);
         overlay.setFocusable(true);
 
-        View scrim = new View(context);
-        scrim.setBackgroundColor(Color.BLACK);
-        scrim.setAlpha(0f);
-        overlay.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
-
-        int screen = context.getResources().getDisplayMetrics().widthPixels;
-        int width = Math.min(dp(context, 352), Math.max(dp(context, 286), (int)(screen * 0.84f)));
-
         LinearLayout panel = new LinearLayout(context);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(context, 20), dp(context, 22), dp(context, 18), dp(context, 18));
-        panel.setBackground(round(PANEL, 28, BORDER));
-        panel.setElevation(dp(context, 18));
-        FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(width, -1, Gravity.END);
-        pp.setMargins(0, dp(context, 8), dp(context, 8), dp(context, 8));
+        panel.setPadding(dp(context, 16), dp(context, 16), dp(context, 16), dp(context, 14));
+        panel.setBackground(box(PANEL, 8, BORDER));
+        FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(-1, -1);
+        pp.setMargins(dp(context, 12), dp(context, 12), dp(context, 12), dp(context, 12));
         overlay.addView(panel, pp);
 
-        LinearLayout header = new LinearLayout(context);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout banner = new LinearLayout(context);
+        banner.setOrientation(LinearLayout.HORIZONTAL);
+        banner.setGravity(Gravity.CENTER_VERTICAL);
+        banner.setPadding(dp(context, 14), dp(context, 12), dp(context, 12), dp(context, 12));
+        banner.setBackground(box(RED, 3, 0));
+        BrandMarkView mark = new BrandMarkView(context);
+        banner.addView(mark, new LinearLayout.LayoutParams(dp(context, 50), dp(context, 50)));
+        LinearLayout words = new LinearLayout(context);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.addView(text(context, "PAINEL CENTRAL", 19, Color.WHITE, true));
+        TextView code = text(context, "EPC  /  COMANDO DE BORDO", 9, Color.rgb(255, 222, 180), true);
+        code.setLetterSpacing(0.10f); words.addView(code);
+        LinearLayout.LayoutParams wp = new LinearLayout.LayoutParams(0, -2, 1); wp.setMargins(dp(context, 12), 0, 0, 0); banner.addView(words, wp);
+        TextView close = text(context, "FECHAR", 9, Color.WHITE, true);
+        close.setGravity(Gravity.CENTER); close.setBackground(box(Color.rgb(106, 12, 25), 2, Color.rgb(255, 126, 136)));
+        banner.addView(close, new LinearLayout.LayoutParams(dp(context, 70), dp(context, 42)));
+        panel.addView(banner);
 
-        TextView mark = text(context, "EP", 14, ACCENT, true);
-        mark.setGravity(Gravity.CENTER);
-        mark.setBackground(round(ACCENT_SOFT, 16, ACCENT));
-        header.addView(mark, new LinearLayout.LayoutParams(dp(context, 46), dp(context, 46)));
+        TextView prompt = text(context, "ESCOLHA UM SETOR", 10, MUTED, true);
+        prompt.setLetterSpacing(0.14f);
+        LinearLayout.LayoutParams prp = new LinearLayout.LayoutParams(-1, -2); prp.setMargins(dp(context, 2), dp(context, 18), 0, dp(context, 8)); panel.addView(prompt, prp);
 
-        LinearLayout brand = new LinearLayout(context);
-        brand.setOrientation(LinearLayout.VERTICAL);
-        TextView title = text(context, "EstradaPlay", 20, TEXT, true);
-        TextView sub = text(context, "PLAY NA ESTRADA", 9, ACCENT, true);
-        sub.setLetterSpacing(0.12f);
-        brand.addView(title);
-        brand.addView(sub);
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, -2, 1);
-        bp.setMargins(dp(context, 12), 0, 0, 0);
-        header.addView(brand, bp);
-
-        TextView close = text(context, "×", 27, MUTED, false);
-        close.setGravity(Gravity.CENTER);
-        close.setBackground(round(SURFACE, 15, BORDER));
-        header.addView(close, new LinearLayout.LayoutParams(dp(context, 44), dp(context, 44)));
-        panel.addView(header);
-
-        TextView section = text(context, "NAVEGAÇÃO", 9, MUTED, true);
-        section.setLetterSpacing(0.13f);
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2);
-        sp.setMargins(0, dp(context, 28), 0, dp(context, 8));
-        panel.addView(section, sp);
-
-        String[][] items = new String[][]{
-                {"⌂", "Início", "Resumo do aparelho"},
-                {"♪", "Música offline", "Player e biblioteca"},
-                {"↓", "Gerenciar músicas", "Baixar ou remover pastas"},
-                {"◎", "Mapa e proteção", "GPS, radares e estrada"},
-                {"•", "Conta", "Perfil e informações"}
+        String[][] items = {
+                {"01", "CENTRAL", "Resumo e partida"},
+                {"02", "SOM", "Música offline"},
+                {"03", "ARQUIVO", "Gerenciar downloads"},
+                {"04", "ESTRADA", "Mapa e proteção"},
+                {"05", "IDENTIDADE", "Conta e aparelho"}
         };
-
         String current = currentScreen == null ? "" : currentScreen.toLowerCase();
-        for (int i = 0; i < items.length; i++) {
-            boolean selected = selected(i, current);
-            LinearLayout item = menuItem(context, items[i][0], items[i][1], items[i][2], selected);
-            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(-1, dp(context, 68));
-            ip.setMargins(0, i == 0 ? 0 : dp(context, 5), 0, 0);
-            panel.addView(item, ip);
+
+        LinearLayout row1 = row(context);
+        LinearLayout a = module(context, items[0], selected(0, current));
+        LinearLayout b = module(context, items[1], selected(1, current));
+        row1.addView(a, new LinearLayout.LayoutParams(0, dp(context, 112), 1));
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, dp(context, 112), 1); bp.setMargins(dp(context, 8), 0, 0, 0); row1.addView(b, bp);
+        panel.addView(row1);
+
+        LinearLayout row2 = row(context);
+        LinearLayout c = module(context, items[2], selected(2, current));
+        LinearLayout d = module(context, items[3], selected(3, current));
+        row2.addView(c, new LinearLayout.LayoutParams(0, dp(context, 112), 1));
+        LinearLayout.LayoutParams dp2 = new LinearLayout.LayoutParams(0, dp(context, 112), 1); dp2.setMargins(dp(context, 8), 0, 0, 0); row2.addView(d, dp2);
+        LinearLayout.LayoutParams r2p = new LinearLayout.LayoutParams(-1, -2); r2p.setMargins(0, dp(context, 8), 0, 0); panel.addView(row2, r2p);
+
+        LinearLayout e = module(context, items[4], selected(4, current));
+        LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(-1, dp(context, 94)); ep.setMargins(0, dp(context, 8), 0, 0); panel.addView(e, ep);
+
+        View spacer = new View(context); panel.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
+        LinearLayout footer = row(context); footer.setGravity(Gravity.CENTER_VERTICAL); footer.setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10)); footer.setBackground(box(BG, 2, BORDER));
+        TextView offline = text(context, "●  OFFLINE-FIRST", 9, GREEN, true); offline.setLetterSpacing(0.08f); footer.addView(offline, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView ver = text(context, "v" + BuildConfig.VERSION_NAME, 10, GOLD, true); footer.addView(ver); panel.addView(footer);
+
+        View[] modules = {a,b,c,d,e};
+        for (int i = 0; i < modules.length; i++) {
             final int index = i;
-            item.setOnClickListener(v -> close(context, host, overlay, panel, scrim, () -> {
-                if (listener != null) listener.onSelect(index);
-            }));
+            modules[i].setOnClickListener(v -> close(host, overlay, panel, () -> { if (listener != null) listener.onSelect(index); }));
         }
-
-        View spacer = new View(context);
-        panel.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
-
-        LinearLayout footer = new LinearLayout(context);
-        footer.setOrientation(LinearLayout.VERTICAL);
-        footer.setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12));
-        footer.setBackground(round(SURFACE, 16, BORDER));
-        TextView offline = text(context, "●  OFFLINE-FIRST", 9, GREEN, true);
-        offline.setLetterSpacing(0.08f);
-        footer.addView(offline);
-        TextView version = text(context, "EstradaPlay " + BuildConfig.VERSION_NAME + " · mapa livre", 10, MUTED, false);
-        LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(-1, -2);
-        vp.setMargins(0, dp(context, 5), 0, 0);
-        footer.addView(version, vp);
-        panel.addView(footer);
+        close.setOnClickListener(v -> close(host, overlay, panel, null));
 
         host.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
-        panel.setTranslationX(width + dp(context, 24));
-        panel.setAlpha(0.96f);
-        panel.post(() -> panel.animate().translationX(0f).alpha(1f).setDuration(220L).start());
-        scrim.animate().alpha(0.68f).setDuration(180L).start();
-
-        scrim.setOnClickListener(v -> close(context, host, overlay, panel, scrim, null));
-        close.setOnClickListener(v -> close(context, host, overlay, panel, scrim, null));
+        panel.setAlpha(0f); panel.setScaleX(0.96f); panel.setScaleY(0.96f);
+        panel.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(170L).start();
     }
 
-    private static LinearLayout menuItem(Context c, String icon, String title, String subtitle, boolean selected) {
-        LinearLayout row = new LinearLayout(c);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(c, 11), dp(c, 8), dp(c, 10), dp(c, 8));
-        row.setBackground(round(selected ? ACCENT_SOFT : Color.TRANSPARENT, 17, selected ? ACCENT : Color.TRANSPARENT));
-
-        TextView glyph = text(c, icon, 19, selected ? ACCENT : MUTED, true);
-        glyph.setGravity(Gravity.CENTER);
-        glyph.setBackground(round(selected ? Color.rgb(77, 36, 22) : SURFACE, 14, selected ? ACCENT : BORDER));
-        row.addView(glyph, new LinearLayout.LayoutParams(dp(c, 44), dp(c, 44)));
-
-        LinearLayout meta = new LinearLayout(c);
-        meta.setOrientation(LinearLayout.VERTICAL);
-        TextView t = text(c, title, 14, selected ? TEXT : Color.rgb(224, 230, 237), true);
-        TextView s = text(c, subtitle, 10, selected ? Color.rgb(210, 175, 160) : MUTED, false);
-        meta.addView(t);
-        meta.addView(s);
-        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0, -2, 1);
-        mp.setMargins(dp(c, 12), 0, 0, 0);
-        row.addView(meta, mp);
-
-        if (selected) {
-            TextView dot = text(c, "•", 20, ACCENT, true);
-            dot.setGravity(Gravity.CENTER);
-            row.addView(dot, new LinearLayout.LayoutParams(dp(c, 24), dp(c, 40)));
-        }
-        return row;
+    private static LinearLayout module(Context c, String[] data, boolean active) {
+        LinearLayout box = new LinearLayout(c);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(c, 13), dp(c, 11), dp(c, 13), dp(c, 11));
+        box.setBackground(box(active ? Color.rgb(91, 12, 25) : SURFACE, 3, active ? RED : BORDER));
+        TextView code = text(c, data[0], 10, active ? GOLD : RED, true); code.setLetterSpacing(0.12f); box.addView(code);
+        TextView title = text(c, data[1], 18, TEXT, true); box.addView(title);
+        TextView sub = text(c, data[2], 10, active ? Color.rgb(231, 198, 190) : MUTED, false); box.addView(sub);
+        View spacer = new View(c); box.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
+        TextView go = text(c, active ? "SETOR ATUAL  ■" : "ABRIR  →", 9, active ? GOLD : TEXT, true); go.setGravity(Gravity.RIGHT); box.addView(go);
+        box.setClickable(true); box.setFocusable(true);
+        return box;
     }
 
     private static boolean selected(int index, String current) {
-        if (index == 0) return current.contains("início") || current.contains("inicio");
+        if (index == 0) return current.contains("central") || current.contains("início") || current.contains("inicio");
         if (index == 1) return current.contains("música") || current.contains("musica");
-        if (index == 2) return current.contains("biblioteca") || current.contains("download") || current.contains("gerenciar");
+        if (index == 2) return current.contains("biblioteca") || current.contains("download") || current.contains("arquivo");
         if (index == 3) return current.contains("estrada") || current.contains("mapa") || current.contains("proteção") || current.contains("protecao");
-        return current.contains("conta");
+        return current.contains("conta") || current.contains("identidade");
     }
 
-    private static void close(Context c, FrameLayout host, FrameLayout overlay, View panel, View scrim, Runnable after) {
+    private static void close(FrameLayout host, FrameLayout overlay, View panel, Runnable after) {
         if (overlay.getParent() == null) return;
-        panel.animate().translationX(panel.getWidth() + dp(c, 28)).alpha(0.96f).setDuration(180L).start();
-        scrim.animate().alpha(0f).setDuration(160L).withEndAction(() -> {
+        panel.animate().alpha(0f).scaleX(0.97f).scaleY(0.97f).setDuration(120L).withEndAction(() -> {
             try { host.removeView(overlay); } catch (Throwable ignored) {}
             if (after != null) after.run();
         }).start();
     }
 
+    private static LinearLayout row(Context c) { LinearLayout l = new LinearLayout(c); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
     private static TextView text(Context c, String value, float size, int color, boolean bold) {
-        TextView t = new TextView(c);
-        t.setText(value);
-        t.setTextSize(size);
-        t.setTextColor(color);
-        t.setGravity(Gravity.CENTER_VERTICAL);
-        t.setLineSpacing(0, 1.05f);
-        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return t;
+        TextView t = new TextView(c); t.setText(value); t.setTextSize(size); t.setTextColor(color); t.setGravity(Gravity.CENTER_VERTICAL); t.setLineSpacing(0, 1.04f); if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD); return t;
     }
-
-    private static GradientDrawable round(int color, int radius, int stroke) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(radius);
-        if (stroke != Color.TRANSPARENT && stroke != 0) d.setStroke(1, stroke);
-        return d;
+    private static GradientDrawable box(int color, int radius, int stroke) {
+        GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(radius); if (stroke != 0) d.setStroke(1, stroke); return d;
     }
-
-    private static int dp(Context c, float value) {
-        return Math.round(value * c.getResources().getDisplayMetrics().density);
-    }
+    private static int dp(Context c, float v) { return Math.round(v * c.getResources().getDisplayMetrics().density); }
 }

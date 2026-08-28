@@ -48,14 +48,14 @@ public final class RoadMapActivity extends ComponentActivity {
     private static final String UI_PREFS = "estradaplay_ui_v1";
     private static final String KEY_ACCOUNT = "account";
 
-    private final int BG = Color.rgb(5, 8, 12);
-    private final int SURFACE = Color.rgb(12, 17, 23);
-    private final int SURFACE_2 = Color.rgb(18, 24, 32);
-    private final int BORDER = Color.rgb(40, 51, 64);
-    private final int TEXT = Color.rgb(244, 247, 250);
-    private final int MUTED = Color.rgb(145, 157, 170);
-    private final int ACCENT = Color.rgb(224, 30, 47);
-    private final int ACCENT_SOFT = Color.rgb(72, 12, 20);
+    private final int BG = Color.rgb(8, 5, 7);
+    private final int SURFACE = Color.rgb(18, 9, 12);
+    private final int SURFACE_2 = Color.rgb(28, 14, 18);
+    private final int BORDER = Color.rgb(79, 39, 45);
+    private final int TEXT = Color.rgb(246, 238, 224);
+    private final int MUTED = Color.rgb(174, 151, 146);
+    private final int ACCENT = Color.rgb(190, 18, 38);
+    private final int ACCENT_SOFT = Color.rgb(79, 10, 23);
     private final int GREEN = Color.rgb(72, 212, 134);
 
     private FrameLayout root;
@@ -270,65 +270,62 @@ public final class RoadMapActivity extends ComponentActivity {
     }
 
     private void buildPortraitUi(int width, int height) {
-        int outer = clamp(Math.round(width * 0.028f), dp(10), dp(18));
-        int gap = clamp(Math.round(height * 0.014f), dp(8), dp(14));
-        int bottomH = clamp(Math.round(height * 0.235f), dp(172), dp(250));
-        int mapBottom = height - outer - bottomH - gap;
+        int outer = clamp(Math.round(width * 0.020f), dp(8), dp(13));
 
-        FrameLayout mapPane = buildMapPane(Math.max(dp(360), mapBottom - outer), true);
-        FrameLayout.LayoutParams mp = new FrameLayout.LayoutParams(-1, mapBottom - outer);
-        mp.setMargins(outer, outer, outer, 0);
+        // V1.2: map is the cockpit. No separate EstradaPlay-style bottom card.
+        FrameLayout mapPane = buildMapPane(height - outer * 2, true);
+        FrameLayout.LayoutParams mp = new FrameLayout.LayoutParams(-1, -1);
+        mp.setMargins(outer, outer, outer, outer);
         root.addView(mapPane, mp);
+
+        LinearLayout brandPlate = new LinearLayout(this);
+        brandPlate.setOrientation(LinearLayout.VERTICAL);
+        brandPlate.setPadding(dp(10), dp(8), dp(10), dp(8));
+        brandPlate.setBackground(panel(3, Color.argb(236, 42, 7, 14), Color.rgb(151, 28, 45)));
+        TextView central = label("CENTRAL 04", 8, Color.rgb(226, 185, 76), true); central.setLetterSpacing(0.12f); brandPlate.addView(central);
+        brandPlate.addView(label(destination == null ? "RODAGEM LIVRE" : shortDestination(destination.label), 13, TEXT, true));
+        FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(dp(150), -2, Gravity.LEFT | Gravity.TOP);
+        bp.setMargins(outer + dp(10), outer + dp(92), 0, 0); root.addView(brandPlate, bp);
+        if (Build.VERSION.SDK_INT >= 21) brandPlate.setElevation(dp(55));
+
+        if (destination != null) {
+            LinearLayout route = new LinearLayout(this);
+            route.setOrientation(LinearLayout.VERTICAL);
+            route.setPadding(dp(10), dp(8), dp(10), dp(8));
+            route.setBackground(panel(3, Color.argb(238, 15, 8, 10), Color.rgb(214, 186, 143)));
+            TextView over = label("ROTA ATIVA", 7, Color.rgb(226, 185, 76), true); over.setLetterSpacing(0.12f); route.addView(over);
+            destinationText = label("Calculando percurso…", 9, TEXT, true); route.addView(destinationText);
+            FrameLayout.LayoutParams rtp = new FrameLayout.LayoutParams(dp(210), -2, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+            rtp.setMargins(0, outer + dp(96), 0, 0); root.addView(route, rtp);
+            if (Build.VERSION.SDK_INT >= 21) route.setElevation(dp(55));
+        }
 
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.VERTICAL);
-        controls.setPadding(dp(16), dp(13), dp(16), dp(13));
-        controls.setBackground(panel(24, SURFACE, BORDER));
-        controls.setClickable(true);
-        controls.setFocusable(false);
-
-        LinearLayout head = new LinearLayout(this);
-        head.setOrientation(LinearLayout.HORIZONTAL);
-        head.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout brand = new LinearLayout(this);
-        brand.setOrientation(LinearLayout.VERTICAL);
-        brand.addView(label("Estrada Play Comunista", 18, TEXT, true));
-        TextView mode = label("SISTEMA AUTOMOTIVO · VERTICAL", 8, GREEN, true);
-        mode.setLetterSpacing(0.10f);
-        brand.addView(mode);
-        head.addView(brand, new LinearLayout.LayoutParams(0, -2, 1f));
-        clockText = label("--:--", 20, TEXT, true);
-        clockText.setGravity(Gravity.CENTER);
-        head.addView(clockText, new LinearLayout.LayoutParams(dp(72), -2));
-        controls.addView(head);
-
-        mapStateText = label("Mapa e proteção preparando…", 9, MUTED, false);
-        LinearLayout.LayoutParams msp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        msp.setMargins(0, dp(8), 0, dp(8));
-        controls.addView(mapStateText, msp);
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        Button music = action("MÚSICA", true);
-        Button home = action("INÍCIO", false);
-        int actionH = clamp(Math.round(bottomH * 0.32f), dp(50), dp(64));
-        actions.addView(music, new LinearLayout.LayoutParams(0, actionH, 1f));
-        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(0, actionH, 1f);
-        hp.setMargins(dp(10), 0, 0, 0);
-        actions.addView(home, hp);
+        controls.setPadding(dp(7), dp(7), dp(7), dp(7));
+        controls.setBackground(panel(4, Color.argb(238, 12, 7, 9), BORDER));
+        Button recenter = action("CENTRO", false);
+        Button destinationButton = action(destination == null ? "ROTA" : "MUDAR", false);
+        Button music = action("SOM", true);
+        Button centralButton = action("CENTRAL", false);
+        controls.addView(recenter, new LinearLayout.LayoutParams(-1, dp(48)));
+        LinearLayout.LayoutParams dpp = new LinearLayout.LayoutParams(-1, dp(48)); dpp.setMargins(0, dp(6), 0, 0); controls.addView(destinationButton, dpp);
+        LinearLayout.LayoutParams mpp = new LinearLayout.LayoutParams(-1, dp(48)); mpp.setMargins(0, dp(6), 0, 0); controls.addView(music, mpp);
+        LinearLayout.LayoutParams cpp = new LinearLayout.LayoutParams(-1, dp(48)); cpp.setMargins(0, dp(6), 0, 0); controls.addView(centralButton, cpp);
+        recenter.setOnClickListener(v -> { if (roadMap != null) roadMap.recenter(); });
+        destinationButton.setOnClickListener(v -> startActivity(new Intent(this, DestinationActivity.class)));
         music.setOnClickListener(v -> openMain("music"));
-        home.setOnClickListener(v -> openMain("home"));
-        controls.addView(actions);
-
-        FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(-1, bottomH, Gravity.BOTTOM);
-        cp.setMargins(outer, 0, outer, outer);
-        root.addView(controls, cp);
-        if (Build.VERSION.SDK_INT >= 21) controls.setElevation(dp(48));
+        centralButton.setOnClickListener(v -> openMain("home"));
+        FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(dp(94), -2, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        cp.setMargins(0, 0, outer + dp(9), 0); root.addView(controls, cp);
+        if (Build.VERSION.SDK_INT >= 21) controls.setElevation(dp(70));
         controls.bringToFront();
 
-        addTopLevelRecenter(outer, outer, width - outer, mapBottom, true);
-        updateMapStatus();
+        TextView signature = label("EPC / MAPA LIVRE / PROTEÇÃO ATIVA", 7, Color.rgb(226, 185, 76), true);
+        signature.setLetterSpacing(0.08f); signature.setGravity(Gravity.CENTER); signature.setBackground(panel(2, Color.argb(220, 12, 7, 9), BORDER));
+        FrameLayout.LayoutParams sp = new FrameLayout.LayoutParams(dp(218), dp(30), Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM);
+        sp.setMargins(0, 0, 0, outer + dp(8)); root.addView(signature, sp);
+        if (Build.VERSION.SDK_INT >= 21) signature.setElevation(dp(60));
     }
 
     private void addTopLevelRecenter(int mapLeft, int mapTop, int mapRight, int mapBottom, boolean portrait) {
@@ -420,7 +417,7 @@ public final class RoadMapActivity extends ComponentActivity {
         speed.addView(kmh);
         top.addView(speed, new LinearLayout.LayoutParams(-2, -1));
 
-        TextView drive = label("  ESTRADA PLAY COMUNISTA  ·  CONDUÇÃO", compact ? 9 : 10, TEXT, true);
+        TextView drive = label("  CENTRAL DA ESTRADA  ·  CONDUÇÃO", compact ? 9 : 10, TEXT, true);
         drive.setLetterSpacing(0.08f);
         top.addView(drive, new LinearLayout.LayoutParams(0, -1, 1f));
 
