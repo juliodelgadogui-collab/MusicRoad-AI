@@ -5,18 +5,16 @@ permissions:
 
 on:
   push:
-    branches:
-      - agent/native-apk-build
+    branches: [agent/native-apk-build]
     paths:
-      - .github/workflows/server-central-v2-release.yml
+      - '.github/workflows/server-central-v2-release.yml'
   workflow_dispatch:
 
 jobs:
   server:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: agent/native-apk-build
           fetch-depth: 0
