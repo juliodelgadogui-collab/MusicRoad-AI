@@ -1,0 +1,127 @@
+name: EstradaPlay 2.0.11 Root ANR Fix
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - agent/native-apk-build
+    paths:
+      - .github/workflows/build-estradaplay-211-anr-root.yml
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/native-apk-build
+          fetch-depth: 0
+
+      - name: Apply source repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/patch_211_anr_root.py
+
+      - name: Verify source repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "versionCode 211" estradaplay-app-v2/app/build.gradle
+          grep -q "versionName '2.0.11'" estradaplay-app-v2/app/build.gradle
+          grep -q 'ANR_BOOT_FLAGS_V211' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/LibraryStore.java
+          grep -q 'ANR_CATALOG_BOOT_V211' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'ANR_ROAD_INIT_V211' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'initializeStoresAsync' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'ArrayList<Track> loaded = loadQueue' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/PlayerService.java
+          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app-v2/app/src/main/java; then exit 1; fi
+
+      - name: Commit definitive source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estradaplay-app-v2/app/build.gradle
+          git add estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
+          git add estradaplay-app-v2/app/src/main/java/com/estradaplay/app/LibraryStore.java
+          git add estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          git add estradaplay-app-v2/app/src/main/java/com/estradaplay/app/PlayerService.java
+          git commit -m "Fix EstradaPlay 2.0.11 root ANR sources [skip ci]" || true
+          git push origin HEAD:agent/native-apk-build
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d estradaplay-app-v2/signing/estradaplay-dev.keystore.b64 > estradaplay-app-v2/signing/estradaplay-dev.keystore
+
+      - name: Generate embedded voice
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          rm -rf /tmp/estradaplay-voice
+          mkdir -p /tmp/estradaplay-voice
+          tar -xjf "$MODEL" -C /tmp/estradaplay-voice
+          python3 estradaplay-app-v2/tools/generate_voice_bank.py --model-root /tmp/estradaplay-voice --output estradaplay-app-v2/app/src/main/res/raw --metadata-output estradaplay-app-v2/app/src/main/assets/estradaplay_voice
+          test "$(find estradaplay-app-v2/app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 70
+
+      - name: Build APK
+        working-directory: estradaplay-app-v2
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=estradaplay-app-v2/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/badging.txt
+          grep -q "versionCode='211'" /tmp/badging.txt
+          grep -q "versionName='2.0.11'" /tmp/badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
+          grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/cert.txt
+          cp "$APK" EstradaPlay-2.0.11.apk
+          sha256sum EstradaPlay-2.0.11.apk | tee /tmp/apk.sha256
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estradaplay-2.0.11-anr-root-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" \
+            --title "EstradaPlay 2.0.11 - correção raiz de ANR" \
+            --notes "Correção nativa do travamento 'EstradaPlay não está respondendo'. Carregamento e indexação dos pacotes offline de mapa/radares saem do onCreate da thread principal; catálogo grande não é lido/salvo na UI; flags leves evitam carregar o índice grande de downloads durante o boot; fila do player é montada em IO. Nenhuma alteração no servidor e nenhum WebView." \
+            EstradaPlay-2.0.11.apk
+
+      - name: Temporary artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: EstradaPlay-2.0.11-APK
+          path: EstradaPlay-2.0.11.apk
+          retention-days: 1
+          compression-level: 0
