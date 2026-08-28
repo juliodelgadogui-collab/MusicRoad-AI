@@ -8,11 +8,20 @@ on:
     branches: [agent/native-apk-build]
     paths:
       - 'estradaplay-app-v2/**'
+      - 'admin.php'
+      - 'login.php'
+      - 'client.php'
+      - 'diagnostico_estradaplay_209.php'
       - 'api/bootstrap.php'
       - 'api/library.php'
       - 'api/native_app.php'
       - 'api/native_auth.php'
       - 'api/native_library_sync.php'
+      - 'api/client_state.php'
+      - 'api/google_drive_public.php'
+      - 'api/drive_helpers.php'
+      - 'api/drive_stream.php'
+      - 'api/radar_route_helpers.php'
       - '.github/workflows/build-estradaplay-v2.yml'
   workflow_dispatch:
 
@@ -69,7 +78,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q "versionName '2.0.7'" estradaplay-app-v2/app/build.gradle
+          grep -q "versionCode 209" estradaplay-app-v2/app/build.gradle
+          grep -q "versionName '2.0.9'" estradaplay-app-v2/app/build.gradle
           grep -q 'android:resizeableActivity="true"' estradaplay-app-v2/app/src/main/AndroidManifest.xml
           if grep -q 'sensorLandscape' estradaplay-app-v2/app/src/main/AndroidManifest.xml; then exit 1; fi
           if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app-v2/app/src/main/java; then exit 1; fi
@@ -82,28 +92,45 @@ jobs:
           grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
           grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/tools/generate_voice_bank.py
           grep -q 'X-EstradaPlay-Device' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/ApiClient.java
-          grep -q 'LIBRARY_NONBLOCKING_V207' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
-          grep -q 'LIBRARY_FAST_V207' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/ApiClient.java
+          grep -q 'LIBRARY_PAGED_V208' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/ApiClient.java
+          grep -q 'CATALOG_FILE_V208' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/LibraryStore.java
+          grep -q 'LIBRARY_FAILSAFE_V209' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
           grep -q 'ATUALIZAR DO SERVIDOR' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
           grep -q 'X-EstradaPlay-Device' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/DownloadService.java
           test -s estradaplay-app-v2/app/src/main/res/raw/ep_radar_frente.wav
           test -s estradaplay-app-v2/app/src/main/res/raw/ep_limite_via.wav
           test -s estradaplay-app-v2/app/src/main/res/raw/ep_speed_060.wav
 
-      - name: Verify server recovery
+      - name: Verify server MariaDB compatibility
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'DB_COMPAT_V207' api/bootstrap.php
+          grep -q 'SERVER_DB_COMPAT_V209' api/bootstrap.php
+          grep -q 'SERVER_DB_COMPAT_V209' api/client_state.php
           grep -q 'LIBRARY_FAST_V207' api/library.php
-          grep -q 'DRIVE_SYNC_V207' api/native_library_sync.php
+          grep -q 'DRIVE_SYNC_V208' api/native_library_sync.php
+          grep -q "library_page" api/native_app.php
           grep -q "library_fast" api/native_app.php
-          grep -q "library_sync" api/native_app.php
+          grep -q "library_sync_only" api/native_app.php
+          grep -q 'CURRENT_TIMESTAMP' admin.php
+          grep -q 'CURRENT_TIMESTAMP' login.php
+          grep -q 'CURRENT_TIMESTAMP' client.php
+          grep -q 'CURRENT_TIMESTAMP' api/google_drive_public.php
+          if grep -RniE "datetime\(['\"]now['\"]\)" --include='*.php' admin.php login.php client.php api; then exit 1; fi
+          if grep -n 'ON CONFLICT' api/client_state.php; then exit 1; fi
           php -l api/bootstrap.php
           php -l api/library.php
           php -l api/native_app.php
           php -l api/native_auth.php
           php -l api/native_library_sync.php
+          php -l api/client_state.php
+          php -l api/google_drive_public.php
+          php -l api/radar_route_helpers.php
+          php -l admin.php
+          php -l login.php
+          php -l client.php
+          php -l diagnostico_estradaplay_209.php
 
       - name: Build APK directly
         working-directory: estradaplay-app-v2
@@ -133,8 +160,17 @@ jobs:
           cp api/native_app.php "$PKG/api/"
           cp api/native_auth.php "$PKG/api/"
           cp api/native_library_sync.php "$PKG/api/"
+          cp api/client_state.php "$PKG/api/"
+          cp api/google_drive_public.php "$PKG/api/"
+          cp api/drive_helpers.php "$PKG/api/"
+          cp api/drive_stream.php "$PKG/api/"
+          cp api/radar_route_helpers.php "$PKG/api/"
+          cp admin.php "$PKG/"
+          cp login.php "$PKG/"
+          cp client.php "$PKG/"
+          cp diagnostico_estradaplay_209.php "$PKG/"
           cat > "$PKG/LEIA-PRIMEIRO.txt" <<'EOF'
-          EstradaPlay 2.0.7 - recuperação da biblioteca
+          EstradaPlay 2.0.9 - compatibilidade MariaDB + biblioteca
 
           Extraia este ZIP na RAIZ da instalação do EstradaPlay e permita sobrescrever SOMENTE os arquivos incluídos.
 
@@ -142,11 +178,14 @@ jobs:
           Portanto não apaga sua configuração nem seus dados.
 
           Correções principais:
-          - listagem da biblioteca responde imediatamente sem varrer o Google Drive;
-          - sincronização do Google Drive acontece separadamente;
-          - compatibilidade de bootstrap com SQLite e MySQL/MariaDB;
-          - recuperação da sessão pelo aparelho;
-          - scanner público do Drive mais robusto e com timeouts menores.
+          - remove SQL exclusivo de SQLite do painel, login, cliente, Drive e rotas;
+          - client_state usa atualização portátil em SQLite e MySQL/MariaDB;
+          - biblioteca continua paginada em blocos pequenos;
+          - APK usa fallback seguro para o catálogo legado se library_page falhar;
+          - catálogo grande continua salvo em arquivo interno no Android;
+          - sincronização do Google Drive permanece separada e resiliente.
+
+          Após instalar, abra diagnostico_estradaplay_209.php no navegador para confirmar o servidor.
           EOF
           (cd "$PKG" && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-${VERSION}-SERVIDOR.zip" .)
           sha256sum "EstradaPlay-${VERSION}-SERVIDOR.zip"
@@ -169,9 +208,9 @@ jobs:
         run: |
           set -euo pipefail
           TAG="estradaplay-${VERSION}-direct-${GITHUB_RUN_NUMBER}"
-          NOTES="Versão de teste focada em biblioteca: abre catálogo salvo imediatamente, separa listagem rápida da sincronização do Google Drive, recupera sessão do aparelho, adiciona atualização manual da biblioteca, evita carregamento infinito, reforça downloads autenticados e inclui correção SQLite/MySQL/MariaDB no servidor."
+          NOTES="EstradaPlay ${VERSION}: corrige incompatibilidades SQLite/MySQL/MariaDB no painel, login, cliente, importação do Drive e estado do dispositivo; mantém biblioteca paginada e adiciona fallback seguro do APK quando o endpoint paginado estiver indisponível."
           gh release create "$TAG" --target "$GITHUB_SHA" \
-            --title "EstradaPlay ${VERSION} · build direto" \
+            --title "EstradaPlay ${VERSION} · MariaDB + biblioteca" \
             --notes "$NOTES" \
             "EstradaPlay-${VERSION}.apk" \
             "EstradaPlay-${VERSION}-SERVIDOR.zip"
