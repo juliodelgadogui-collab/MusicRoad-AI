@@ -1,9 +1,9 @@
 status=success
-version=2.0.5
-run_id=33110725481
-run_number=12
-source_sha=915530c858061a303e871c3f46eb78b8dacacb9e
-release_tag=estradaplay-2.0.5-direct-12
-apk_sha256=37624e51d50595a4165f381f9b3ea3c9b5c4de4591c5039f98d548a7809d09b0
-release_asset=https://github.com/juliobji6-ship-it/MusicRoad-AI/releases/download/estradaplay-2.0.5-direct-12/EstradaPlay-2.0.5.apk
-server_asset=https://github.com/juliobji6-ship-it/MusicRoad-AI/releases/download/estradaplay-2.0.5-direct-12/EstradaPlay-2.0.5-SERVIDOR.zip
+version=2.0.6
+run_id=33164144264
+run_number=13
+source_sha=57c221666f3abb1675261be46ca641e3e6088fe7
+release_tag=estradaplay-2.0.6-direct-13
+apk_sha256=ae599bc20a9f1c906561f3d29f1c5de0c3985ed99ce29f615b5eedea75434ea4
+release_asset=https://github.com/juliobji6-ship-it/MusicRoad-AI/releases/download/estradaplay-2.0.6-direct-13/EstradaPlay-2.0.6.apk
+server_asset=https://github.com/juliobji6-ship-it/MusicRoad-AI/releases/download/estradaplay-2.0.6-direct-13/EstradaPlay-2.0.6-SERVIDOR.zip
