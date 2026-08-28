@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# BUILD_TRIGGER_V121_ORIENTATION_SPLIT
 ROOT = Path('estrada-play-comunista-app')
 APP = ROOT / 'app'
 
