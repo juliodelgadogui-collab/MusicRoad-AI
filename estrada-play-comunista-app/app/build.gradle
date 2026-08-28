@@ -13,12 +13,34 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 35
-        versionCode 120
-        versionName '1.2.0'
+        versionCode 121
+        versionName '1.2.1'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
     }
 
     buildFeatures { buildConfig true }
+
+    flavorDimensions += 'orientation'
+    productFlavors {
+        vertical {
+            dimension 'orientation'
+            applicationIdSuffix '.vertical'
+            manifestPlaceholders = [
+                appLabel: 'Estrada Play Comunista Vertical',
+                appOrientation: 'sensorPortrait'
+            ]
+            buildConfigField 'String', 'FIXED_LAYOUT', '"vertical"'
+        }
+        horizontal {
+            dimension 'orientation'
+            applicationIdSuffix '.horizontal'
+            manifestPlaceholders = [
+                appLabel: 'Estrada Play Comunista Horizontal',
+                appOrientation: 'sensorLandscape'
+            ]
+            buildConfigField 'String', 'FIXED_LAYOUT', '"horizontal"'
+        }
+    }
 
     signingConfigs {
         debug {

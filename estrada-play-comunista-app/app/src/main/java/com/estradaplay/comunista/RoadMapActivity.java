@@ -219,8 +219,11 @@ public final class RoadMapActivity extends ComponentActivity {
         touchTargets.clear();
         routedTouchTarget = null;
 
-        if (height > width) buildPortraitUi(width, height);
-        else buildLandscapeUi(width, height);
+        if ("vertical".equals(BuildConfig.FIXED_LAYOUT)) {
+            buildPortraitUi(width, height);
+        } else {
+            buildLandscapeUi(width, height);
+        }
     }
 
     private void buildLandscapeUi(int width, int height) {

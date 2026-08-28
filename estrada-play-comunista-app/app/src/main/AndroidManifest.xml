@@ -13,8 +13,8 @@
     <application
         android:allowBackup="false"
         android:hardwareAccelerated="true"
-        android:resizeableActivity="true"
-        android:label="Estrada Play Comunista"
+        android:resizeableActivity="false"
+        android:label="${appLabel}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
@@ -25,7 +25,7 @@
             android:name=".GateActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="fullSensor"
+            android:screenOrientation="${appOrientation}"
             android:theme="@style/Theme.EstradaPlay.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -38,27 +38,27 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:launchMode="singleTask"
-            android:screenOrientation="fullSensor" />
+            android:screenOrientation="${appOrientation}" />
 
         <activity
             android:name=".RoadMapActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:launchMode="singleTask"
-            android:screenOrientation="fullSensor" />
+            android:screenOrientation="${appOrientation}" />
 
         <activity
             android:name=".DestinationActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
-            android:screenOrientation="fullSensor" />
+            android:screenOrientation="${appOrientation}" />
 
         <activity
             android:name=".MainActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:launchMode="singleTask"
-            android:screenOrientation="fullSensor" />
+            android:screenOrientation="${appOrientation}" />
 
         <service
             android:name=".DownloadService"
