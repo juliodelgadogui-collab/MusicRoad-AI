@@ -9,6 +9,7 @@ on:
       - agent/estrada-play-comunista
     paths:
       - 'tools/create_estrada_play_comunista.py'
+      - 'tools/fix_estrada_play_comunista_generated.py'
       - '.github/workflows/build-estrada-play-comunista.yml'
   workflow_dispatch:
 
@@ -26,6 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/create_estrada_play_comunista.py
+          python3 tools/fix_estrada_play_comunista_generated.py
 
       - name: Verify product separation and features
         shell: bash
@@ -34,6 +36,11 @@ jobs:
           grep -q "applicationId 'com.estradaplay.comunista'" estrada-play-comunista-app/app/build.gradle
           grep -q "versionName '1.0.0'" estrada-play-comunista-app/app/build.gradle
           grep -q 'android:label="Estrada Play Comunista"' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/CommunistCopilot.java
+          grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationActivity.java
+          grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationResolver.java
+          grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationStore.java
+          grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RouteEngine.java
           grep -q 'class DestinationActivity' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationActivity.java
           grep -q 'class CommunistCopilot' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/CommunistCopilot.java
           grep -q 'router.project-osrm.org' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RouteEngine.java
