@@ -38,13 +38,13 @@ jobs:
           php -l api/native_auth.php
           php -l api/native_library_sync.php
 
-      - name: Commit migration
+      - name: Commit source migration
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/migrate-estradaplay-207.yml
+          git restore .github/workflows/build-estradaplay-v2.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add estradaplay-app-v2 api
           git commit -m "EstradaPlay 2.0.7 library recovery and DB compatibility"
           git push origin HEAD:agent/native-apk-build
