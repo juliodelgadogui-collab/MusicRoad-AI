@@ -42,14 +42,16 @@ final class ApiClient {
         return base + v;
     }
 
-    Response get(String path) throws Exception { return request("GET", path, null, 10000, 18000, 2_000_000); }
-    Response getLong(String path) throws Exception { return request("GET", path, null, 15000, 120000, 50_000_000); }
-    Response post(String path, JSONObject data) throws Exception { return request("POST", path, data == null ? new JSONObject() : data, 10000, 18000, 2_000_000); }
+    // LIBRARY_FAST_V207: catalog requests must never trap the interface.
+    Response getFast(String path) throws Exception { return request("GET", path, null, 5000, 8000, 4_000_000); }
+    Response get(String path) throws Exception { return request("GET", path, null, 8000, 18000, 4_000_000); }
+    Response getLong(String path) throws Exception { return request("GET", path, null, 10000, 120000, 50_000_000); }
+    Response post(String path, JSONObject data) throws Exception { return request("POST", path, data == null ? new JSONObject() : data, 8000, 18000, 4_000_000); }
 
     private Response request(String method, String path, JSONObject data, int connectTimeout, int readTimeout, int maxChars) throws Exception {
         String target = path.startsWith("http://") || path.startsWith("https://") ? path : absolute(path);
         HttpURLConnection c = (HttpURLConnection) new URL(target).openConnection();
-        c.setInstanceFollowRedirects(false);
+        c.setInstanceFollowRedirects("GET".equals(method));
         c.setConnectTimeout(connectTimeout);
         c.setReadTimeout(readTimeout);
         c.setRequestMethod(method);

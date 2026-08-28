@@ -5,6 +5,8 @@ require_once __DIR__ . '/bootstrap.php';
 
 function native_library_sync_active_drive_folders(): array
 {
+    // DRIVE_SYNC_V207: this runs outside the UI request path.
+    if (function_exists('set_time_limit')) @set_time_limit(180);
     ensure_runtime_tables();
     $roots = db()->query('SELECT id,name,folder_id,folder_link FROM drive_folders WHERE active = 1 ORDER BY id ASC')->fetchAll() ?: [];
     $stats = ['roots'=>count($roots),'folders'=>0,'tracks'=>0,'inserted'=>0,'updated'=>0,'errors'=>[]];
@@ -86,7 +88,6 @@ function native_library_list_api(string $folderId, string $apiKey): array
 
 function native_library_list_public(string $folderId): array
 {
-    $out = [];
     foreach ([
         'https://drive.google.com/embeddedfolderview?id='.rawurlencode($folderId).'#list',
         'https://drive.google.com/drive/folders/'.rawurlencode($folderId).'?usp=sharing',
@@ -94,31 +95,39 @@ function native_library_list_public(string $folderId): array
         $html = native_library_http_text($url);
         if (!$html) continue;
         $decoded = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $out = [];
         preg_match_all('~href="(?:https://drive\\.google\\.com)?/drive/folders/([A-Za-z0-9_-]+)[^"]*"[^>]*>(.*?)</a>~is', $decoded, $fm, PREG_SET_ORDER);
         foreach ($fm as $m) if ($m[1] !== $folderId) $out[] = ['kind'=>'folder','id'=>$m[1],'name'=>native_library_clean_name($m[2]) ?: 'Subpasta'];
         preg_match_all('~href="(?:https://drive\\.google\\.com)?/file/d/([A-Za-z0-9_-]+)[^"]*"[^>]*>(.*?)</a>~is', $decoded, $files, PREG_SET_ORDER);
-        foreach ($files as $m) {
-            $name = native_library_clean_name($m[2]);
-            if ($name !== '') $out[] = ['kind'=>'file','id'=>$m[1],'name'=>$name,'mime_type'=>native_library_mime($name),'file_size'=>0,'cover_url'=>''];
-        }
+        foreach ($files as $m) { $name=native_library_clean_name($m[2]); if ($name!=='') $out[]=['kind'=>'file','id'=>$m[1],'name'=>$name,'mime_type'=>native_library_mime($name),'file_size'=>0,'cover_url'=>'']; }
+        preg_match_all('~href="(?:https://drive\\.google\\.com)?/(?:open|uc)\\?[^\"]*id=([A-Za-z0-9_-]+)[^\"]*"[^>]*>(.*?)</a>~is', $decoded, $om, PREG_SET_ORDER);
+        foreach ($om as $m) { $name=native_library_clean_name($m[2]); if (native_library_is_audio($name,'')) $out[]=['kind'=>'file','id'=>$m[1],'name'=>$name,'mime_type'=>native_library_mime($name),'file_size'=>0,'cover_url'=>'']; }
         preg_match_all('~data-id="([A-Za-z0-9_-]{20,})"[^>]+aria-label="([^"]+\\.(?:mp3|aac|m4a|ogg|oga|opus|flac|wav|wave))"~is', $decoded, $dm, PREG_SET_ORDER);
-        foreach ($dm as $m) $out[] = ['kind'=>'file','id'=>$m[1],'name'=>html_entity_decode($m[2], ENT_QUOTES | ENT_HTML5, 'UTF-8'),'mime_type'=>native_library_mime($m[2]),'file_size'=>0,'cover_url'=>''];
+        foreach ($dm as $m) $out[]=['kind'=>'file','id'=>$m[1],'name'=>html_entity_decode($m[2],ENT_QUOTES|ENT_HTML5,'UTF-8'),'mime_type'=>native_library_mime($m[2]),'file_size'=>0,'cover_url'=>''];
+        preg_match_all('~aria-label="([^"]+\\.(?:mp3|aac|m4a|ogg|oga|opus|flac|wav|wave))"[^>]+data-id="([A-Za-z0-9_-]{20,})"~is', $decoded, $am, PREG_SET_ORDER);
+        foreach ($am as $m) $out[]=['kind'=>'file','id'=>$m[2],'name'=>html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'),'mime_type'=>native_library_mime($m[1]),'file_size'=>0,'cover_url'=>''];
+        preg_match_all('~\\["([A-Za-z0-9_-]{20,})"\\s*,\\s*"([^"]+\\.(?:mp3|aac|m4a|ogg|oga|opus|flac|wav|wave))"~i', $decoded, $jm, PREG_SET_ORDER);
+        foreach ($jm as $m) $out[]=['kind'=>'file','id'=>$m[1],'name'=>stripcslashes($m[2]),'mime_type'=>native_library_mime($m[2]),'file_size'=>0,'cover_url'=>''];
+        preg_match_all('~"([A-Za-z0-9_-]{20,})"[^\"]{0,900}"([^"]+\\.(?:mp3|aac|m4a|ogg|oga|opus|flac|wav|wave))"~i', $decoded, $lm, PREG_SET_ORDER);
+        foreach ($lm as $m) $out[]=['kind'=>'file','id'=>$m[1],'name'=>stripcslashes($m[2]),'mime_type'=>native_library_mime($m[2]),'file_size'=>0,'cover_url'=>''];
         preg_match_all('~\\["([A-Za-z0-9_-]{20,})"\\s*,\\s*"([^"]+)".{0,1200}?application/vnd\\.google-apps\\.folder~is', $decoded, $jf, PREG_SET_ORDER);
-        foreach ($jf as $m) if ($m[1] !== $folderId) $out[] = ['kind'=>'folder','id'=>$m[1],'name'=>native_library_clean_name($m[2]) ?: 'Subpasta'];
+        foreach ($jf as $m) if ($m[1] !== $folderId) $out[]=['kind'=>'folder','id'=>$m[1],'name'=>native_library_clean_name(stripcslashes($m[2])) ?: 'Subpasta'];
+        $out = native_library_unique_entries($out);
+        if ($out) return $out;
     }
-    return native_library_unique_entries($out);
+    return [];
 }
 
 function native_library_http_text(string $url): ?string
 {
-    $headers = ['User-Agent: Mozilla/5.0 EstradaPlay/2.0','Accept: text/html,application/xhtml+xml,*/*;q=0.8','Accept-Language: pt-BR,pt;q=0.9'];
+    $headers = ['User-Agent: Mozilla/5.0 EstradaPlay/2.0.7','Accept: text/html,application/xhtml+xml,*/*;q=0.8','Accept-Language: pt-BR,pt;q=0.9'];
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
-        curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_CONNECTTIMEOUT=>8,CURLOPT_TIMEOUT=>20,CURLOPT_HTTPHEADER=>$headers,CURLOPT_ENCODING=>'']);
+        curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_CONNECTTIMEOUT=>4,CURLOPT_TIMEOUT=>10,CURLOPT_HTTPHEADER=>$headers,CURLOPT_ENCODING=>'']);
         $body = curl_exec($ch); $status = (int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE); curl_close($ch);
         return $body && $status < 400 ? (string)$body : null;
     }
-    $ctx = stream_context_create(['http'=>['header'=>implode("\r\n",$headers),'timeout'=>20]]);
+    $ctx = stream_context_create(['http'=>['header'=>implode("\r\n",$headers),'timeout'=>10]]);
     $body = @file_get_contents($url,false,$ctx);
     return $body ? (string)$body : null;
 }

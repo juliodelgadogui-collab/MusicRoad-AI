@@ -136,6 +136,8 @@ public final class DownloadService extends Service {
             String cookie = api.cookie();
             if (cookie != null && !cookie.isEmpty()) c.setRequestProperty("Cookie", cookie);
             c.setRequestProperty("X-MusicRoad-Native", "1");
+            c.setRequestProperty("X-EstradaPlay-Device", DeviceIdentity.token(this));
+            c.setRequestProperty("X-EstradaPlay-Device-Label", DeviceIdentity.label());
         }
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) { c.disconnect(); throw new Exception("HTTP " + code); }

@@ -370,86 +370,159 @@ ui.post(() -> { showHome(); syncCatalogInBackground(); });
     }
 
 
+
+// LIBRARY_NONBLOCKING_V207: fast catalog + separate sync + device-session recovery.
+private ArrayList<Track> decodeCatalog(JSONObject j) {
+    ArrayList<Track> tracks = new ArrayList<>();
+    JSONArray arr = j == null ? null : j.optJSONArray("tracks");
+    if (arr == null) return tracks;
+    for (int i = 0; i < arr.length(); i++) {
+        JSONObject o = arr.optJSONObject(i);
+        if (o == null) continue;
+        Track t = Track.fromServer(o, api);
+        if (!t.remoteSource.isEmpty()) tracks.add(t);
+    }
+    return tracks;
+}
+
+private boolean restoreLibrarySession() {
+    try {
+        ApiClient.Response r = api.post("api/native_app.php?action=device_login", devicePayload());
+        JSONObject j = r.json();
+        if (r.ok() && j.optBoolean("ok") && j.optJSONObject("account") != null) {
+            saveAccount(j.optJSONObject("account"));
+            return true;
+        }
+    } catch (Exception ignored) {}
+    return false;
+}
+
+private ArrayList<Track> fetchCatalogFast() throws Exception {
+    ApiClient.Response r = api.getFast("api/native_app.php?action=library_fast");
+    if (r.code == 401 && restoreLibrarySession()) r = api.getFast("api/native_app.php?action=library_fast");
+    JSONObject j = r.json();
+    if (!r.ok() || j.optJSONArray("tracks") == null) return new ArrayList<>();
+    return decodeCatalog(j);
+}
+
+private ArrayList<Track> forceCatalogSync() throws Exception {
+    ApiClient.Response r = api.getLong("api/native_app.php?action=library_sync");
+    if (r.code == 401 && restoreLibrarySession()) r = api.getLong("api/native_app.php?action=library_sync");
+    JSONObject j = r.json();
+    if (r.ok() && j.optJSONArray("tracks") != null) return decodeCatalog(j);
+
+    // Server 2.0.6 compatibility while the server patch has not yet been applied.
+    r = api.getLong("api/native_app.php?action=library");
+    if (r.code == 401 && restoreLibrarySession()) r = api.getLong("api/native_app.php?action=library");
+    j = r.json();
+    if (r.ok() && j.optJSONArray("tracks") != null) return decodeCatalog(j);
+    throw new Exception(j.optString("error", "Biblioteca indisponível"));
+}
+
+private boolean librarySyncDue() {
+    long last = prefs.getLong("library_sync_v207_ms", 0L);
+    return System.currentTimeMillis() - last > 10L * 60L * 1000L;
+}
+
+private void rememberLibrarySync() {
+    prefs.edit().putLong("library_sync_v207_ms", System.currentTimeMillis()).apply();
+}
+
+private void saveFreshCatalog(List<Track> tracks, boolean notifyNewFolders) {
+    if (tracks == null || tracks.isEmpty()) return;
+    int beforeFolders = library.folderNames(library.catalog()).size();
+    library.saveCatalog(tracks);
+    int afterFolders = library.folderNames(tracks).size();
+    if (notifyNewFolders && afterFolders > beforeFolders && beforeFolders > 0) {
+        int added = afterFolders - beforeFolders;
+        ui.post(() -> toast(added + (added == 1 ? " nova pasta encontrada." : " novas pastas encontradas.")));
+    }
+}
+
 private void syncCatalogInBackground() {
     if (!online()) return;
     io.execute(() -> {
         try {
-            ApiClient.Response r = api.get("api/library.php?action=list");
-            JSONObject j = r.json();
-            JSONArray arr = j.optJSONArray("tracks");
-            if (!r.ok() || arr == null) {
-                ApiClient.Response fallback = api.get("api/native_app.php?action=library");
-                j = fallback.json();
-                arr = j.optJSONArray("tracks");
-                if (!fallback.ok() || arr == null) return;
-            }
-            ArrayList<Track> tracks = new ArrayList<>();
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject o = arr.optJSONObject(i);
-                if (o == null) continue;
-                Track t = Track.fromServer(o, api);
-                if (!t.remoteSource.isEmpty()) tracks.add(t);
-            }
-            if (!tracks.isEmpty()) {
-                int beforeFolders = library.folderNames(library.catalog()).size();
-                library.saveCatalog(tracks);
-                int afterFolders = library.folderNames(tracks).size();
-                if (afterFolders > beforeFolders && beforeFolders > 0) {
-                    int added = afterFolders - beforeFolders;
-                    ui.post(() -> toast(added + (added == 1 ? " nova pasta encontrada." : " novas pastas encontradas.")));
+            ArrayList<Track> fast = fetchCatalogFast();
+            if (!fast.isEmpty()) saveFreshCatalog(fast, true);
+            if (fast.isEmpty() || librarySyncDue()) {
+                ArrayList<Track> fresh = forceCatalogSync();
+                if (!fresh.isEmpty()) {
+                    saveFreshCatalog(fresh, true);
+                    rememberLibrarySync();
                 }
             }
         } catch (Exception ignored) {
-            // Biblioteca é opcional para iniciar o app.
+            // Library is optional for boot. Map, GPS and downloaded music stay available.
         }
     });
 }
 
-    private void loadCatalogAndOpenChooser(boolean initial) {
-        showLoading("Organizando suas pastas…");
-        io.execute(() -> {
-            try {
-                ApiClient.Response r = api.get("api/library.php?action=list");
-                JSONObject j = r.json();
-                JSONArray arr = j.optJSONArray("tracks");
-                if (!r.ok() || arr == null) {
-                    ApiClient.Response fallback = api.get("api/native_app.php?action=library");
-                    j = fallback.json(); arr = j.optJSONArray("tracks");
-                    if (!fallback.ok() || arr == null) throw new Exception("Biblioteca indisponível");
-                }
-                ArrayList<Track> tracks = new ArrayList<>();
-                for (int i = 0; i < arr.length(); i++) {
-                    JSONObject o = arr.optJSONObject(i);
-                    if (o == null) continue;
-                    Track t = Track.fromServer(o, api);
-                    if (!t.remoteSource.isEmpty()) tracks.add(t);
-                }
-if (!tracks.isEmpty()) library.saveCatalog(tracks);
-ui.post(() -> {
-    if (tracks.isEmpty()) {
-        library.setSetupDone(true);
-        showHome();
-        toast("Nenhuma música disponível agora. O EstradaPlay continua funcionando; tente novamente em Gerenciar Biblioteca.");
-    } else {
+private void loadCatalogAndOpenChooser(boolean initial) {
+    List<Track> local = library.catalog();
+    if (!local.isEmpty()) {
         library.setSetupDone(true);
         showFolderChooser(initial);
+        syncCatalogInBackground();
+        return;
     }
-});
-            } catch (Exception e) {
-                ui.post(() -> {
-                    
-if (!library.catalog().isEmpty()) {
-    library.setSetupDone(true);
-    showFolderChooser(initial);
-} else {
-    library.setSetupDone(true);
-    showHome();
-    toast("Biblioteca indisponível agora. Mapa, GPS e proteção continuam funcionando.");
-}
-                });
+
+    showLoading("Carregando sua biblioteca…");
+    io.execute(() -> {
+        try {
+            ArrayList<Track> tracks = fetchCatalogFast();
+            if (tracks.isEmpty()) {
+                ui.post(() -> showLoading("Sincronizando suas músicas…"));
+                tracks = forceCatalogSync();
+                if (!tracks.isEmpty()) rememberLibrarySync();
             }
-        });
+            ArrayList<Track> result = tracks;
+            ui.post(() -> {
+                library.setSetupDone(true);
+                if (!result.isEmpty()) {
+                    library.saveCatalog(result);
+                    showFolderChooser(initial);
+                } else {
+                    showHome();
+                    alert("Biblioteca", "O servidor respondeu, mas ainda não há músicas disponíveis. Verifique as pastas do Google Drive no painel e toque em Gerenciar Biblioteca novamente.");
+                }
+            });
+        } catch (Exception e) {
+            ui.post(() -> {
+                library.setSetupDone(true);
+                showHome();
+                alert("Biblioteca", "Não consegui atualizar as músicas agora. O restante do EstradaPlay continua funcionando. Tente novamente em Gerenciar Biblioteca.");
+            });
+        }
+    });
+}
+
+private void refreshLibraryAndOpenChooser() {
+    if (!online()) {
+        toast("Sem internet para atualizar. Mostrando a biblioteca salva.");
+        showFolderChooser(false);
+        return;
     }
+    showLoading("Atualizando suas pastas…");
+    io.execute(() -> {
+        try {
+            ArrayList<Track> tracks = forceCatalogSync();
+            if (!tracks.isEmpty()) {
+                library.saveCatalog(tracks);
+                rememberLibrarySync();
+            }
+            ui.post(() -> {
+                showFolderChooser(false);
+                toast(tracks.isEmpty() ? "Nenhuma música nova encontrada." : tracks.size() + " músicas disponíveis.");
+            });
+        } catch (Exception e) {
+            ui.post(() -> {
+                showFolderChooser(false);
+                toast("Não consegui atualizar agora. Mantive a biblioteca salva.");
+            });
+        }
+    });
+}
 
     private void showFolderChooser(boolean initial) {
         List<Track> catalog = library.catalog();
@@ -482,7 +555,10 @@ if (!library.catalog().isEmpty()) {
         TextView storage = chip(bytes(library.freeBytes()) + " LIVRES", GREEN, GREEN_SOFT); storageCard.addView(storage);
         page.addView(storageCard);
 
-        Button all = compactButton("SELECIONAR TODAS NÃO BAIXADAS"); page.addView(all, lp(-1, 46)); margins(all, 0, 10, 0, 10);
+        Button all = compactButton("SELECIONAR TODAS NÃO BAIXADAS"); page.addView(all, lp(-1, 46)); margins(all, 0, 10, 0, 6);
+        Button refresh = compactButton("ATUALIZAR DO SERVIDOR"); page.addView(refresh, lp(-1, 46)); margins(refresh, 0, 0, 0, 10);
+        refresh.setEnabled(online());
+        refresh.setOnClickListener(v -> refreshLibraryAndOpenChooser());
 
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
         LinearLayout list = column();
