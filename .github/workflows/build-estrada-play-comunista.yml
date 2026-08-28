@@ -1,4 +1,4 @@
-name: Estrada Play Comunista 1.0.0
+name: Estrada Play Comunista 1.1.0
 
 permissions:
   contents: write
@@ -10,6 +10,7 @@ on:
     paths:
       - 'tools/create_estrada_play_comunista.py'
       - 'tools/fix_estrada_play_comunista_generated.py'
+      - 'tools/patch_estrada_play_comunista_design_v110.py'
       - '.github/workflows/build-estrada-play-comunista.yml'
   workflow_dispatch:
 
@@ -28,24 +29,26 @@ jobs:
           set -euo pipefail
           python3 tools/create_estrada_play_comunista.py
           python3 tools/fix_estrada_play_comunista_generated.py
+          python3 tools/patch_estrada_play_comunista_design_v110.py
 
-      - name: Verify product separation and features
+      - name: Verify product separation and native design
         shell: bash
         run: |
           set -euo pipefail
           grep -q "applicationId 'com.estradaplay.comunista'" estrada-play-comunista-app/app/build.gradle
-          grep -q "versionName '1.0.0'" estrada-play-comunista-app/app/build.gradle
+          grep -q "versionName '1.1.0'" estrada-play-comunista-app/app/build.gradle
           grep -q 'android:label="Estrada Play Comunista"' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q 'android:icon="@mipmap/ic_launcher"' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q 'Theme.EstradaPlay.Splash' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q 'class BrandMarkView' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/BrandMarkView.java
+          grep -q 'Sua estrada em um só lugar' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MainActivity.java
+          grep -q 'NAVEGAÇÃO  ·  MÚSICA  ·  PROTEÇÃO' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/GateActivity.java
+          grep -q '<adaptive-icon' estrada-play-comunista-app/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          grep -q '<vector' estrada-play-comunista-app/app/src/main/res/mipmap-anydpi/ic_launcher.xml
           grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/CommunistCopilot.java
-          grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationActivity.java
-          grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationResolver.java
-          grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationStore.java
-          grep -q '^package com.estradaplay.comunista;' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RouteEngine.java
           grep -q 'class DestinationActivity' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationActivity.java
-          grep -q 'class CommunistCopilot' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/CommunistCopilot.java
           grep -q 'router.project-osrm.org' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RouteEngine.java
           grep -q 'nominatim.openstreetmap.org' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationResolver.java
-          grep -q 'setRouteGeoJson' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapView.java
           grep -q 'DIRIGIR SEM DESTINO' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MainActivity.java
           grep -q "versionName '2.0.11'" estradaplay-app-v2/app/build.gradle
           if grep -R -q 'android.webkit.WebView\|new WebView' estrada-play-comunista-app/app/src/main/java; then exit 1; fi
@@ -57,7 +60,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add estrada-play-comunista-app
-          git commit -m "Create Estrada Play Comunista 1.0.0 source [skip ci]" || true
+          git commit -m "Create Estrada Play Comunista 1.1.0 branded source [skip ci]" || true
           git push origin HEAD:agent/estrada-play-comunista
           echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
@@ -105,10 +108,10 @@ jobs:
           set -euo pipefail
           APK=estrada-play-comunista-app/app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/badging.txt
-          grep -q "package: name='com.estradaplay.comunista' versionCode='100' versionName='1.0.0'" /tmp/badging.txt
+          grep -q "package: name='com.estradaplay.comunista' versionCode='110' versionName='1.1.0'" /tmp/badging.txt
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
-          cp "$APK" Estrada-Play-Comunista-1.0.0.apk
-          sha256sum Estrada-Play-Comunista-1.0.0.apk
+          cp "$APK" Estrada-Play-Comunista-1.1.0.apk
+          sha256sum Estrada-Play-Comunista-1.1.0.apk
 
       - name: Publish release
         env:
@@ -116,14 +119,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="estrada-play-comunista-1.0.0-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" --target "$SOURCE_SHA" --title "Estrada Play Comunista 1.0.0" --notes "Primeiro APK independente. Package com.estradaplay.comunista, identidade vermelho/preto, dirigir sem destino com proteção passiva, busca opcional de endereço, rota visual de teste e copiloto local contextual que varia as falas sem repetir camarada em todo aviso. Segurança de radar/limite continua determinística. Busca Nominatim e roteador público OSRM são apenas para validação inicial e deverão ser substituídos por infraestrutura de produção antes de escala comercial. O EstradaPlay 2.0.11 não foi alterado." Estrada-Play-Comunista-1.0.0.apk
+          TAG="estrada-play-comunista-1.1.0-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" --title "Estrada Play Comunista 1.1.0" --notes "Atualização visual nativa. Novo ícone adaptive/round/monochrome feito em VectorDrawable XML, splash Android 12+ e apresentação própria do app, símbolo desenhado por Canvas, home reorganizada em marca/status, viagem, entretenimento e utilidades. Nenhuma imagem PNG/JPG/WebP foi criada para a identidade. Package com.estradaplay.comunista preservado; destino opcional, proteção passiva, rota e copiloto continuam ativos. O EstradaPlay 2.0.11 não foi alterado." Estrada-Play-Comunista-1.1.0.apk
 
       - name: Temporary artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-1.0.0-APK
-          path: Estrada-Play-Comunista-1.0.0.apk
+          name: Estrada-Play-Comunista-1.1.0-APK
+          path: Estrada-Play-Comunista-1.1.0.apk
           retention-days: 1
           compression-level: 0
