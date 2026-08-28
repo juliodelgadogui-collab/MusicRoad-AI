@@ -232,7 +232,7 @@ private void openConfiguredTarget() {
         page.setPadding(dp(34), dp(24), dp(34), dp(24));
         root.addView(page, new FrameLayout.LayoutParams(-1, -1));
 
-        TextView mark = badge("EC", ACCENT, ACCENT_SOFT);
+        BrandMarkView mark = new BrandMarkView(this);
         page.addView(mark, lp(62, 62));
         TextView over = overline("CONFIGURAÇÃO DO VEÍCULO", ACCENT);
         over.setGravity(Gravity.CENTER);
@@ -283,7 +283,7 @@ ui.post(() -> { showHome(); syncCatalogInBackground(); });
 
         LinearLayout brandRow = row();
         brandRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView mark = badge("EC", ACCENT, ACCENT_SOFT); brandRow.addView(mark, lp(48, 48));
+        BrandMarkView mark = new BrandMarkView(this); brandRow.addView(mark, lp(48, 48));
         LinearLayout brandText = column();
         TextView brand = text("Estrada Play Comunista", 27, TEXT, true); brandText.addView(brand);
         TextView tagline = overline("PLAY NA ESTRADA", ACCENT); brandText.addView(tagline);
@@ -751,7 +751,7 @@ private void refreshLibraryAndOpenChooser() {
         root.removeAllViews();
         LinearLayout page = column(); page.setGravity(Gravity.CENTER); page.setPadding(dp(28), dp(28), dp(28), dp(28));
         root.addView(page, new FrameLayout.LayoutParams(-1, -1));
-        TextView mark = badge("EC", ACCENT, ACCENT_SOFT); page.addView(mark, lp(62, 62));
+        BrandMarkView mark = new BrandMarkView(this); page.addView(mark, lp(62, 62));
         downloadTitle = text(initial ? "Preparando sua viagem" : "Atualizando sua biblioteca", 25, TEXT, true); downloadTitle.setGravity(Gravity.CENTER); page.addView(downloadTitle); margins(downloadTitle, 0, 20, 0, 6);
         TextView intro = text("As músicas estão indo direto para este aparelho.", 13, MUTED, false); intro.setGravity(Gravity.CENTER); page.addView(intro);
         downloadProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); downloadProgress.setIndeterminate(true); downloadProgress.setProgressTintList(ColorStateList.valueOf(ACCENT)); page.addView(downloadProgress, lp(-1, 10)); margins(downloadProgress, 0, 24, 0, 0);
@@ -770,51 +770,87 @@ private void refreshLibraryAndOpenChooser() {
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         LinearLayout page = column();
-        page.setPadding(dp(18), dp(14), dp(18), dp(26));
+        page.setPadding(dp(18), dp(12), dp(18), dp(28));
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
         root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         page.addView(topBar("Início"));
 
-        TextView over = overline("ESTRADA PLAY COMUNISTA", ACCENT);
-        page.addView(over); margins(over, 0, 18, 0, 3);
-        TextView title = text("Pronto para dirigir", 29, TEXT, true);
-        page.addView(title);
-        TextView body = text("Escolha o mapa, a música offline ou a biblioteca. A proteção da estrada continua em segundo plano.", 13, MUTED, false);
-        page.addView(body); margins(body, 0, 5, 0, 18);
+        LinearLayout hero = featureCard(ACCENT);
+        page.addView(hero); margins(hero, 0, 8, 0, 0);
+
+        LinearLayout brandRow = row();
+        brandRow.setGravity(Gravity.CENTER_VERTICAL);
+        BrandMarkView mark = new BrandMarkView(this);
+        brandRow.addView(mark, lp(66, 66));
+
+        LinearLayout identity = column();
+        TextView brandOver = overline("ESTRADA PLAY", ACCENT); identity.addView(brandOver);
+        TextView brandName = text("Comunista", 27, TEXT, true); identity.addView(brandName); margins(brandName, 0, 2, 0, 1);
+        TextView brandSub = text("Copiloto de estrada", 11, MUTED, false); identity.addView(brandSub);
+        brandRow.addView(identity, new LinearLayout.LayoutParams(0, -2, 1)); margins(identity, 14, 0, 8, 0);
+        TextView status = chip(hasLocationPermission() ? "PROTEÇÃO ATIVA" : "GPS PENDENTE", hasLocationPermission() ? GREEN : ACCENT, hasLocationPermission() ? GREEN_SOFT : ACCENT_SOFT);
+        brandRow.addView(status);
+        hero.addView(brandRow);
+
+        TextView title = text("Sua estrada em um só lugar", 29, TEXT, true);
+        hero.addView(title); margins(title, 0, 22, 0, 5);
+        TextView body = text("Navegação opcional, música offline e alertas rodoviários trabalhando juntos sem deixar a tela carregada.", 13, MUTED, false);
+        hero.addView(body);
+
+        LinearLayout capabilities = row();
+        TextView c1 = chip("MAPA LIVRE", ACCENT, ACCENT_SOFT); capabilities.addView(c1);
+        TextView c2 = chip("VOZ LOCAL", BLUE, BLUE_SOFT); capabilities.addView(c2); margins(c2, 7, 0, 0, 0);
+        TextView c3 = chip("OFFLINE", GREEN, GREEN_SOFT); capabilities.addView(c3); margins(c3, 7, 0, 0, 0);
+        hero.addView(capabilities); margins(capabilities, 0, 16, 0, 0);
+
+        TextView driveLabel = overline("COMEÇAR A VIAGEM", MUTED);
+        page.addView(driveLabel); margins(driveLabel, 2, 20, 0, 8);
+        LinearLayout drive = card(); page.addView(drive);
+        TextView driveTitle = text("Como você quer dirigir?", 20, TEXT, true); drive.addView(driveTitle);
+        TextView driveBody = text("Sem destino o app funciona como proteção passiva. Com destino, acrescenta rota e orientação.", 12, MUTED, false); drive.addView(driveBody); margins(driveBody, 0, 4, 0, 14);
 
         Button map = button("DIRIGIR SEM DESTINO", true);
-        page.addView(map, lp(-1, 60));
+        drive.addView(map, lp(-1, 58));
         map.setOnClickListener(v -> {
             DestinationStore.clear(this);
             openCockpit();
         });
 
         Button destination = button("DEFINIR DESTINO", false);
-        page.addView(destination, lp(-1, 58)); margins(destination, 0, 10, 0, 0);
+        drive.addView(destination, lp(-1, 56)); margins(destination, 0, 9, 0, 0);
         destination.setOnClickListener(v -> startActivity(new Intent(this, DestinationActivity.class)));
 
-        TextView intelligence = text("INTELIGÊNCIA DE BORDO · proteção funciona com ou sem destino", 11, MUTED, true);
-        intelligence.setGravity(Gravity.CENTER);
-        page.addView(intelligence); margins(intelligence, 0, 10, 0, 4);
-
+        TextView musicLabel = overline("ENTRETENIMENTO", MUTED);
+        page.addView(musicLabel); margins(musicLabel, 2, 20, 0, 8);
+        LinearLayout media = card(); page.addView(media);
+        LinearLayout mediaTop = row(); mediaTop.setGravity(Gravity.CENTER_VERTICAL);
+        TextView note = badge("♪", ACCENT, ACCENT_SOFT); mediaTop.addView(note, lp(46, 46));
+        LinearLayout mediaMeta = column();
+        mediaMeta.addView(text("Música offline", 18, TEXT, true));
         boolean hasDownloaded = library.hasDownloadedHint();
-        Button music = button(!hasDownloaded ? "ESCOLHER MÚSICAS" : "ABRIR MÚSICA OFFLINE", false);
-        page.addView(music, lp(-1, 56)); margins(music, 0, 10, 0, 0);
+        mediaMeta.addView(text(hasDownloaded ? "Biblioteca pronta no aparelho" : "Escolha o que levar para a estrada", 11, MUTED, false));
+        mediaTop.addView(mediaMeta, new LinearLayout.LayoutParams(0, -2, 1)); margins(mediaMeta, 12, 0, 0, 0);
+        media.addView(mediaTop);
+
+        Button music = button(!hasDownloaded ? "ESCOLHER MÚSICAS" : "ABRIR PLAYER", false);
+        media.addView(music, lp(-1, 54)); margins(music, 0, 12, 0, 0);
         music.setOnClickListener(v -> {
             if (!hasDownloaded) {
                 if (online()) loadCatalogAndOpenChooser(false); else toast("Conecte-se para escolher músicas.");
             } else showMusic();
         });
 
-        Button libraryButton = compactButton("GERENCIAR BIBLIOTECA");
-        page.addView(libraryButton, lp(-1, 52)); margins(libraryButton, 0, 9, 0, 0);
+        LinearLayout tools = row();
+        Button libraryButton = compactButton("BIBLIOTECA");
+        tools.addView(libraryButton, new LinearLayout.LayoutParams(0, dp(50), 1));
+        Button accountButton = compactButton("CONTA");
+        tools.addView(accountButton, new LinearLayout.LayoutParams(0, dp(50), 1)); margins(accountButton, 8, 0, 0, 0);
+        page.addView(tools); margins(tools, 0, 12, 0, 0);
         libraryButton.setOnClickListener(v -> {
             if (online()) loadCatalogAndOpenChooser(false); else toast("Conecte-se para sincronizar pastas.");
         });
-
-        Button accountButton = compactButton("CONTA");
-        page.addView(accountButton, lp(-1, 52)); margins(accountButton, 0, 9, 0, 0);
         accountButton.setOnClickListener(v -> showAccount());
     }
 
@@ -999,7 +1035,7 @@ private void refreshLibraryAndOpenChooser() {
     private void showOfflineSetupBlocked() {
         root.removeAllViews();
         LinearLayout page = column(); page.setGravity(Gravity.CENTER); page.setPadding(dp(28), dp(28), dp(28), dp(28)); root.addView(page, new FrameLayout.LayoutParams(-1, -1));
-        TextView mark = badge("EC", ACCENT, ACCENT_SOFT); page.addView(mark, lp(62, 62));
+        BrandMarkView mark = new BrandMarkView(this); page.addView(mark, lp(62, 62));
         TextView title = text("Só falta preparar o aparelho", 26, TEXT, true); title.setGravity(Gravity.CENTER); page.addView(title); margins(title, 0, 20, 0, 5);
         TextView msg = text("Conecte-se uma vez para escolher e baixar suas pastas. Depois a reprodução funciona offline.", 14, MUTED, false); msg.setGravity(Gravity.CENTER); page.addView(msg); margins(msg, 0, 0, 0, 20);
         Button retry = button("TENTAR NOVAMENTE", true); page.addView(retry, lp(-1, 58)); retry.setOnClickListener(v -> boot());
@@ -1012,7 +1048,7 @@ private void refreshLibraryAndOpenChooser() {
     private void showLoading(String message) {
         root.removeAllViews();
         LinearLayout box = column(); box.setGravity(Gravity.CENTER); box.setPadding(dp(30), dp(30), dp(30), dp(30)); root.addView(box, new FrameLayout.LayoutParams(-1, -1));
-        TextView mark = badge("EC", ACCENT, ACCENT_SOFT); box.addView(mark, lp(58, 58));
+        BrandMarkView mark = new BrandMarkView(this); box.addView(mark, lp(58, 58));
         ProgressBar p = new ProgressBar(this); if (Build.VERSION.SDK_INT >= 21) p.setIndeterminateTintList(ColorStateList.valueOf(ACCENT)); box.addView(p, lp(42, 42)); margins(p, 0, 24, 0, 0);
         TextView brand = text("Estrada Play Comunista", 22, TEXT, true); brand.setGravity(Gravity.CENTER); box.addView(brand); margins(brand, 0, 14, 0, 3);
         TextView m = text(message, 12, MUTED, false); m.setGravity(Gravity.CENTER); box.addView(m);

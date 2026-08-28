@@ -13,6 +13,13 @@
         <item name="android:alertDialogTheme">@style/Theme.EstradaPlay.Dialog</item>
     </style>
 
+    <style name="Theme.EstradaPlay.Splash" parent="@style/Theme.EstradaPlay">
+        <item name="android:windowBackground">@color/epc_splash_bg</item>
+        <item name="android:statusBarColor">@color/epc_splash_bg</item>
+        <item name="android:navigationBarColor">@color/epc_splash_bg</item>
+        <item name="android:windowDisablePreview">false</item>
+    </style>
+
     <style name="Theme.EstradaPlay.Dialog" parent="@android:style/Theme.Material.Dialog.Alert">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowBackground">@drawable/estradaplay_dialog_background</item>

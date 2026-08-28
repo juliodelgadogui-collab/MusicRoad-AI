@@ -15,6 +15,8 @@
         android:hardwareAccelerated="true"
         android:resizeableActivity="true"
         android:label="Estrada Play Comunista"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.EstradaPlay"
         android:usesCleartextTraffic="false">
@@ -23,7 +25,8 @@
             android:name=".GateActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="fullSensor">
+            android:screenOrientation="fullSensor"
+            android:theme="@style/Theme.EstradaPlay.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
