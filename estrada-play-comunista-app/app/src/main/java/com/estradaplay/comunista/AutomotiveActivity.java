@@ -125,6 +125,7 @@ public final class AutomotiveActivity extends ComponentActivity {
             String road = safe(intent.getStringExtra("road"));
             double distance = intent.getDoubleExtra("distance_m", 0);
             int limit = intent.getIntExtra("limit_kmh", 0);
+            SafetyAlertOverlay.show(AutomotiveActivity.this, root, intent);
 
             if (Double.isFinite(lat) && Double.isFinite(lon)) {
                 lastLat = lat;

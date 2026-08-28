@@ -67,6 +67,11 @@ final class CommunistCopilot {
             case "PASSAGEM_NIVEL":
                 text = "Atenção. Passagem de nível em " + distance + ". Reduza.";
                 break;
+            case "CAMERA_MONITORAMENTO":
+                text = n % 2 == 0
+                        ? "Câmera de monitoramento de tráfego à frente, a " + distance + "."
+                        : "Atenção à via. Monitoramento de tráfego em " + distance + ".";
+                break;
             default:
                 if (limitKmh > 0) {
                     text = n % 2 == 0

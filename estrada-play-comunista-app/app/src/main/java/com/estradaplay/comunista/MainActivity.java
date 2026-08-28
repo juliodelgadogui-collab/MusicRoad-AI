@@ -151,6 +151,7 @@ public final class MainActivity extends ComponentActivity {
             double speed = intent.getDoubleExtra("speed_kmh", 0);
             int packs = intent.getIntExtra("pack_count", 0);
             int points = intent.getIntExtra("hazard_count", 0);
+            SafetyAlertOverlay.show(MainActivity.this, root, intent);
             if (roadLiveState != null) {
                 if (hazard != null && !hazard.trim().isEmpty()) {
                     roadLiveState.setText(hazard + (distance > 0 ? " · " + Math.round(distance) + " m" : ""));

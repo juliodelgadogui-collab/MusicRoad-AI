@@ -71,6 +71,11 @@ final class EstradaPlayOfflineVoice {
                 clips.add(distance);
                 clips.add("ep_reduza");
                 break;
+            case "CAMERA_MONITORAMENTO":
+                clips.add("ep_atencao");
+                clips.add("ep_camera_monitoramento");
+                clips.add(distance);
+                break;
             default:
                 clips.add("ep_radar_frente");
                 clips.add(distance);

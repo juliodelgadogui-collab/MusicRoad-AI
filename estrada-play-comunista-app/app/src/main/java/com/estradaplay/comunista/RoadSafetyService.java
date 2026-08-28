@@ -210,20 +210,24 @@ public final class RoadSafetyService extends Service {
         RoadHazard best = null;
         double bestForward = Double.MAX_VALUE;
         double bestDistance = Double.MAX_VALUE;
+        double bestScore = Double.MAX_VALUE;
 
-        if (Float.isFinite(heading) && speedKmh >= 4.0) {
+        if (Float.isFinite(heading) && speedKmh >= 3.0) {
             for (RoadHazard h : nearby) {
+                if (!shouldAlert(h)) continue;
                 Match m = match(loc.getLatitude(), loc.getLongitude(), heading, speedKmh, h);
                 if (!m.valid) continue;
-                if (m.forwardM < bestForward) {
+                double score = m.forwardM + hazardPriorityBias(h.type);
+                if (score < bestScore) {
                     best = h;
                     bestForward = m.forwardM;
                     bestDistance = m.distanceM;
+                    bestScore = score;
                 }
             }
         }
 
-        if (best != null && shouldAlert(best)) {
+        if (best != null) {
             rememberAlert(best);
             speakHazardVoice(best, bestForward);
             String title = best.label() + " à frente";
@@ -348,7 +352,11 @@ public final class RoadSafetyService extends Service {
         double forward = east * Math.sin(rad) + north * Math.cos(rad);
         double lateral = Math.abs(east * Math.cos(rad) - north * Math.sin(rad));
         double distance = Math.hypot(east, north);
-        if (forward <= 12.0) return Match.no();
+        // If a bump enters the local pack very late, still warn while it is almost
+        // under the car. Other point types retain the normal forward safety gate.
+        if ("QUEBRA_MOLAS".equals(h.type)) {
+            if (forward < -12.0) return Match.no();
+        } else if (forward <= 12.0) return Match.no();
 
         double maxDistance;
         double maxLateral;
@@ -357,7 +365,9 @@ public final class RoadSafetyService extends Service {
             case "SEMAFORO":
                 maxDistance = speedKmh >= 55 ? 300 : 220; maxLateral = 55; minSpeed = 18; break;
             case "QUEBRA_MOLAS":
-                maxDistance = speedKmh >= 55 ? 360 : 260; maxLateral = 50; minSpeed = 10; break;
+                maxDistance = speedKmh >= 55 ? 430 : 300; maxLateral = 55; minSpeed = 3; break;
+            case "CAMERA_MONITORAMENTO":
+                maxDistance = speedKmh >= 80 ? 650 : 450; maxLateral = 75; minSpeed = 8; break;
             case "PEDAGIO":
                 maxDistance = speedKmh >= 80 ? 1100 : 800; maxLateral = 150; minSpeed = 10; break;
             case "PASSAGEM_NIVEL":
@@ -371,6 +381,15 @@ public final class RoadSafetyService extends Service {
         if (speedKmh < minSpeed || forward > maxDistance || lateral > maxLateral || distance > maxDistance * 1.18) return Match.no();
         if (Double.isFinite(h.heading) && angleDiff(heading, h.heading) > 75.0) return Match.no();
         return new Match(true, forward, lateral, distance);
+    }
+
+    private double hazardPriorityBias(String type) {
+        if ("QUEBRA_MOLAS".equals(type)) return -220.0;
+        if ("RADAR".equals(type)) return -160.0;
+        if ("PASSAGEM_NIVEL".equals(type)) return -130.0;
+        if ("SEMAFORO".equals(type)) return -90.0;
+        if ("CAMERA_MONITORAMENTO".equals(type)) return -35.0;
+        return 0.0;
     }
 
     private boolean shouldAlert(RoadHazard h) {
@@ -562,6 +581,8 @@ public final class RoadSafetyService extends Service {
                 return "Pedágio à frente. " + distance + ".";
             case "PASSAGEM_NIVEL":
                 return "Atenção. Passagem de nível à frente. " + distance + ". Reduza.";
+            case "CAMERA_MONITORAMENTO":
+                return "Atenção. Câmera de monitoramento de tráfego à frente. " + distance + ".";
             default:
                 if (h.speed > 0) return "Radar à frente, a " + distance + ". Limite do radar, " + h.speed + " quilômetros por hora.";
                 return "Radar à frente. " + distance + ".";

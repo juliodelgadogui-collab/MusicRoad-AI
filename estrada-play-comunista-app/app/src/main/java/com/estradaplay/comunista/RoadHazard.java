@@ -30,13 +30,13 @@ final class RoadHazard {
         double lon = o.has("lon") ? o.optDouble("lon", Double.NaN) : o.optDouble("longitude", Double.NaN);
         if (!Double.isFinite(lat) || !Double.isFinite(lon)) return null;
         String id = o.optString("id", o.optString("external_id", ""));
-        String type = o.optString("type", o.optString("tipo", "RADAR"));
+        String type = normalizeType(o.optString("type", o.optString("tipo", "RADAR")));
         String road = o.optString("road", o.optString("rodovia", ""));
         int speed = o.has("speed") ? o.optInt("speed", 0) : o.optInt("velocidade", 0);
         String source = o.optString("source", o.optString("fonte", "MusicRoad"));
         return new RoadHazard(
                 id,
-                type == null || type.trim().isEmpty() ? "RADAR" : type.trim().toUpperCase(java.util.Locale.ROOT),
+                type,
                 lat,
                 lon,
                 road,
@@ -46,12 +46,29 @@ final class RoadHazard {
         );
     }
 
+    private static String normalizeType(String raw) {
+        String key = raw == null ? "" : raw.trim().toUpperCase(java.util.Locale.ROOT);
+        key = key.replace('Á','A').replace('À','A').replace('Ã','A').replace('Â','A')
+                .replace('É','E').replace('Ê','E').replace('Í','I').replace('Ó','O')
+                .replace('Ô','O').replace('Õ','O').replace('Ú','U').replace('Ç','C')
+                .replace('-', '_').replace(' ', '_');
+        if (key.isEmpty()) return "RADAR";
+        if (key.contains("RADAR") || key.contains("SPEED_CAMERA") || key.contains("MAXSPEED") || key.contains("ENFORCEMENT")) return "RADAR";
+        if (key.contains("QUEBRA") || key.contains("LOMBADA") || key.contains("SPEED_BUMP") || key.contains("SPEED_HUMP")) return "QUEBRA_MOLAS";
+        if (key.contains("SEMAFOR") || key.contains("TRAFFIC_SIGNAL")) return "SEMAFORO";
+        if (key.contains("PEDAG") || key.contains("TOLL")) return "PEDAGIO";
+        if (key.contains("PASSAGEM_NIVEL") || key.contains("LEVEL_CROSSING")) return "PASSAGEM_NIVEL";
+        if (key.contains("CAMERA") || key.contains("CCTV") || key.contains("SURVEILLANCE") || key.contains("MONITORAMENTO")) return "CAMERA_MONITORAMENTO";
+        return key;
+    }
+
     String label() {
         switch (type) {
             case "SEMAFORO": return "Semáforo";
             case "QUEBRA_MOLAS": return "Quebra-molas";
             case "PEDAGIO": return "Pedágio";
             case "PASSAGEM_NIVEL": return "Passagem de nível";
+            case "CAMERA_MONITORAMENTO": return "Câmera de monitoramento";
             default: return "Radar";
         }
     }

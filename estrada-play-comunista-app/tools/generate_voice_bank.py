@@ -124,6 +124,7 @@ def main():
         "ep_quebra_molas_frente": "Quebra-molas à frente.",
         "ep_pedagio_frente": "Pedágio à frente.",
         "ep_passagem_nivel_frente": "Passagem de nível à frente.",
+        "ep_camera_monitoramento": "Câmera de monitoramento de tráfego à frente.",
         "ep_reduza": "Reduza.",
     }
     distance_values = list(range(30, 101, 10)) + list(range(150, 1000, 50)) + list(range(1000, 1501, 100))

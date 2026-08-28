@@ -118,6 +118,7 @@ public final class RoadMapActivity extends ComponentActivity {
             String road = intent.getStringExtra("road");
             double distance = intent.getDoubleExtra("distance_m", 0);
             int limit = intent.getIntExtra("limit_kmh", 0);
+            SafetyAlertOverlay.show(RoadMapActivity.this, root, intent);
 
             if (Double.isFinite(lat) && Double.isFinite(lon)) {
                 lastLat = lat;

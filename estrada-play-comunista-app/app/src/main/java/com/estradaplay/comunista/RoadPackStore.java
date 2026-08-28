@@ -124,6 +124,9 @@ final class RoadPackStore {
             if (!stateOk) stateOk = fetchStateCoverage(api, uf);
             ok = stateOk || ok;
         }
+        // CAMERA_MONITORAMENTO_V122: additive, public map data only. We intentionally
+        // select cameras tagged for traffic/road monitoring and ignore generic private CCTV.
+        ok = fetchOpenStreetMapTrafficCameras(lat, lon) || ok;
         return ok;
     }
 
@@ -276,6 +279,60 @@ final class RoadPackStore {
             stored.put("source_ok", true); stored.put("hazards", hazards);
             JSONObject coverage = new JSONObject();
             coverage.put("source", "OpenStreetMap direto"); coverage.put("total", hazards.length());
+            stored.put("coverage", coverage);
+            return savePack(key, stored);
+        } catch (Throwable ignored) { return false; }
+    }
+
+
+    // CAMERA_MONITORAMENTO_V122: public traffic-monitoring cameras only.
+    private boolean fetchOpenStreetMapTrafficCameras(double lat, double lon) {
+        double centerLat = Math.round(lat / GRID_DEG) * GRID_DEG;
+        double centerLon = Math.round(lon / GRID_DEG) * GRID_DEG;
+        String key = "osmcamera_" + packKey(centerLat, centerLon);
+        synchronized (this) {
+            Pack existing = findByKey(key);
+            if (existing != null && System.currentTimeMillis() - existing.fetchedAt <= TILE_FRESH_MS) return true;
+        }
+        try {
+            String query = String.format(Locale.US,
+                    "[out:json][timeout:28];(" +
+                    "node(around:50000,%.6f,%.6f)[\"man_made\"=\"surveillance\"][\"surveillance\"=\"traffic\"];" +
+                    "node(around:50000,%.6f,%.6f)[\"man_made\"=\"surveillance\"][\"surveillance:zone\"=\"traffic\"];" +
+                    "node(around:50000,%.6f,%.6f)[\"camera:type\"=\"traffic\"];" +
+                    ");out tags;",
+                    lat, lon, lat, lon, lat, lon);
+            String target = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(query, "UTF-8");
+            JSONObject root = directHttpJson(target, 8_000_000);
+            JSONArray elements = root.optJSONArray("elements");
+            if (elements == null) return false;
+
+            JSONArray hazards = new JSONArray();
+            for (int i = 0; i < elements.length(); i++) {
+                JSONObject e = elements.optJSONObject(i); if (e == null) continue;
+                double rlat = e.optDouble("lat", Double.NaN), rlon = e.optDouble("lon", Double.NaN);
+                if (!Double.isFinite(rlat) || !Double.isFinite(rlon)) continue;
+                JSONObject tags = e.optJSONObject("tags"); if (tags == null) tags = new JSONObject();
+                JSONObject h = new JSONObject();
+                h.put("id", "osm-traffic-camera-" + e.optLong("id", i));
+                h.put("type", "CAMERA_MONITORAMENTO");
+                h.put("lat", rlat); h.put("lon", rlon);
+                h.put("road", tags.optString("ref", tags.optString("name", "")));
+                h.put("speed", 0);
+                String direction = tags.optString("direction", tags.optString("camera:direction", ""));
+                try { h.put("heading", Double.parseDouble(direction.trim())); } catch (Throwable ignored) {}
+                h.put("source", "OpenStreetMap traffic monitoring");
+                hazards.put(h);
+            }
+
+            JSONObject stored = new JSONObject();
+            stored.put("key", key); stored.put("kind", "tile");
+            stored.put("center_lat", centerLat); stored.put("center_lon", centerLon);
+            stored.put("radius_m", 50000); stored.put("fetched_at", System.currentTimeMillis());
+            stored.put("source_ok", true); stored.put("hazards", hazards);
+            JSONObject coverage = new JSONObject();
+            coverage.put("source", "OpenStreetMap monitoramento de tráfego");
+            coverage.put("total", hazards.length());
             stored.put("coverage", coverage);
             return savePack(key, stored);
         } catch (Throwable ignored) { return false; }
