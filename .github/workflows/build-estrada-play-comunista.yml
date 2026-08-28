@@ -1,0 +1,122 @@
+name: Estrada Play Comunista 1.0.0
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - agent/estrada-play-comunista
+    paths:
+      - 'tools/create_estrada_play_comunista.py'
+      - '.github/workflows/build-estrada-play-comunista.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Generate independent app
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/create_estrada_play_comunista.py
+
+      - name: Verify product separation and features
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "applicationId 'com.estradaplay.comunista'" estrada-play-comunista-app/app/build.gradle
+          grep -q "versionName '1.0.0'" estrada-play-comunista-app/app/build.gradle
+          grep -q 'android:label="Estrada Play Comunista"' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q 'class DestinationActivity' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationActivity.java
+          grep -q 'class CommunistCopilot' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/CommunistCopilot.java
+          grep -q 'router.project-osrm.org' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RouteEngine.java
+          grep -q 'nominatim.openstreetmap.org' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DestinationResolver.java
+          grep -q 'setRouteGeoJson' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapView.java
+          grep -q 'DIRIGIR SEM DESTINO' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MainActivity.java
+          grep -q "versionName '2.0.11'" estradaplay-app-v2/app/build.gradle
+          if grep -R -q 'android.webkit.WebView\|new WebView' estrada-play-comunista-app/app/src/main/java; then exit 1; fi
+
+      - name: Commit generated independent source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estrada-play-comunista-app
+          git commit -m "Create Estrada Play Comunista 1.0.0 source [skip ci]" || true
+          git push origin HEAD:agent/estrada-play-comunista
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d estrada-play-comunista-app/signing/estradaplay-dev.keystore.b64 > estrada-play-comunista-app/signing/estradaplay-dev.keystore
+
+      - name: Generate embedded safety voice fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          rm -rf /tmp/epc-voice
+          mkdir -p /tmp/epc-voice
+          tar -xjf "$MODEL" -C /tmp/epc-voice
+          python3 estrada-play-comunista-app/tools/generate_voice_bank.py --model-root /tmp/epc-voice --output estrada-play-comunista-app/app/src/main/res/raw --metadata-output estrada-play-comunista-app/app/src/main/assets/estradaplay_voice
+          test "$(find estrada-play-comunista-app/app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 70
+
+      - name: Build APK
+        working-directory: estrada-play-comunista-app
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify APK identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=estrada-play-comunista-app/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/badging.txt
+          grep -q "package: name='com.estradaplay.comunista' versionCode='100' versionName='1.0.0'" /tmp/badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
+          cp "$APK" Estrada-Play-Comunista-1.0.0.apk
+          sha256sum Estrada-Play-Comunista-1.0.0.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-1.0.0-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" --title "Estrada Play Comunista 1.0.0" --notes "Primeiro APK independente. Package com.estradaplay.comunista, identidade vermelho/preto, dirigir sem destino com proteção passiva, busca opcional de endereço, rota visual de teste e copiloto local contextual que varia as falas sem repetir camarada em todo aviso. Segurança de radar/limite continua determinística. Busca Nominatim e roteador público OSRM são apenas para validação inicial e deverão ser substituídos por infraestrutura de produção antes de escala comercial. O EstradaPlay 2.0.11 não foi alterado." Estrada-Play-Comunista-1.0.0.apk
+
+      - name: Temporary artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-1.0.0-APK
+          path: Estrada-Play-Comunista-1.0.0.apk
+          retention-days: 1
+          compression-level: 0
