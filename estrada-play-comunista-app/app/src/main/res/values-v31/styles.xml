@@ -4,7 +4,6 @@
         <item name="android:windowSplashScreenBackground">@color/epc_splash_bg</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="android:windowSplashScreenAnimationDuration">280</item>
-        <item name="android:postSplashScreenTheme">@style/Theme.EstradaPlay</item>
         <item name="android:statusBarColor">@color/epc_splash_bg</item>
         <item name="android:navigationBarColor">@color/epc_splash_bg</item>
     </style>
