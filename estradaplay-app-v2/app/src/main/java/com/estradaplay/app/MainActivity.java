@@ -115,16 +115,17 @@ public final class MainActivity extends ComponentActivity {
             if (!active) {
                 if (downloadInitialFlow) {
                     boolean hasOfflineMusic = !library.downloadedTracks().isEmpty();
-                    library.setSetupDone(hasOfflineMusic);
-                    if (hasOfflineMusic) {
-                        ui.postDelayed(() -> { downloadInitialFlow = false; showHome(); }, 900);
-                    } else {
-                        downloadInitialFlow = false;
-                        ui.postDelayed(() -> {
-                            toast("Nenhuma música foi baixada. Escolha novamente quando estiver online.");
-                            if (online()) loadCatalogAndOpenChooser(true); else showOfflineSetupBlocked();
-                        }, 650);
-                    }
+                    
+library.setSetupDone(true);
+if (hasOfflineMusic) {
+    ui.postDelayed(() -> { downloadInitialFlow = false; showHome(); }, 900);
+} else {
+    downloadInitialFlow = false;
+    ui.postDelayed(() -> {
+        toast("Nenhuma música foi baixada. Você pode tentar novamente depois em Gerenciar Biblioteca.");
+        showHome();
+    }, 650);
+}
                 } else ui.postDelayed(MainActivity.this::showMusic, 650);
             }
         }
@@ -189,19 +190,21 @@ public final class MainActivity extends ComponentActivity {
         boot();
     }
 
-    private void boot() {
-        if (hasAccount()) {
-            startRoadSafetyIfAllowed();
-            if (!library.hasSetupDone()) {
-                if (online()) loadCatalogAndOpenChooser(true); else showOfflineSetupBlocked();
-            } else openConfiguredTarget();
-            return;
-        }
-        if (online()) attemptDeviceLogin();
-        else showAuth(false, "Conecte-se para entrar pela primeira vez. Depois, música e alertas preparados continuam disponíveis offline.");
-    }
 
-    private void openConfiguredTarget() {
+// BOOT_NONBLOCKING_V206: biblioteca nunca bloqueia a abertura do EstradaPlay.
+private void boot() {
+    if (hasAccount()) {
+        startRoadSafetyIfAllowed();
+        library.setSetupDone(true);
+        openConfiguredTarget();
+        if (online()) syncCatalogInBackground();
+        return;
+    }
+    if (online()) attemptDeviceLogin();
+    else showAuth(false, "Conecte-se para entrar pela primeira vez. Depois, mapa, proteção e músicas já baixadas continuam disponíveis offline.");
+}
+
+private void openConfiguredTarget() {
         String target = getIntent() == null ? "" : getIntent().getStringExtra("open");
         target = target == null ? "" : target.trim().toLowerCase(Locale.ROOT);
         if ("music".equals(target)) showMusic();
@@ -258,8 +261,10 @@ public final class MainActivity extends ComponentActivity {
                 ApiClient.Response r = api.post("api/native_app.php?action=device_login", d);
                 JSONObject j = r.json();
                 if (r.ok() && j.optBoolean("ok") && j.optJSONObject("account") != null) {
-                    saveAccount(j.optJSONObject("account"));
-                    ui.post(() -> loadCatalogAndOpenChooser(true));
+                    
+saveAccount(j.optJSONObject("account"));
+library.setSetupDone(true);
+ui.post(() -> { showHome(); syncCatalogInBackground(); });
                 } else ui.post(() -> showAuth(false, "Entre uma vez. Nas próximas vezes este aparelho poderá ser reconhecido automaticamente."));
             } catch (Exception e) {
                 ui.post(() -> showAuth(false, "Não consegui reconhecer o aparelho agora. Entre com sua conta."));
@@ -343,8 +348,10 @@ public final class MainActivity extends ComponentActivity {
                         ui.post(() -> { submit.setEnabled(true); submit.setText(register ? "CRIAR CONTA" : "ENTRAR"); alert("EstradaPlay", err); });
                         return;
                     }
-                    saveAccount(j.optJSONObject("account"));
-                    ui.post(() -> loadCatalogAndOpenChooser(true));
+                    
+saveAccount(j.optJSONObject("account"));
+library.setSetupDone(true);
+ui.post(() -> { showHome(); syncCatalogInBackground(); });
                 } catch (Exception e) {
                     ui.post(() -> { submit.setEnabled(true); submit.setText(register ? "CRIAR CONTA" : "ENTRAR"); alert("Sem conexão", "Não consegui falar com o servidor agora."); });
                 }
@@ -361,6 +368,42 @@ public final class MainActivity extends ComponentActivity {
         } catch (Exception ignored) {}
         return d;
     }
+
+
+private void syncCatalogInBackground() {
+    if (!online()) return;
+    io.execute(() -> {
+        try {
+            ApiClient.Response r = api.get("api/library.php?action=list");
+            JSONObject j = r.json();
+            JSONArray arr = j.optJSONArray("tracks");
+            if (!r.ok() || arr == null) {
+                ApiClient.Response fallback = api.get("api/native_app.php?action=library");
+                j = fallback.json();
+                arr = j.optJSONArray("tracks");
+                if (!fallback.ok() || arr == null) return;
+            }
+            ArrayList<Track> tracks = new ArrayList<>();
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.optJSONObject(i);
+                if (o == null) continue;
+                Track t = Track.fromServer(o, api);
+                if (!t.remoteSource.isEmpty()) tracks.add(t);
+            }
+            if (!tracks.isEmpty()) {
+                int beforeFolders = library.folderNames(library.catalog()).size();
+                library.saveCatalog(tracks);
+                int afterFolders = library.folderNames(tracks).size();
+                if (afterFolders > beforeFolders && beforeFolders > 0) {
+                    int added = afterFolders - beforeFolders;
+                    ui.post(() -> toast(added + (added == 1 ? " nova pasta encontrada." : " novas pastas encontradas.")));
+                }
+            }
+        } catch (Exception ignored) {
+            // Biblioteca é opcional para iniciar o app.
+        }
+    });
+}
 
     private void loadCatalogAndOpenChooser(boolean initial) {
         showLoading("Organizando suas pastas…");
@@ -381,12 +424,28 @@ public final class MainActivity extends ComponentActivity {
                     Track t = Track.fromServer(o, api);
                     if (!t.remoteSource.isEmpty()) tracks.add(t);
                 }
-                library.saveCatalog(tracks);
-                ui.post(() -> { if (tracks.isEmpty()) showCatalogEmpty(initial); else showFolderChooser(initial); });
+if (!tracks.isEmpty()) library.saveCatalog(tracks);
+ui.post(() -> {
+    if (tracks.isEmpty()) {
+        library.setSetupDone(true);
+        showHome();
+        toast("Nenhuma música disponível agora. O EstradaPlay continua funcionando; tente novamente em Gerenciar Biblioteca.");
+    } else {
+        library.setSetupDone(true);
+        showFolderChooser(initial);
+    }
+});
             } catch (Exception e) {
                 ui.post(() -> {
-                    if (!library.catalog().isEmpty()) showFolderChooser(initial);
-                    else alertWithRetry("Não consegui carregar as pastas", "Confira a internet e tente novamente.", () -> loadCatalogAndOpenChooser(initial));
+                    
+if (!library.catalog().isEmpty()) {
+    library.setSetupDone(true);
+    showFolderChooser(initial);
+} else {
+    library.setSetupDone(true);
+    showHome();
+    toast("Biblioteca indisponível agora. Mapa, GPS e proteção continuam funcionando.");
+}
                 });
             }
         });
@@ -992,7 +1051,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void toast(String value) { Toast.makeText(this, value, Toast.LENGTH_SHORT).show(); }
     private void alert(String title, String message) { new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("OK", null).show(); }
-    private void alertWithRetry(String title, String message, Runnable retry) { new AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton("Voltar", (d,w) -> { if (library.hasSetupDone()) showHome(); else showAuth(false, null); }).setPositiveButton("Tentar novamente", (d,w) -> retry.run()).show(); }
+    private void alertWithRetry(String title, String message, Runnable retry) { new AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton("Voltar", (d,w) -> { if (hasAccount()) showHome(); else showAuth(false, null); }).setPositiveButton("Tentar novamente", (d,w) -> retry.run()).show(); }
 
     private void clearDownloadViews() { downloadTitle = null; downloadState = null; downloadProgress = null; }
 
@@ -1041,7 +1100,7 @@ public final class MainActivity extends ComponentActivity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (hasAccount() && library != null && library.hasSetupDone()) openConfiguredTarget();
+        if (hasAccount() && library != null) openConfiguredTarget();
     }
 
     @Override protected void onDestroy() {
