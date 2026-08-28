@@ -9,11 +9,15 @@ import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class PlayerService extends Service {
     static final String ACTION_PLAY_TRACK = "com.estradaplay.app.PLAY_TRACK";
@@ -29,6 +33,8 @@ public final class PlayerService extends Service {
     private static final int NOTIFICATION_ID = 4501;
 
     private final ArrayList<Track> queue = new ArrayList<>();
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final Handler main = new Handler(Looper.getMainLooper());
     private LibraryStore store;
     private MediaPlayer player;
     private int index = -1;
@@ -49,10 +55,17 @@ public final class PlayerService extends Service {
         if (ACTION_PLAY_TRACK.equals(action)) {
             String key = intent.getStringExtra(EXTRA_KEY);
             String folder = intent.getStringExtra(EXTRA_FOLDER);
-            buildQueue(folder);
-            index = findIndex(key);
-            if (index < 0 && !queue.isEmpty()) index = 0;
-            prepareAndPlay();
+            startForeground(NOTIFICATION_ID, notification(null, false));
+            io.execute(() -> {
+                ArrayList<Track> loaded = loadQueue(folder);
+                main.post(() -> {
+                    queue.clear();
+                    queue.addAll(loaded);
+                    index = findIndex(key);
+                    if (index < 0 && !queue.isEmpty()) index = 0;
+                    prepareAndPlay();
+                });
+            });
         } else if (ACTION_TOGGLE.equals(action)) toggle();
         else if (ACTION_NEXT.equals(action)) next();
         else if (ACTION_PREVIOUS.equals(action)) previous();
@@ -61,13 +74,14 @@ public final class PlayerService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void buildQueue(String folder) {
-        queue.clear();
+    private ArrayList<Track> loadQueue(String folder) {
+        ArrayList<Track> loaded = new ArrayList<>();
         List<Track> all = store.downloadedTracks();
         String f = folder == null ? "" : folder.trim();
         for (Track t : all) {
-            if (f.isEmpty() || "__ALL__".equals(f) || f.equals(LibraryStore.folderKey(t))) queue.add(t);
+            if (f.isEmpty() || "__ALL__".equals(f) || f.equals(LibraryStore.folderKey(t))) loaded.add(t);
         }
+        return loaded;
     }
 
     private int findIndex(String key) {
@@ -187,5 +201,5 @@ public final class PlayerService extends Service {
         }
     }
 
-    @Override public void onDestroy() { releasePlayer(); stopForeground(true); super.onDestroy(); }
+    @Override public void onDestroy() { io.shutdownNow(); releasePlayer(); stopForeground(true); super.onDestroy(); }
 }

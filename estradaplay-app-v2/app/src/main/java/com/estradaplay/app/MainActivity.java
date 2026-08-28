@@ -499,17 +499,20 @@ private void syncCatalogInBackground() {
     });
 }
 
+// ANR_CATALOG_BOOT_V211: disk/JSON work never runs on Android's main thread.
 private void loadCatalogAndOpenChooser(boolean initial) {
-    List<Track> local = library.catalog();
-    if (!local.isEmpty()) {
-        library.setSetupDone(true);
-        showFolderChooser(initial);
-        syncCatalogInBackground();
-        return;
-    }
-
-    showLoading("Carregando sua biblioteca…");
+    showLoading("Abrindo sua biblioteca…");
     io.execute(() -> {
+        List<Track> local = library.catalog();
+        if (!local.isEmpty()) {
+            library.setSetupDone(true);
+            ui.post(() -> {
+                showFolderChooser(initial);
+                syncCatalogInBackground();
+            });
+            return;
+        }
+        ui.post(() -> showLoading("Carregando sua biblioteca…"));
         try {
             ArrayList<Track> tracks = fetchCatalogFast();
             if (tracks.isEmpty()) {
@@ -518,10 +521,10 @@ private void loadCatalogAndOpenChooser(boolean initial) {
                 if (!tracks.isEmpty()) rememberLibrarySync();
             }
             ArrayList<Track> result = tracks;
+            if (!result.isEmpty()) library.saveCatalog(result);
+            library.setSetupDone(true);
             ui.post(() -> {
-                library.setSetupDone(true);
                 if (!result.isEmpty()) {
-                    library.saveCatalog(result);
                     showFolderChooser(initial);
                 } else {
                     showHome();
@@ -950,10 +953,9 @@ private void refreshLibraryAndOpenChooser() {
 
         TextView appLabel = overline("ESTE APARELHO", MUTED); page.addView(appLabel); margins(appLabel, 0, 20, 0, 8);
         LinearLayout device = card(); page.addView(device);
-        device.addView(infoRow("Músicas offline", library.downloadedTracks().size() + " arquivos"));
+        device.addView(infoRow("Músicas offline", library.hasDownloadedHint() ? "Biblioteca preparada" : "Nenhuma"));
         device.addView(divider());
-        RoadPackStore store = new RoadPackStore(this);
-        device.addView(infoRow("Proteção da estrada", store.hazardCount() + " pontos salvos"));
+        device.addView(infoRow("Proteção da estrada", hasLocationPermission() ? "Ativa neste aparelho" : "GPS desativado"));
         device.addView(divider());
         device.addView(infoRow("Versão do app", BuildConfig.VERSION_NAME));
 

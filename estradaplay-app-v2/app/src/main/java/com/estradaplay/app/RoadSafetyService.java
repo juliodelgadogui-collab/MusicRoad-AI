@@ -48,8 +48,9 @@ public final class RoadSafetyService extends Service {
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private LocationManager locationManager;
-    private RoadPackStore packs;
-    private OfflineRoadStore mapRoads;
+    private volatile RoadPackStore packs;
+    private volatile OfflineRoadStore mapRoads;
+    private final AtomicBoolean storesLoading = new AtomicBoolean(false);
     private ApiClient api;
     private TextToSpeech tts;
     // OFFLINE_VOICE_V204: primary deterministic voice; Android TTS is fallback only.
@@ -93,8 +94,7 @@ public final class RoadSafetyService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
-        packs = new RoadPackStore(this);
-        mapRoads = new OfflineRoadStore(this);
+        // ANR_ROAD_INIT_V211: heavy offline JSON parsing is deferred to IO.
         api = new ApiClient(this);
         offlineVoice = new EstradaPlayOfflineVoice(this);
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
@@ -119,11 +119,34 @@ public final class RoadSafetyService extends Service {
                 } catch (Throwable ignored) {}
             }
         });
-        startLocation();
+        initializeStoresAsync();
+    }
+
+    private void initializeStoresAsync() {
+        if (packs != null && mapRoads != null) {
+            startLocation();
+            return;
+        }
+        if (!storesLoading.compareAndSet(false, true)) return;
+        io.execute(() -> {
+            try {
+                RoadPackStore loadedPacks = new RoadPackStore(getApplicationContext());
+                OfflineRoadStore loadedRoads = new OfflineRoadStore(getApplicationContext());
+                packs = loadedPacks;
+                mapRoads = loadedRoads;
+            } catch (Throwable ignored) {
+            } finally {
+                storesLoading.set(false);
+                main.post(() -> {
+                    if (packs != null && mapRoads != null) startLocation();
+                    else updateNotification("Proteção na estrada", "Base offline indisponível; tentando novamente", true);
+                });
+            }
+        });
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        startLocation();
+        if (packs != null && mapRoads != null) startLocation(); else initializeStoresAsync();
         return START_STICKY;
     }
 
@@ -157,6 +180,7 @@ public final class RoadSafetyService extends Service {
 
     private void handleLocation(Location loc) {
         if (loc == null) return;
+        if (packs == null || mapRoads == null) return;
         if (loc.hasAccuracy() && loc.getAccuracy() > 120f && previous != null) return;
 
         long nowWall = System.currentTimeMillis();

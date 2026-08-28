@@ -22,12 +22,15 @@ import java.util.Set;
 
 final class LibraryStore {
     private static final String PREFS = "estradaplay_library_v1";
+    private static final String FLAGS_PREFS = "estradaplay_library_flags_v211";
+    private static final String KEY_DOWNLOADED_HINT = "downloaded_hint";
     private static final String KEY_CATALOG = "catalog";
     private static final String KEY_DOWNLOADED = "downloaded";
     private static final String KEY_SETUP = "initial_music_setup_done";
     private static final int MAX_CATALOG_BYTES = 32 * 1024 * 1024;
     private final Context app;
     private final SharedPreferences prefs;
+    private final SharedPreferences flags;
     private final File catalogFile;
     // ANR_LIBRARY_INDEX_V210: large catalog/download indexes are cached in memory.
     private volatile List<Track> catalogCache;
@@ -37,6 +40,7 @@ final class LibraryStore {
     LibraryStore(Context context) {
         app = context.getApplicationContext();
         prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        flags = app.getSharedPreferences(FLAGS_PREFS, Context.MODE_PRIVATE);
         File dir = new File(app.getFilesDir(), "estradaplay_library");
         catalogFile = new File(dir, "catalog.json");
     }
@@ -117,6 +121,7 @@ final class LibraryStore {
             all.put(track.key(), track.withLocal(file.getAbsolutePath()).toStored());
             String raw = all.toString();
             prefs.edit().putString(KEY_DOWNLOADED, raw).apply();
+            flags.edit().putBoolean(KEY_DOWNLOADED_HINT, true).apply();
             downloadedCache = null; downloadedCacheRaw = null;
         } catch (Exception ignored) {}
     }
@@ -164,16 +169,16 @@ final class LibraryStore {
         }
         downloadedCacheRaw = raw;
         downloadedCache = new ArrayList<>(out);
+        flags.edit().putBoolean(KEY_DOWNLOADED_HINT, !out.isEmpty()).apply();
         return out;
     }
 
-    boolean hasDownloadedHint() {
-        String raw = prefs.getString(KEY_DOWNLOADED, "{}");
-        return raw != null && raw.length() > 2;
-    }
+    // ANR_BOOT_FLAGS_V211: never read the potentially multi-megabyte download index on UI boot.
+    // Default true preserves existing installs; tapping Music will validate the real index on the IO executor.
+    boolean hasDownloadedHint() { return flags.getBoolean(KEY_DOWNLOADED_HINT, true); }
 
-    boolean hasSetupDone() { return prefs.getBoolean(KEY_SETUP, false); }
-    void setSetupDone(boolean done) { prefs.edit().putBoolean(KEY_SETUP, done).apply(); }
+    boolean hasSetupDone() { return flags.getBoolean(KEY_SETUP, false); }
+    void setSetupDone(boolean done) { flags.edit().putBoolean(KEY_SETUP, done).apply(); }
 
     Set<String> folderNames(List<Track> tracks) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
@@ -248,6 +253,7 @@ final class LibraryStore {
         }
         for (String key : keys) all.remove(key);
         prefs.edit().putString(KEY_DOWNLOADED, all.toString()).apply();
+        flags.edit().putBoolean(KEY_DOWNLOADED_HINT, all.length() > 0).apply();
         downloadedCache = null; downloadedCacheRaw = null;
         return removed;
     }
