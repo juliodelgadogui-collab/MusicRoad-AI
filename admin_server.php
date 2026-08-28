@@ -47,7 +47,13 @@ $history = server_sync_history(50);
 $diag = server_diagnostic_snapshot();
 
 if (($_GET['format'] ?? '') === 'json') {
-    json_response(['ok'=>true,'diagnostic'=>$diag,'folders'=>$folders,'history'=>$history]);
+    $safeDiag = $diag;
+    if (isset($safeDiag['health']) && is_array($safeDiag['health'])) unset($safeDiag['health']['cron_url']);
+    $safeFolders = array_map(static function(array $row): array {
+        unset($row['folder_id']);
+        return $row;
+    }, $folders);
+    json_response(['ok'=>true,'diagnostic'=>$safeDiag,'folders'=>$safeFolders,'history'=>$history]);
 }
 
 $quotaClass = ($health['quota_level'] ?? 'ok') === 'critical' ? 'error' : ((($health['quota_level'] ?? 'ok') === 'danger') ? 'error' : 'ok');

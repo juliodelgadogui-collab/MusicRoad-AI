@@ -149,5 +149,5 @@ function native_library_meta(): array
 {
     try { $tracks = (int)db()->query('SELECT COUNT(*) FROM music_library')->fetchColumn(); } catch (Throwable $e) { $tracks = 0; }
     try { $roots = (int)db()->query('SELECT COUNT(*) FROM drive_folders WHERE active = 1')->fetchColumn(); } catch (Throwable $e) { $roots = 0; }
-    return ['tracks'=>$tracks,'active_roots'=>$roots,'last_sync'=>app_setting('native_library_last_sync',''),'db_driver'=>(string)db()->getAttribute(PDO::ATTR_DRIVER_NAME)];
+    return ['tracks'=>$tracks,'active_roots'=>$roots,'last_sync'=>app_setting('native_library_last_sync',''),'catalog_version'=>server_catalog_version(),'catalog_changed_at'=>app_setting('catalog_changed_at',''),'db_driver'=>(string)db()->getAttribute(PDO::ATTR_DRIVER_NAME)];
 }

@@ -144,7 +144,7 @@ $health = server_health_snapshot();
 <main class="admin-main">
   <div class="toolbar admin-toolbar">
     <div><p class="eyebrow">MusicRoad AI v1.0.0</p><h1>Painel Administrativo</h1><p class="muted">Gerencie clientes, biblioteca do Drive e radares.</p></div>
-    <div class="row"><a class="button secondary" href="admin_radares.php">Central de Radares</a><a class="button secondary" href="logout.php">Sair</a></div>
+    <div class="row"><a class="button secondary" href="admin_server.php">Central do Servidor</a><a class="button secondary" href="admin_radares.php">Central de Radares</a><a class="button secondary" href="logout.php">Sair</a></div>
   </div>
 
   <?php if ($message): ?><div class="panel success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
