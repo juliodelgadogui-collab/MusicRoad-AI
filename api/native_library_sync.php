@@ -3,36 +3,9 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
 
-function native_library_sync_active_drive_folders(): array
+function native_library_sync_active_drive_folders(bool $force = false, array $onlyIds = []): array
 {
-    // DRIVE_SYNC_V208: resilient root/subfolder sync; one bad public subfolder cannot abort the library.
-    if (function_exists('set_time_limit')) @set_time_limit(180);
-    ensure_runtime_tables();
-    $roots = db()->query('SELECT id,name,folder_id,folder_link FROM drive_folders WHERE active = 1 ORDER BY id ASC')->fetchAll() ?: [];
-    $stats = ['roots'=>count($roots),'folders'=>0,'tracks'=>0,'inserted'=>0,'updated'=>0,'errors'=>[]];
-    $apiKey = google_api_key();
-    foreach ($roots as $root) {
-        $visited = [];
-        $rootName = trim((string)($root['name'] ?? '')) ?: 'Google Drive';
-        try {
-            $beforeTracks = (int)$stats['tracks'];
-            $beforeErrors = count($stats['errors']);
-            native_library_scan_folder((string)$root['folder_id'], [$rootName], $apiKey, $visited, $stats, 0);
-            $rootTracks = max(0, (int)$stats['tracks'] - $beforeTracks);
-            $rootWarnings = max(0, count($stats['errors']) - $beforeErrors);
-            $status = 'OK: '.$rootTracks.' músicas verificadas'.($rootWarnings > 0 ? ' | '.$rootWarnings.' aviso(s)' : '');
-            $u = db()->prepare('UPDATE drive_folders SET last_import_at = ?, last_status = ? WHERE id = ?');
-            $u->execute([date('Y-m-d H:i:s'), $status, (int)$root['id']]);
-        } catch (Throwable $e) {
-            $stats['errors'][] = $rootName.': '.$e->getMessage();
-            try {
-                $u = db()->prepare('UPDATE drive_folders SET last_import_at = ?, last_status = ? WHERE id = ?');
-                $u->execute([date('Y-m-d H:i:s'), 'Erro: '.$e->getMessage(), (int)$root['id']]);
-            } catch (Throwable $ignored) {}
-        }
-    }
-    set_app_setting('native_library_last_sync', date('Y-m-d H:i:s'));
-    return $stats;
+    return server_sync_active_drive_folders($force, $onlyIds);
 }
 
 function native_library_scan_folder(string $folderId, array $path, string $apiKey, array &$visited, array &$stats, int $depth): void
@@ -181,22 +154,26 @@ function native_library_save_track(array $file, array $path, array &$stats): voi
     $fileId = trim((string)($file['id'] ?? ''));
     if ($fileId === '') return;
     $name = trim((string)($file['name'] ?? '')) ?: $fileId;
-    $title = preg_replace('/\\.[^.]+$/', '', $name) ?: $name;
+    $title = preg_replace('/\.[^.]+$/', '', $name) ?: $name;
     $folderPath = $path ? implode(' / ', $path) : 'Google Drive';
     $album = $path ? (string)end($path) : 'Google Drive';
     $mime = trim((string)($file['mime_type'] ?? '')) ?: native_library_mime($name);
     $size = (int)($file['file_size'] ?? 0);
     $cover = trim((string)($file['cover_url'] ?? ''));
-    $s = db()->prepare('SELECT id FROM music_library WHERE origin = ? AND origin_ref = ? LIMIT 1');
-    $s->execute(['Google Drive',$fileId]);
-    $id = (int)($s->fetchColumn() ?: 0);
+    $rootId = (int)($GLOBALS['estradaplay_sync_root_id'] ?? 0);
+    $token = (string)($GLOBALS['estradaplay_sync_token'] ?? '');
+    $now = date('Y-m-d H:i:s');
+    $source = 'api/drive_stream.php?id=' . rawurlencode($fileId);
+    $q = db()->prepare('SELECT id FROM music_library WHERE origin=? AND origin_ref=? LIMIT 1');
+    $q->execute(['Google Drive',$fileId]);
+    $id = (int)($q->fetchColumn() ?: 0);
     if ($id > 0) {
-        $u = db()->prepare('UPDATE music_library SET title = ?, artist = ?, album = ?, mime_type = ?, file_size = ?, cover_url = ? WHERE id = ?');
-        $u->execute([$title,$folderPath,$album,$mime,$size ?: null,$cover ?: null,$id]);
+        $u = db()->prepare('UPDATE music_library SET title=?,artist=?,album=?,folder=?,mime_type=?,file_size=?,cover_url=?,source_url=?,drive_root_id=?,sync_token=?,last_seen_at=? WHERE id=?');
+        $u->execute([$title,$folderPath,$album,$folderPath,$mime,$size ?: null,$cover ?: null,$source,$rootId ?: null,$token ?: null,$now,$id]);
         $stats['updated']++;
     } else {
-        $i = db()->prepare('INSERT INTO music_library (title,artist,album,cover_url,origin,origin_ref,mime_type,file_size,created_at) VALUES (?,?,?,?,?,?,?,?,?)');
-        $i->execute([$title,$folderPath,$album,$cover ?: null,'Google Drive',$fileId,$mime,$size ?: null,date('Y-m-d H:i:s')]);
+        $i = db()->prepare('INSERT INTO music_library (title,artist,album,folder,cover_url,origin,origin_ref,source_url,mime_type,file_size,drive_root_id,sync_token,last_seen_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+        $i->execute([$title,$folderPath,$album,$folderPath,$cover ?: null,'Google Drive',$fileId,$source,$mime,$size ?: null,$rootId ?: null,$token ?: null,$now,$now]);
         $stats['inserted']++;
     }
     $stats['tracks']++;

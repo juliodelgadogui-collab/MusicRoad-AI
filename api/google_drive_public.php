@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/drive_helpers.php';
+require_once __DIR__ . '/native_library_sync.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['ok' => false, 'error' => 'Use POST.'], 405);
@@ -14,6 +15,23 @@ if (!$user || ($user['role'] ?? '') !== 'admin') {
 ensure_runtime_tables();
 
 $data = input_json();
+if (!empty($data['import_all']) || !empty($data['folder_db_id'])) {
+    $ids = !empty($data['folder_db_id']) ? [(int)$data['folder_db_id']] : [];
+    $sync = native_library_sync_active_drive_folders(true, $ids);
+    $compat = [
+        'folders_scanned'=>(int)($sync['folders'] ?? 0),
+        'tracks_found'=>(int)($sync['tracks'] ?? 0),
+        'inserted'=>(int)($sync['inserted'] ?? 0),
+        'updated'=>(int)($sync['updated'] ?? 0),
+        'removed'=>(int)($sync['removed'] ?? 0),
+        'skipped'=>0,
+        'verified'=>(int)($sync['tracks'] ?? 0),
+        'saved'=>(int)($sync['inserted'] ?? 0) + (int)($sync['updated'] ?? 0),
+        'errors'=>$sync['errors'] ?? [],
+    ];
+    audit_log('google_drive.public_import', ['server500'=>true,'stats'=>$compat]);
+    json_response(['ok'=>true,'stats'=>$compat,'sync'=>$sync,'tracks'=>[]]);
+}
 $folders = resolve_requested_folders($data);
 $files = resolve_requested_files($data);
 $save = !array_key_exists('save', $data) || (bool)$data['save'];

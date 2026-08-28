@@ -111,11 +111,14 @@ function ensure_schema(): void
         db()->exec("UPDATE users SET role = 'client' WHERE role IN ('user','cliente')");
         db()->exec("UPDATE users SET status = 'active' WHERE status IS NULL OR status = ''");
     } catch (Throwable $e) {}
+    if (function_exists('server_ensure_500mb_schema')) server_ensure_500mb_schema();
 }
 
 function ensure_default_users(): void
 {
     ensure_schema();
+    global $config;
+    if (($config['env'] ?? 'production') !== 'development') return;
     $now = date('Y-m-d H:i:s');
     $adminCount = (int)db()->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
     if ($adminCount === 0) {
@@ -131,7 +134,7 @@ function ensure_default_users(): void
 
 // Compatibilidade com os arquivos anteriores.
 function ensure_default_admin(): void { ensure_default_users(); }
-function ensure_runtime_tables(): void { ensure_schema(); }
+function ensure_runtime_tables(): void { ensure_schema(); if (function_exists('server_housekeeping')) server_housekeeping(); }
 
 function current_user(): ?array
 {
@@ -303,3 +306,7 @@ function http_json(string $url, ?string $postBody = null, array $headers = []): 
     $data = json_decode((string)$raw,true);
     return is_array($data) ? $data : null;
 }
+
+
+require_once __DIR__ . '/server_500mb.php';
+server_rotate_logs();

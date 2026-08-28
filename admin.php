@@ -131,6 +131,7 @@ $summary = [
     'Músicas Drive' => (int)db()->query("SELECT COUNT(*) FROM music_library WHERE origin='Google Drive'")->fetchColumn(),
     'Radares' => (int)db()->query('SELECT COUNT(*) FROM radars')->fetchColumn(),
 ];
+$health = server_health_snapshot();
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -152,6 +153,18 @@ $summary = [
   <div class="grid admin-summary">
     <?php foreach ($summary as $label=>$value): ?><article class="panel"><h2><?= htmlspecialchars($label) ?></h2><p class="big-number"><?= (int)$value ?></p></article><?php endforeach; ?>
   </div>
+
+  <section class="panel">
+    <div class="section-heading"><div><h2>Saúde do servidor · modo 500 MB</h2><p class="muted">O servidor guarda somente metadados. Áudio permanece no Google Drive e vai direto para o aparelho.</p></div></div>
+    <div class="grid admin-summary">
+      <article class="panel"><h2>Espaço livre</h2><p class="big-number"><?= htmlspecialchars((string)$health['disk_free_h']) ?></p></article>
+      <article class="panel"><h2>MariaDB</h2><p class="big-number"><?= htmlspecialchars((string)$health['db_h']) ?></p></article>
+      <article class="panel"><h2>Logs</h2><p class="big-number"><?= htmlspecialchars((string)$health['logs_h']) ?></p></article>
+      <article class="panel"><h2>Catálogo</h2><p class="big-number"><?= (int)$health['tracks'] ?></p></article>
+    </div>
+    <p class="muted"><strong>Última sincronização:</strong> <?= htmlspecialchars((string)$health['last_sync']) ?> · <strong>Pastas ativas:</strong> <?= (int)$health['active_roots'] ?></p>
+    <details><summary>Sincronização automática</summary><p class="muted">Configure o cron da hospedagem para chamar esta URL a cada 5 ou 10 minutos. Chamadas extras não repetem a varredura se o catálogo ainda estiver recente.</p><code style="word-break:break-all"><?= htmlspecialchars((string)$health['cron_url']) ?></code></details>
+  </section>
 
   <section class="panel">
     <div class="section-heading"><div><h2>Clientes</h2><p class="muted">O cliente entra no app e recebe a solicitação para autorizar pastas de música e localização.</p></div></div>
