@@ -849,6 +849,25 @@ private void refreshLibraryAndOpenChooser() {
         copilot.addView(voice, new LinearLayout.LayoutParams(0, -2, 1)); margins(voice, 10, 0, 0, 0);
         page.addView(copilot); margins(copilot, 0, 14, 0, 0);
 
+
+        // OPTIONAL_CAMERA_V130_HOME: camera remains opt-in and asks permission only inside CameraActivity.
+        boolean cameraEnabled = getSharedPreferences("epc_camera_v1", MODE_PRIVATE).getBoolean("enabled", false);
+        LinearLayout camera = row();
+        camera.setGravity(Gravity.CENTER_VERTICAL);
+        camera.setPadding(dp(15), dp(13), dp(13), dp(13));
+        camera.setBackground(bg(Color.rgb(17, 9, 11), 2, cameraEnabled ? Color.rgb(174, 38, 52) : BORDER));
+        LinearLayout cameraInfo = column();
+        cameraInfo.addView(overline("CÂMERA DE BORDO", cameraEnabled ? GREEN : ACCENT));
+        cameraInfo.addView(text(cameraEnabled ? "Visão da estrada ativada" : "Uso opcional da câmera", 17, TEXT, true));
+        cameraInfo.addView(text(cameraEnabled
+                ? "A câmera só abre quando você entra no modo de bordo."
+                : "Desligada por padrão. Nenhuma permissão é pedida até você ativar.", 10, MUTED, false));
+        camera.addView(cameraInfo, new LinearLayout.LayoutParams(0, -2, 1));
+        Button cameraButton = compactButton(cameraEnabled ? "ABRIR" : "CONFIGURAR");
+        camera.addView(cameraButton, lp(112, 48));
+        cameraButton.setOnClickListener(v -> startActivity(new Intent(this, CameraActivity.class)));
+        page.addView(camera); margins(camera, 0, 9, 0, 0);
+
         boolean hasDownloaded = library.hasDownloadedHint();
         LinearLayout media = row();
         media.setGravity(Gravity.CENTER_VERTICAL);
