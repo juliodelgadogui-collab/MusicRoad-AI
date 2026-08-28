@@ -1,0 +1,11 @@
+package com.estradaplay.comunista;
+import android.content.*;import android.graphics.*;import android.os.*;import android.view.*;import android.widget.*;import androidx.activity.ComponentActivity;
+public final class HudActivity extends ComponentActivity{
+    private LinearLayout root;private TextView speed,limit,hazard;private boolean registered;
+    private final BroadcastReceiver rx=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){speed.setText(Math.round(i.getDoubleExtra("speed_kmh",0))+"");int l=i.getIntExtra("road_limit_kmh",0);limit.setText(l>0?"LIMITE "+l:"LIMITE --");String h=i.getStringExtra("hazard_label");double d=i.getDoubleExtra("distance_m",0);hazard.setText(h==null||h.isEmpty()?"PROTEÇÃO ATIVA":h.toUpperCase()+" · "+Math.round(d)+" m");}};
+    @Override protected void onCreate(Bundle b){super.onCreate(b);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);build();}
+    private void build(){root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setGravity(Gravity.CENTER);root.setPadding(dp(24),dp(18),dp(24),dp(18));root.setBackgroundColor(Color.BLACK);setContentView(root);speed=t("0",110,Color.rgb(255,40,40),true);speed.setGravity(Gravity.CENTER);limit=t("LIMITE --",24,Color.WHITE,true);limit.setGravity(Gravity.CENTER);hazard=t("PROTEÇÃO ATIVA",18,Color.rgb(210,190,180),true);hazard.setGravity(Gravity.CENTER);root.addView(speed);root.addView(limit);root.addView(hazard);Button close=new Button(this);close.setText("FECHAR HUD");close.setOnClickListener(v->finish());root.addView(close,new LinearLayout.LayoutParams(-1,dp(48)));if(DriveSettings.hudMirror(this))root.setScaleX(-1f);}
+    @Override protected void onStart(){super.onStart();IntentFilter f=new IntentFilter(RoadSafetyService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(rx,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(rx,f);registered=true;}
+    @Override protected void onStop(){if(registered){try{unregisterReceiver(rx);}catch(Throwable ignored){}registered=false;}super.onStop();}
+    private TextView t(String v,float s,int c,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);if(b)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}
+}

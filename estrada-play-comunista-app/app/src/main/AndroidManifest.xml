@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
@@ -54,6 +55,36 @@
             android:name=".DestinationActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:screenOrientation="${appOrientation}" />
+
+        <activity
+            android:name=".NearbyServicesActivity"
+            android:exported="false"
+            android:screenOrientation="${appOrientation}" />
+
+        <activity
+            android:name=".VoiceCommandActivity"
+            android:exported="false"
+            android:screenOrientation="${appOrientation}" />
+
+        <activity
+            android:name=".DriveToolsActivity"
+            android:exported="false"
+            android:screenOrientation="${appOrientation}" />
+
+        <activity
+            android:name=".TripHistoryActivity"
+            android:exported="false"
+            android:screenOrientation="${appOrientation}" />
+
+        <activity
+            android:name=".HudActivity"
+            android:exported="false"
+            android:screenOrientation="${appOrientation}" />
+
+        <activity
+            android:name=".RoadReportActivity"
+            android:exported="false"
             android:screenOrientation="${appOrientation}" />
 
         <activity

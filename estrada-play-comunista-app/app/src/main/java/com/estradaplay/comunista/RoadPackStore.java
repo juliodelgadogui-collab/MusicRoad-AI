@@ -66,6 +66,26 @@ final class RoadPackStore {
         int n=0; for(Pack p:packs) if("state".equals(p.kind)) n++; return n;
     }
 
+    // INTELLIGENT_CORE_V140: RJ/MG/ES are the permanent offline core.
+    synchronized int coreStatePackCount() {
+        int n = 0;
+        for (String uf : new String[]{"RJ","MG","ES"}) if (hasStateLocked(uf)) n++;
+        return n;
+    }
+
+    synchronized boolean coreStatesReady() {
+        return coreStatePackCount() == 3;
+    }
+
+    synchronized String coreStatesStatus() {
+        StringBuilder out = new StringBuilder();
+        for (String uf : new String[]{"RJ","MG","ES"}) {
+            if (out.length() > 0) out.append(" · ");
+            out.append(uf).append(hasStateLocked(uf) ? " ✓" : " …");
+        }
+        return out.toString();
+    }
+
     synchronized int hazardCount() {
         LinkedHashMap<String, RoadHazard> unique = new LinkedHashMap<>();
         for (Pack p : packs) for (RoadHazard h : p.hazards) unique.put(h.id, h);
@@ -95,6 +115,8 @@ final class RoadPackStore {
         if (!hasFreshCoreCoverage(lat, lon)) return true;
         String uf=guessUfFast(lat,lon);
         if (isSupportedUf(uf) && !hasFreshStateLocked(uf)) return true;
+        // Keep trying in background until all three requested states exist locally.
+        for (String coreUf : new String[]{"RJ","MG","ES"}) if (!hasFreshStateLocked(coreUf)) return true;
         return Float.isFinite(heading) && !hasFreshCorridorLocked(lat,lon,heading);
     }
 
@@ -106,6 +128,7 @@ final class RoadPackStore {
         int nearby = nearby(lat, lon, 2400).size();
         StringBuilder s=new StringBuilder("Offline · ");
         if(stateReady)s.append(uf).append(" estadual"); else s.append(packCount()).append(" área(s)");
+        s.append(" · núcleo ").append(coreStatePackCount()).append("/3");
         if(reserveReady)s.append(" + reserva 250 km");
         s.append(" · ").append(hazardCount()).append(" pontos");
         if(nearby>0)s.append(" · ").append(nearby).append(" próximos");
@@ -124,6 +147,15 @@ final class RoadPackStore {
             if (!stateOk) stateOk = fetchStateCoverage(api, uf);
             ok = stateOk || ok;
         }
+        // INTELLIGENT_CORE_V140: prefetch all three states, even when the car is
+        // currently in only one of them. Fresh-state checks prevent repeated downloads.
+        for (String coreUf : new String[]{"RJ","MG","ES"}) {
+            if (coreUf.equals(uf)) continue;
+            boolean stateOk = fetchMusicRoadStateRadars(api, coreUf);
+            if (!stateOk) stateOk = fetchStateCoverage(api, coreUf);
+            ok = stateOk || ok;
+        }
+
         // CAMERA_MONITORAMENTO_V122: additive, public map data only. We intentionally
         // select cameras tagged for traffic/road monitoring and ignore generic private CCTV.
         ok = fetchOpenStreetMapTrafficCameras(lat, lon) || ok;

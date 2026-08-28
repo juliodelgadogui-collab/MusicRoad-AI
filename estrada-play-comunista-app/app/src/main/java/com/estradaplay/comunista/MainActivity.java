@@ -868,6 +868,25 @@ private void refreshLibraryAndOpenChooser() {
         cameraButton.setOnClickListener(v -> startActivity(new Intent(this, CameraActivity.class)));
         page.addView(camera); margins(camera, 0, 9, 0, 0);
 
+
+        // INTELLIGENT_CORE_V140_HOME
+        LinearLayout smart = column();
+        smart.setPadding(dp(15), dp(14), dp(15), dp(14));
+        smart.setBackground(bg(Color.rgb(26, 10, 15), 3, Color.rgb(118, 40, 49)));
+        smart.addView(overline("ESTRADA INTELIGENTE 1.4", Color.rgb(226, 185, 76)));
+        smart.addView(text("Proteção, histórico e instrumentos", 17, TEXT, true));
+        TextView smartSub = text("RJ + MG + ES offline em segundo plano · HUD · reportes · histórico local", 10, MUTED, false);
+        smart.addView(smartSub); margins(smartSub, 0, 3, 0, 9);
+        LinearLayout smartActions = row();
+        Button toolsButton = compactButton("FERRAMENTAS");
+        Button historyButton = compactButton("HISTÓRICO");
+        smartActions.addView(toolsButton, new LinearLayout.LayoutParams(0, dp(48), 1));
+        LinearLayout.LayoutParams shp = new LinearLayout.LayoutParams(0, dp(48), 1); shp.setMargins(dp(8),0,0,0); smartActions.addView(historyButton, shp);
+        smart.addView(smartActions);
+        toolsButton.setOnClickListener(v -> startActivity(new Intent(this, DriveToolsActivity.class)));
+        historyButton.setOnClickListener(v -> startActivity(new Intent(this, TripHistoryActivity.class)));
+        page.addView(smart); margins(smart, 0, 9, 0, 0);
+
         boolean hasDownloaded = library.hasDownloadedHint();
         LinearLayout media = row();
         media.setGravity(Gravity.CENTER_VERTICAL);

@@ -56,6 +56,7 @@ public final class RoadSafetyService extends Service {
     // OFFLINE_VOICE_V204: primary deterministic voice; Android TTS is fallback only.
     private EstradaPlayOfflineVoice offlineVoice;
     private CommunistCopilot copilot;
+    private TripRecorder tripRecorder;
     private boolean ttsReady;
     private AudioManager audioManager;
     private AudioFocusRequest alertFocusRequest;
@@ -99,6 +100,7 @@ public final class RoadSafetyService extends Service {
         api = new ApiClient(this);
         offlineVoice = new EstradaPlayOfflineVoice(this);
         copilot = new CommunistCopilot(this);
+        tripRecorder = new TripRecorder(this);
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
         audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
         createChannel();
@@ -202,15 +204,19 @@ public final class RoadSafetyService extends Service {
         main.removeCallbacks(staleSpeedWatchdog);
         main.postDelayed(staleSpeedWatchdog, 4500L);
         previous = new Location(loc);
+        if (tripRecorder != null) tripRecorder.onLocation(loc, speedKmh);
 
         maybeResolveRoadLimit(loc.getLatitude(), loc.getLongitude(), heading);
         evaluateRoadLimit(speedKmh);
         ensureCoverage(loc.getLatitude(), loc.getLongitude(), heading);
         List<RoadHazard> nearby = packs.nearby(loc.getLatitude(), loc.getLongitude(), 1900);
         RoadHazard best = null;
+        RoadHazard next = null;
         double bestForward = Double.MAX_VALUE;
         double bestDistance = Double.MAX_VALUE;
         double bestScore = Double.MAX_VALUE;
+        double nextForward = Double.MAX_VALUE;
+        double nextScore = Double.MAX_VALUE;
 
         if (Float.isFinite(heading) && speedKmh >= 3.0) {
             for (RoadHazard h : nearby) {
@@ -225,17 +231,31 @@ public final class RoadSafetyService extends Service {
                     bestScore = score;
                 }
             }
+            if (best != null) {
+                for (RoadHazard h : nearby) {
+                    if (h == null || h.id.equals(best.id) || !shouldAlert(h)) continue;
+                    Match m = match(loc.getLatitude(), loc.getLongitude(), heading, speedKmh, h);
+                    if (!m.valid || m.forwardM < bestForward + 15) continue;
+                    double score = m.forwardM + hazardPriorityBias(h.type);
+                    if (score < nextScore) { next = h; nextForward = m.forwardM; nextScore = score; }
+                }
+            }
         }
 
         if (best != null) {
             rememberAlert(best);
+            if (tripRecorder != null) tripRecorder.onHazard(best.type);
             speakHazardVoice(best, bestForward);
             String title = best.label() + " à frente";
             String detail = distanceText(bestForward);
-            if (best.speed > 0 && "RADAR".equals(best.type)) detail += " · " + best.speed + " km/h";
+            if (best.speed > 0 && "RADAR".equals(best.type)) {
+                detail += " · " + best.speed + " km/h";
+                int delta = (int)Math.round(speedKmh - best.speed);
+                if (delta >= 2) detail += " · reduza " + delta;
+            }
             if (!best.road.isEmpty()) detail += " · " + best.road;
             updateNotification(title, detail, true);
-            broadcast(loc, speedKmh, best, bestDistance, detail);
+            broadcast(loc, speedKmh, best, bestDistance, detail, next, nextForward);
         } else {
             long now = System.currentTimeMillis();
             if (now - lastStateRefreshAt >= 5000L || lastStateText == null || lastStateText.isEmpty()) {
@@ -245,12 +265,8 @@ public final class RoadSafetyService extends Service {
                 lastStateRefreshAt = now;
             }
             String state = lastStateText;
-            if (now - lastNotificationAt > 7000L) {
-                updateNotification("Proteção na estrada ativa", state, false);
-            }
-            // Speed is live telemetry, not a notification. Broadcast every accepted
-            // location sample so the cockpit cannot display an old value for 7+ sec.
-            broadcast(loc, speedKmh, null, 0, state);
+            if (now - lastNotificationAt > 7000L) updateNotification("Proteção na estrada ativa", state, false);
+            broadcast(loc, speedKmh, null, 0, state, null, 0);
         }
     }
 
@@ -639,16 +655,29 @@ public final class RoadSafetyService extends Service {
         return Math.max(10, (int)(Math.round(m / 10.0) * 10)) + " m";
     }
 
-    private void broadcast(Location loc, double speedKmh, RoadHazard h, double distance, String status) {
+    private void broadcast(Location loc, double speedKmh, RoadHazard h, double distance, String status,
+                           RoadHazard next, double nextDistance) {
         Intent i = baseBroadcast(loc.getLatitude(), loc.getLongitude(), speedKmh, status);
         if (h != null) {
             i.putExtra("hazard_id", h.id);
             i.putExtra("hazard_type", h.type);
             i.putExtra("hazard_label", h.label());
             i.putExtra("road", h.road);
+            i.putExtra("source", h.source);
             i.putExtra("distance_m", distance);
             i.putExtra("limit_kmh", h.speed);
             i.putExtra("radar_limit_kmh", h.speed);
+            int delta = h.speed > 0 ? Math.max(0, (int)Math.round(speedKmh - h.speed)) : 0;
+            i.putExtra("overspeed_delta_kmh", delta);
+            int level = ("RADAR".equals(h.type) && delta >= 10) ||
+                    ("QUEBRA_MOLAS".equals(h.type) && distance <= 130) ? 2 : 1;
+            i.putExtra("alert_level", level);
+        }
+        if (next != null) {
+            i.putExtra("next_hazard_type", next.type);
+            i.putExtra("next_hazard_label", next.label());
+            i.putExtra("next_distance_m", nextDistance);
+            i.putExtra("next_limit_kmh", next.speed);
         }
         sendBroadcast(i);
     }
@@ -668,11 +697,22 @@ public final class RoadSafetyService extends Service {
         i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f);
         i.putExtra("pack_count", packs.packCount());
         i.putExtra("state_pack_count", packs.statePackCount());
+        i.putExtra("core_state_count", packs.coreStatePackCount());
+        i.putExtra("core_states_status", packs.coreStatesStatus());
+        i.putExtra("thermal_status", thermalStatus());
         i.putExtra("reserve_km", 250);
         i.putExtra("hazard_count", packs.hazardCount());
         i.putExtra("map_pack_count", mapRoads.packCount());
         i.putExtra("status", status == null ? "" : status);
         return i;
+    }
+
+    private int thermalStatus() {
+        if (Build.VERSION.SDK_INT < 29) return 0;
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager)getSystemService(POWER_SERVICE);
+            return pm == null ? 0 : pm.getCurrentThermalStatus();
+        } catch (Throwable ignored) { return 0; }
     }
 
     private void createChannel() {
@@ -721,6 +761,7 @@ public final class RoadSafetyService extends Service {
         restoreAudioAfterVoice();
         try { if (locationManager != null) locationManager.removeUpdates(listener); } catch (Throwable ignored) {}
         try { if (offlineVoice != null) offlineVoice.release(); } catch (Throwable ignored) {}
+        try { if (tripRecorder != null) tripRecorder.finish("serviço encerrado"); } catch (Throwable ignored) {}
         try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Throwable ignored) {}
         io.shutdownNow();
         limitIo.shutdownNow();
