@@ -20,6 +20,10 @@ s=s.replace('selector="[\\\\\"amenity\\\\\"=\\\\\"fuel\\\\\"]"','selector="[amen
 s=s.replace('selector="[\\\\\"amenity\\\\\"=\\\\\"hospital\\\\\"]"','selector="[amenity=hospital]"')
 s=s.replace('selector="[\\\\\"amenity\\\\\"=\\\\\"restaurant\\\\\"]"','selector="[amenity=restaurant]"')
 s=s.replace('selector="[\\\\\"shop\\\\\"=\\\\\"car_repair\\\\\"]"','selector="[shop=car_repair]"')
+# The compact generator had one extra closing brace between the inner
+# try-with-resources and the outer catch. Keep the outer try open until sort.
+s=s.replace('out.add(new Item(name,la,lo,distance(lat,lon,la,lo)));}}}out.sort',
+            'out.add(new Item(name,la,lo,distance(lat,lon,la,lo)));}}out.sort')
 write(near,s)
 
 cam='app/src/main/java/com/estradaplay/comunista/CameraActivity.java'
@@ -33,10 +37,12 @@ new='''if(smartSigns()&&thermalStatus<3){ImageAnalysis analysis=new ImageAnalysi
 s=rep(s,old,new,'camera use-case fallback')
 write(cam,s)
 
-# Ensure runtime fix actually took effect.
+# Ensure runtime fixes actually took effect.
 check=read(near)
 if '[amenity=fuel]' not in check: raise SystemExit('nearby filter fix did not apply')
+if '}}}out.sort' in check: raise SystemExit('nearby Java brace fix did not apply')
+if '}}out.sort' not in check: raise SystemExit('nearby Java method structure not recognized')
 check=read(cam)
-if '@ExperimentalGetImage' not in check or 'INCOMPATÍVEL' in check: pass
+if '@ExperimentalGetImage' not in check: raise SystemExit('camera experimental annotation missing')
 if 'VISÃO BETA · INDISPONÍVEL NESTE APARELHO' not in check: raise SystemExit('camera fallback fix did not apply')
 print('Estrada Play Comunista 1.4.0 runtime hardening applied')
