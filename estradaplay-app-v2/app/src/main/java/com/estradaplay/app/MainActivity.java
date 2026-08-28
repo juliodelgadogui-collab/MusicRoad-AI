@@ -114,18 +114,18 @@ public final class MainActivity extends ComponentActivity {
             }
             if (!active) {
                 if (downloadInitialFlow) {
-                    boolean hasOfflineMusic = !library.downloadedTracks().isEmpty();
-                    
-library.setSetupDone(true);
-if (hasOfflineMusic) {
-    ui.postDelayed(() -> { downloadInitialFlow = false; showHome(); }, 900);
-} else {
-    downloadInitialFlow = false;
-    ui.postDelayed(() -> {
-        toast("Nenhuma música foi baixada. Você pode tentar novamente depois em Gerenciar Biblioteca.");
-        showHome();
-    }, 650);
-}
+                    downloadInitialFlow = false;
+                    io.execute(() -> {
+                        boolean hasOfflineMusic = !library.downloadedTracks().isEmpty();
+                        library.setSetupDone(true);
+                        ui.postDelayed(() -> {
+                            if (hasOfflineMusic) showHome();
+                            else {
+                                toast("Nenhuma música foi baixada. Você pode tentar novamente depois em Gerenciar Biblioteca.");
+                                showHome();
+                            }
+                        }, hasOfflineMusic ? 900 : 650);
+                    });
                 } else ui.postDelayed(MainActivity.this::showMusic, 650);
             }
         }
@@ -565,12 +565,17 @@ private void refreshLibraryAndOpenChooser() {
     });
 }
 
+    // ANR_FOLDER_UI_V210: parse/index the large catalog off the UI thread and virtualize folder rows.
     private void showFolderChooser(boolean initial) {
-        List<Track> catalog = library.catalog();
-        Map<String, LibraryStore.FolderStat> stats = library.folderStats(catalog);
-        Set<String> selected = new LinkedHashSet<>();
-        Map<String, CheckBox> checks = new LinkedHashMap<>();
+        showLoading("Organizando suas pastas…");
+        io.execute(() -> {
+            List<Track> catalog = library.catalog();
+            Map<String, LibraryStore.FolderStat> stats = library.folderStats(catalog);
+            ui.post(() -> renderFolderChooser(initial, stats));
+        });
+    }
 
+    private void renderFolderChooser(boolean initial, Map<String, LibraryStore.FolderStat> stats) {
         root.removeAllViews();
         LinearLayout page = column();
         page.setPadding(dp(18), dp(18), dp(18), dp(18));
@@ -582,7 +587,9 @@ private void refreshLibraryAndOpenChooser() {
         titles.addView(text(initial ? "Escolha suas pastas" : "Gerenciar downloads", 27, TEXT, true));
         header.addView(titles, new LinearLayout.LayoutParams(0, -2, 1));
         if (!initial) {
-            Button close = compactButton("VOLTAR"); header.addView(close, lp(84, 44)); close.setOnClickListener(v -> showMusic());
+            Button close = compactButton("VOLTAR");
+            header.addView(close, lp(84, 44));
+            close.setOnClickListener(v -> showMusic());
         }
         page.addView(header);
 
@@ -591,71 +598,145 @@ private void refreshLibraryAndOpenChooser() {
                 "Adicione novas pastas ou remova somente a cópia offline. O conteúdo original continua no Drive.", 13, MUTED, false);
         page.addView(explanation); margins(explanation, 0, 8, 0, 12);
 
-        LinearLayout storageCard = row(); storageCard.setGravity(Gravity.CENTER_VERTICAL); storageCard.setPadding(dp(13), dp(10), dp(13), dp(10)); storageCard.setBackground(bg(SURFACE_2, 14, BORDER));
-        TextView storageLabel = overline("ARMAZENAMENTO", MUTED); storageCard.addView(storageLabel, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView storage = chip(bytes(library.freeBytes()) + " LIVRES", GREEN, GREEN_SOFT); storageCard.addView(storage);
+        LinearLayout storageCard = row();
+        storageCard.setGravity(Gravity.CENTER_VERTICAL);
+        storageCard.setPadding(dp(13), dp(10), dp(13), dp(10));
+        storageCard.setBackground(bg(SURFACE_2, 14, BORDER));
+        TextView storageLabel = overline("ARMAZENAMENTO", MUTED);
+        storageCard.addView(storageLabel, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView storage = chip(bytes(library.freeBytes()) + " LIVRES", GREEN, GREEN_SOFT);
+        storageCard.addView(storage);
         page.addView(storageCard);
 
-        Button all = compactButton("SELECIONAR TODAS NÃO BAIXADAS"); page.addView(all, lp(-1, 46)); margins(all, 0, 10, 0, 6);
-        Button refresh = compactButton("ATUALIZAR DO SERVIDOR"); page.addView(refresh, lp(-1, 46)); margins(refresh, 0, 0, 0, 10);
+        Button all = compactButton("SELECIONAR TODAS NÃO BAIXADAS");
+        page.addView(all, lp(-1, 46)); margins(all, 0, 10, 0, 6);
+        Button refresh = compactButton("ATUALIZAR DO SERVIDOR");
+        page.addView(refresh, lp(-1, 46)); margins(refresh, 0, 0, 0, 10);
         refresh.setEnabled(online());
         refresh.setOnClickListener(v -> refreshLibraryAndOpenChooser());
 
-        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
-        LinearLayout list = column();
-        scroll.addView(list, new ScrollView.LayoutParams(-1, -2));
-        page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        FolderDownloadAdapter adapter = new FolderDownloadAdapter(stats, storage, initial);
+        ListView list = new ListView(this);
+        list.setDivider(null);
+        list.setDividerHeight(0);
+        list.setCacheColorHint(Color.TRANSPARENT);
+        list.setClipToPadding(false);
+        list.setPadding(0, 0, 0, dp(8));
+        list.setAdapter(adapter);
+        page.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        for (LibraryStore.FolderStat s : stats.values()) {
-            LinearLayout box = card(); box.setOrientation(LinearLayout.HORIZONTAL); box.setGravity(Gravity.CENTER_VERTICAL);
-            TextView folderMark = badge("♪", s.complete() ? GREEN : ACCENT, s.complete() ? GREEN_SOFT : ACCENT_SOFT);
-            box.addView(folderMark, lp(44, 44));
-            LinearLayout meta = column();
-            TextView folderName = text(shortFolder(s.name), 15, TEXT, true); meta.addView(folderName);
-            String info = s.downloaded + " de " + s.total + " offline" + (s.knownBytes > 0 ? " · " + bytes(s.knownBytes) : "");
-            meta.addView(text(info, 11, s.complete() ? GREEN : MUTED, false));
-            box.addView(meta, new LinearLayout.LayoutParams(0, -2, 1)); margins(meta, 12, 0, 8, 0);
-            if (s.complete()) {
-                Button remove = compactButton("REMOVER"); remove.setTextColor(RED); box.addView(remove, lp(88, 42));
-                remove.setOnClickListener(v -> new AlertDialog.Builder(this)
-                        .setTitle("Remover download?")
-                        .setMessage(shortFolder(s.name) + "\n\nAs músicas continuam no Google Drive e podem ser baixadas novamente.")
-                        .setNegativeButton("Cancelar", null)
-                        .setPositiveButton("Remover", (d, w) -> io.execute(() -> {
-                            int removed = library.removeFolder(s.name);
-                            ui.post(() -> { toast(removed + " arquivo(s) removido(s)."); showFolderChooser(initial); });
-                        })).show());
-            } else {
-                CheckBox cb = new CheckBox(this); cb.setButtonTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}}, new int[]{ACCENT, SUBTLE}));
-                box.addView(cb, lp(48, 48)); checks.put(s.name, cb);
-                cb.setOnCheckedChangeListener((b, checked) -> {
-                    if (checked) selected.add(s.name); else selected.remove(s.name);
-                    updateSelectedStorage(storage, selected, stats);
-                    box.setBackground(bg(checked ? SURFACE_2 : SURFACE, 20, checked ? ACCENT : BORDER));
-                });
-                box.setOnClickListener(v -> cb.setChecked(!cb.isChecked()));
-            }
-            list.addView(box, new LinearLayout.LayoutParams(-1, -2)); margins(box, 0, 0, 0, 8);
-        }
-
-        all.setOnClickListener(v -> {
-            boolean shouldSelect = selected.size() < checks.size();
-            for (CheckBox cb : checks.values()) cb.setChecked(shouldSelect);
-        });
+        all.setOnClickListener(v -> adapter.toggleSelectAll());
 
         Button go = button(initial ? "BAIXAR E ENTRAR NO ESTRADAPLAY" : "BAIXAR SELECIONADAS", true);
         page.addView(go, lp(-1, 60)); margins(go, 0, 12, 0, 0);
         go.setOnClickListener(v -> {
+            Set<String> selected = adapter.selectedFolders();
             if (selected.isEmpty()) {
-                if (initial && !library.downloadedTracks().isEmpty()) { library.setSetupDone(true); showHome(); }
-                else toast("Escolha pelo menos uma pasta.");
+                if (initial && library.hasDownloadedHint()) { library.setSetupDone(true); showHome(); }
+                else toast(stats.isEmpty() ? "Nenhuma pasta disponível ainda." : "Escolha pelo menos uma pasta.");
                 return;
             }
             long known = selectedBytes(selected, stats);
             long free = library.freeBytes();
-            if (known > 0 && known > free * 0.92) { alert("Espaço insuficiente", "Selecionado: " + bytes(known) + "\nLivre: " + bytes(free)); return; }
+            if (known > 0 && known > free * 0.92) {
+                alert("Espaço insuficiente", "Selecionado: " + bytes(known) + "
+Livre: " + bytes(free));
+                return;
+            }
             startFolderDownload(selected, initial);
         });
+    }
+
+    private final class FolderDownloadAdapter extends BaseAdapter {
+        private final ArrayList<LibraryStore.FolderStat> items = new ArrayList<>();
+        private final LinkedHashMap<String, LibraryStore.FolderStat> stats = new LinkedHashMap<>();
+        private final LinkedHashSet<String> selected = new LinkedHashSet<>();
+        private final TextView storage;
+        private final boolean initial;
+
+        FolderDownloadAdapter(Map<String, LibraryStore.FolderStat> source, TextView storage, boolean initial) {
+            if (source != null) {
+                stats.putAll(source);
+                items.addAll(source.values());
+            }
+            this.storage = storage;
+            this.initial = initial;
+        }
+
+        Set<String> selectedFolders() { return new LinkedHashSet<>(selected); }
+
+        void toggleSelectAll() {
+            int incomplete = 0;
+            for (LibraryStore.FolderStat stat : items) if (!stat.complete()) incomplete++;
+            boolean select = selected.size() < incomplete;
+            selected.clear();
+            if (select) for (LibraryStore.FolderStat stat : items) if (!stat.complete()) selected.add(stat.name);
+            notifyDataSetChanged();
+            updateSelectedStorage(storage, selected, stats);
+        }
+
+        @Override public int getCount() { return items.size(); }
+        @Override public LibraryStore.FolderStat getItem(int position) { return items.get(position); }
+        @Override public long getItemId(int position) { return position; }
+
+        @Override public View getView(int position, View convertView, ViewGroup parent) {
+            LibraryStore.FolderStat stat = getItem(position);
+            LinearLayout outer = column();
+            outer.setPadding(0, 0, 0, dp(8));
+            LinearLayout box = card();
+            box.setOrientation(LinearLayout.HORIZONTAL);
+            box.setGravity(Gravity.CENTER_VERTICAL);
+
+            boolean checked = selected.contains(stat.name);
+            box.setBackground(bg(checked ? SURFACE_2 : SURFACE, 20, checked ? ACCENT : BORDER));
+            TextView folderMark = badge("♪", stat.complete() ? GREEN : ACCENT, stat.complete() ? GREEN_SOFT : ACCENT_SOFT);
+            box.addView(folderMark, lp(44, 44));
+
+            LinearLayout meta = column();
+            meta.addView(text(shortFolder(stat.name), 15, TEXT, true));
+            String info = stat.downloaded + " de " + stat.total + " offline" + (stat.knownBytes > 0 ? " · " + bytes(stat.knownBytes) : "");
+            meta.addView(text(info, 11, stat.complete() ? GREEN : MUTED, false));
+            box.addView(meta, new LinearLayout.LayoutParams(0, -2, 1));
+            margins(meta, 12, 0, 8, 0);
+
+            if (stat.complete()) {
+                Button remove = compactButton("REMOVER");
+                remove.setTextColor(RED);
+                box.addView(remove, lp(88, 42));
+                remove.setOnClickListener(v -> new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Remover download?")
+                        .setMessage(shortFolder(stat.name) + "
+
+As músicas continuam no Google Drive e podem ser baixadas novamente.")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Remover", (d, w) -> {
+                            showLoading("Removendo cópia offline…");
+                            io.execute(() -> {
+                                int removed = library.removeFolder(stat.name);
+                                ui.post(() -> {
+                                    toast(removed + " arquivo(s) removido(s).");
+                                    showFolderChooser(initial);
+                                });
+                            });
+                        }).show());
+            } else {
+                CheckBox cb = new CheckBox(MainActivity.this);
+                cb.setButtonTintList(new ColorStateList(
+                        new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+                        new int[]{ACCENT, SUBTLE}));
+                cb.setChecked(checked);
+                box.addView(cb, lp(48, 48));
+                cb.setOnCheckedChangeListener((b, value) -> {
+                    if (value) selected.add(stat.name); else selected.remove(stat.name);
+                    updateSelectedStorage(storage, selected, stats);
+                    notifyDataSetChanged();
+                });
+                box.setOnClickListener(v -> cb.setChecked(!cb.isChecked()));
+            }
+
+            outer.addView(box, new LinearLayout.LayoutParams(-1, -2));
+            return outer;
+        }
     }
 
     private void startFolderDownload(Set<String> folders, boolean initial) {
@@ -706,11 +787,11 @@ private void refreshLibraryAndOpenChooser() {
         page.addView(map, lp(-1, 60));
         map.setOnClickListener(v -> openCockpit());
 
-        List<Track> downloaded = library.downloadedTracks();
-        Button music = button(downloaded.isEmpty() ? "ESCOLHER MÚSICAS" : "ABRIR MÚSICA OFFLINE", false);
+        boolean hasDownloaded = library.hasDownloadedHint();
+        Button music = button(!hasDownloaded ? "ESCOLHER MÚSICAS" : "ABRIR MÚSICA OFFLINE", false);
         page.addView(music, lp(-1, 56)); margins(music, 0, 10, 0, 0);
         music.setOnClickListener(v -> {
-            if (downloaded.isEmpty()) {
+            if (!hasDownloaded) {
                 if (online()) loadCatalogAndOpenChooser(false); else toast("Conecte-se para escolher músicas.");
             } else showMusic();
         });
@@ -729,8 +810,17 @@ private void refreshLibraryAndOpenChooser() {
     private void showMusic() {
         clearDownloadViews();
         roadLiveState = null; roadLiveDetail = null;
-        List<Track> tracks = library.downloadedTracks();
-        if (tracks.isEmpty()) { loadCatalogAndOpenChooser(false); return; }
+        showLoading("Abrindo sua música offline…");
+        io.execute(() -> {
+            List<Track> tracks = library.downloadedTracks();
+            ui.post(() -> renderMusic(tracks));
+        });
+    }
+
+    private void renderMusic(List<Track> tracks) {
+        clearDownloadViews();
+        roadLiveState = null; roadLiveDetail = null;
+        if (tracks == null || tracks.isEmpty()) { loadCatalogAndOpenChooser(false); return; }
         root.removeAllViews();
         LinearLayout page = column(); page.setPadding(dp(14), dp(10), dp(14), dp(12)); root.addView(page, new FrameLayout.LayoutParams(-1, -1));
         page.addView(topBar("Música"));

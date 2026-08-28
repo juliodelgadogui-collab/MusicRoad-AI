@@ -29,6 +29,10 @@ final class LibraryStore {
     private final Context app;
     private final SharedPreferences prefs;
     private final File catalogFile;
+    // ANR_LIBRARY_INDEX_V210: large catalog/download indexes are cached in memory.
+    private volatile List<Track> catalogCache;
+    private volatile List<Track> downloadedCache;
+    private volatile String downloadedCacheRaw;
 
     LibraryStore(Context context) {
         app = context.getApplicationContext();
@@ -55,10 +59,13 @@ final class LibraryStore {
         }
         if (catalogFile.exists() && !catalogFile.delete()) { tmp.delete(); return; }
         if (!tmp.renameTo(catalogFile)) { tmp.delete(); return; }
+        catalogCache = tracks == null ? new ArrayList<>() : new ArrayList<>(tracks);
         prefs.edit().remove(KEY_CATALOG).apply();
     }
 
     synchronized List<Track> catalog() {
+        List<Track> cached = catalogCache;
+        if (cached != null) return new ArrayList<>(cached);
         ArrayList<Track> out = new ArrayList<>();
         String raw = readCatalogFile();
         if (raw == null || raw.isEmpty()) {
@@ -82,6 +89,7 @@ final class LibraryStore {
                 if (o != null) out.add(Track.fromStored(o));
             }
         } catch (Exception ignored) {}
+        catalogCache = new ArrayList<>(out);
         return out;
     }
 
@@ -107,7 +115,9 @@ final class LibraryStore {
         try {
             JSONObject all = downloadedObject();
             all.put(track.key(), track.withLocal(file.getAbsolutePath()).toStored());
-            prefs.edit().putString(KEY_DOWNLOADED, all.toString()).apply();
+            String raw = all.toString();
+            prefs.edit().putString(KEY_DOWNLOADED, raw).apply();
+            downloadedCache = null; downloadedCacheRaw = null;
         } catch (Exception ignored) {}
     }
 
@@ -122,13 +132,21 @@ final class LibraryStore {
             if (f != null && f.isFile() && f.length() > 0) return stored;
             all.remove(track.key());
             prefs.edit().putString(KEY_DOWNLOADED, all.toString()).apply();
+            downloadedCache = null; downloadedCacheRaw = null;
         } catch (Exception ignored) {}
         return null;
     }
 
     List<Track> downloadedTracks() {
+        String raw = prefs.getString(KEY_DOWNLOADED, "{}");
+        if (raw == null) raw = "{}";
+        List<Track> cached = downloadedCache;
+        String cachedRaw = downloadedCacheRaw;
+        if (cached != null && raw.equals(cachedRaw)) return new ArrayList<>(cached);
+
         ArrayList<Track> out = new ArrayList<>();
-        JSONObject all = downloadedObject();
+        JSONObject all;
+        try { all = new JSONObject(raw); } catch (Exception e) { all = new JSONObject(); }
         ArrayList<String> stale = new ArrayList<>();
         java.util.Iterator<String> it = all.keys();
         while (it.hasNext()) {
@@ -141,9 +159,17 @@ final class LibraryStore {
         }
         if (!stale.isEmpty()) {
             for (String key : stale) all.remove(key);
-            prefs.edit().putString(KEY_DOWNLOADED, all.toString()).apply();
+            raw = all.toString();
+            prefs.edit().putString(KEY_DOWNLOADED, raw).apply();
         }
+        downloadedCacheRaw = raw;
+        downloadedCache = new ArrayList<>(out);
         return out;
+    }
+
+    boolean hasDownloadedHint() {
+        String raw = prefs.getString(KEY_DOWNLOADED, "{}");
+        return raw != null && raw.length() > 2;
     }
 
     boolean hasSetupDone() { return prefs.getBoolean(KEY_SETUP, false); }
@@ -158,14 +184,16 @@ final class LibraryStore {
     Map<String, FolderStat> folderStats(List<Track> tracks) {
         LinkedHashMap<String, FolderStat> out = new LinkedHashMap<>();
         if (tracks == null) return out;
+        LinkedHashSet<String> offlineKeys = new LinkedHashSet<>();
+        for (Track local : downloadedTracks()) if (local != null) offlineKeys.add(local.key());
         for (Track t : tracks) {
             if (t == null) continue;
             String key = folderKey(t);
-            FolderStat s = out.get(key);
-            if (s == null) { s = new FolderStat(key); out.put(key, s); }
-            s.total++;
-            if (t.size > 0) s.knownBytes += t.size;
-            if (localFor(t) != null) s.downloaded++;
+            FolderStat stat = out.get(key);
+            if (stat == null) { stat = new FolderStat(key); out.put(key, stat); }
+            stat.total++;
+            if (t.size > 0) stat.knownBytes += t.size;
+            if (offlineKeys.contains(t.key())) stat.downloaded++;
         }
         return out;
     }
@@ -173,7 +201,12 @@ final class LibraryStore {
     List<Track> tracksForFolders(Set<String> folders) {
         ArrayList<Track> out = new ArrayList<>();
         if (folders == null || folders.isEmpty()) return out;
-        for (Track t : catalog()) if (folders.contains(folderKey(t)) && localFor(t) == null) out.add(t);
+        LinkedHashSet<String> offlineKeys = new LinkedHashSet<>();
+        for (Track local : downloadedTracks()) if (local != null) offlineKeys.add(local.key());
+        for (Track t : catalog()) {
+            if (t == null) continue;
+            if (folders.contains(folderKey(t)) && !offlineKeys.contains(t.key())) out.add(t);
+        }
         return out;
     }
 
@@ -215,6 +248,7 @@ final class LibraryStore {
         }
         for (String key : keys) all.remove(key);
         prefs.edit().putString(KEY_DOWNLOADED, all.toString()).apply();
+        downloadedCache = null; downloadedCacheRaw = null;
         return removed;
     }
 
