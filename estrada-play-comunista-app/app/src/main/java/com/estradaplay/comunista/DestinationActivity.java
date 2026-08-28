@@ -1,4 +1,3 @@
-\
 package com.estradaplay.comunista;
 
 import android.app.AlertDialog;
