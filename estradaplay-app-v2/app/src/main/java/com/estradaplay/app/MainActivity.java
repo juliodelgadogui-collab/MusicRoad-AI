@@ -371,6 +371,7 @@ ui.post(() -> { showHome(); syncCatalogInBackground(); });
 
 
 
+// LIBRARY_FAILSAFE_V209: paged catalog first, bounded legacy catalog on any server-side page failure.
 // LIBRARY_PAGED_V208: fetch the catalog in bounded pages so library size cannot break the app.
 private static final int LIBRARY_PAGE_SIZE = 500;
 private static final int LIBRARY_MAX_PAGES = 100;
@@ -425,11 +426,11 @@ private ArrayList<Track> fetchCatalogFast() throws Exception {
         JSONObject j = r.json();
         if (!r.ok()) {
             // Server 2.0.7 compatibility until the matching server ZIP is installed.
-            if (r.code == 400 || r.code == 404) return fetchLegacyCatalog();
+            if (r.code >= 400) return fetchLegacyCatalog();
             throw new Exception("HTTP " + r.code + " · " + j.optString("error", "Falha ao carregar biblioteca"));
         }
         JSONArray raw = j.optJSONArray("tracks");
-        if (raw == null) throw new Exception("Resposta da biblioteca sem faixas");
+        if (raw == null) return fetchLegacyCatalog();
         all.addAll(decodeCatalog(j));
 
         JSONObject paging = j.optJSONObject("paging");
@@ -449,7 +450,7 @@ private ArrayList<Track> forceCatalogSync() throws Exception {
     if (r.ok() && j.optBoolean("ok", false)) return fetchCatalogFast();
 
     // Server 2.0.7 compatibility: old sync endpoint returns the whole catalog.
-    if (r.code == 400 || r.code == 404) {
+    if (!r.ok()) {
         r = api.getLong("api/native_app.php?action=library_sync");
         if (r.code == 401 && restoreLibrarySession()) r = api.getLong("api/native_app.php?action=library_sync");
         j = r.json();

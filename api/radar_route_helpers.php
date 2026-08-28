@@ -103,12 +103,12 @@ function mr_upsert_osm_radar(array $r): void
     $row = $exists->fetch();
     if ($row) {
         if (empty($row['velocidade']) && !empty($r['velocidade'])) {
-            $u = db()->prepare('UPDATE radars SET velocidade = ?, rodovia = COALESCE(rodovia, ?), sentido = COALESCE(sentido, ?), data_importacao = datetime("now") WHERE id = ?');
+            $u = db()->prepare('UPDATE radars SET velocidade = ?, rodovia = COALESCE(rodovia, ?), sentido = COALESCE(sentido, ?), data_importacao = CURRENT_TIMESTAMP WHERE id = ?');
             $u->execute([$r['velocidade'], $r['rodovia'] ?? null, $r['sentido'] ?? null, $row['id']]);
         }
         return;
     }
-    $insert = db()->prepare('INSERT INTO radars (external_id, latitude, longitude, uf, cidade, rodovia, km, sentido, heading, velocidade, tipo, situacao, fonte, data_fonte, data_importacao, confiabilidade, quantidade_fontes, ativo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime("now"), ?, ?, ?)');
+    $insert = db()->prepare('INSERT INTO radars (external_id, latitude, longitude, uf, cidade, rodovia, km, sentido, heading, velocidade, tipo, situacao, fonte, data_fonte, data_importacao, confiabilidade, quantidade_fontes, ativo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)');
     $insert->execute([
         $r['external_id'], $r['latitude'], $r['longitude'], $r['uf'] ?? null, $r['cidade'] ?? null,
         $r['rodovia'] ?? null, $r['km'] ?? null, $r['sentido'] ?? null, $r['heading'] ?? null,

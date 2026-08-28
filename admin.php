@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             if ($email === '') $email = $username . '@cliente.musicroad.local';
             try {
-                $stmt = db()->prepare("INSERT INTO users (name,email,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?, 'client','active',datetime('now'),datetime('now'))");
+                $stmt = db()->prepare("INSERT INTO users (name,email,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?, 'client','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)");
                 $stmt->execute([$name, $email, $username, password_hash($password, PASSWORD_DEFAULT)]);
                 audit_log('admin.client_create', ['client_id'=>(int)db()->lastInsertId(),'username'=>$username]);
                 $message = 'Cliente criado com sucesso.';
@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'toggle_client') {
         $id = (int)($_POST['client_id'] ?? 0);
-        $stmt = db()->prepare("UPDATE users SET status = CASE WHEN status='active' THEN 'inactive' ELSE 'active' END, updated_at=datetime('now') WHERE id=? AND role='client'");
+        $stmt = db()->prepare("UPDATE users SET status = CASE WHEN status='active' THEN 'inactive' ELSE 'active' END, updated_at=CURRENT_TIMESTAMP WHERE id=? AND role='client'");
         $stmt->execute([$id]);
         audit_log('admin.client_toggle', ['client_id'=>$id]);
         $message = 'Status do cliente atualizado.';
@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (strlen($password) < 6) {
             $error = 'A nova senha do cliente precisa ter pelo menos 6 caracteres.';
         } else {
-            $stmt = db()->prepare("UPDATE users SET password_hash=?, updated_at=datetime('now') WHERE id=? AND role='client'");
+            $stmt = db()->prepare("UPDATE users SET password_hash=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND role='client'");
             $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $id]);
             audit_log('admin.client_password_reset', ['client_id'=>$id]);
             $message = 'Senha do cliente redefinida.';
@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = db()->prepare('UPDATE drive_folders SET name=?,folder_link=?,active=1 WHERE folder_id=?');
                 $stmt->execute([$folderName,$folderLink,$folderId]);
             } else {
-                $stmt = db()->prepare("INSERT INTO drive_folders (name,folder_id,folder_link,active,created_at) VALUES (?,?,?,1,datetime('now'))");
+                $stmt = db()->prepare("INSERT INTO drive_folders (name,folder_id,folder_link,active,created_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)");
                 $stmt->execute([$folderName,$folderId,$folderLink]);
             }
             audit_log('admin.drive_folder_save', ['folder_id'=>$folderId]);
@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (strlen($password) < 6) {
             $error = 'A nova senha precisa ter pelo menos 6 caracteres.';
         } else {
-            $stmt = db()->prepare("UPDATE users SET password_hash=?,updated_at=datetime('now') WHERE id=?");
+            $stmt = db()->prepare("UPDATE users SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?");
             $stmt->execute([password_hash($password,PASSWORD_DEFAULT),(int)$user['id']]);
             $message = 'Senha do administrador alterada.';
         }

@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (strlen($new) < 6) {
             $error = 'A nova senha precisa ter pelo menos 6 caracteres.';
         } else {
-            $up = db()->prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?");
+            $up = db()->prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
             $up->execute([password_hash($new, PASSWORD_DEFAULT), (int)$user['id']]);
             audit_log('client.password_change', ['user_id'=>(int)$user['id']]);
             $message = 'Senha alterada com sucesso.';

@@ -49,6 +49,7 @@ function db(): PDO
     return $pdo;
 }
 
+// SERVER_DB_COMPAT_V209: runtime PHP/SQL is normalized for SQLite and MySQL/MariaDB.
 // DB_COMPAT_V207: minimum runtime schema compatible with SQLite and MySQL/MariaDB.
 function schema_columns(string $table): array
 {

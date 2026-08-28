@@ -156,7 +156,7 @@ function merge_stats(array &$total, array $stats): void
 
 function update_drive_folder_status(string $folderId, string $status): void
 {
-    $stmt = db()->prepare('UPDATE drive_folders SET last_import_at = datetime("now"), last_status = ? WHERE folder_id = ?');
+    $stmt = db()->prepare('UPDATE drive_folders SET last_import_at = CURRENT_TIMESTAMP, last_status = ? WHERE folder_id = ?');
     $stmt->execute([$status, $folderId]);
 }
 
@@ -171,11 +171,11 @@ function save_drive_folder_reference(array $folder, string $status): void
     $exists = db()->prepare('SELECT id FROM drive_folders WHERE folder_id = ? LIMIT 1');
     $exists->execute([$folderId]);
     if ($exists->fetchColumn()) {
-        $stmt = db()->prepare('UPDATE drive_folders SET name = ?, folder_link = ?, active = 1, last_import_at = datetime("now"), last_status = ? WHERE folder_id = ?');
+        $stmt = db()->prepare('UPDATE drive_folders SET name = ?, folder_link = ?, active = 1, last_import_at = CURRENT_TIMESTAMP, last_status = ? WHERE folder_id = ?');
         $stmt->execute([$name, $folderLink, $status, $folderId]);
         return;
     }
-    $stmt = db()->prepare('INSERT INTO drive_folders (name, folder_id, folder_link, active, last_import_at, last_status, created_at) VALUES (?, ?, ?, 1, datetime("now"), ?, datetime("now"))');
+    $stmt = db()->prepare('INSERT INTO drive_folders (name, folder_id, folder_link, active, last_import_at, last_status, created_at) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)');
     $stmt->execute([$name, $folderId, $folderLink, $status]);
 }
 
@@ -583,7 +583,7 @@ function drive_http_status(string $url): array
 function record_drive_link_check(array $entry, array $verification, ?int $musicId): void
 {
     try {
-        $stmt = db()->prepare('INSERT INTO drive_link_checks (source_link, file_id, title, mime_type, status, message, saved_music_id, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))');
+        $stmt = db()->prepare('INSERT INTO drive_link_checks (source_link, file_id, title, mime_type, status, message, saved_music_id, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)');
         $stmt->execute([
             $entry['source_link'] ?? null,
             $entry['id'] ?? null,
@@ -614,7 +614,7 @@ function save_drive_track_from_entry(array $file, array $path): array
         $id = (int)$existingId;
         $action = 'updated';
     } else {
-        $insert = db()->prepare('INSERT INTO music_library (title, artist, album, cover_url, origin, origin_ref, mime_type, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))');
+        $insert = db()->prepare('INSERT INTO music_library (title, artist, album, cover_url, origin, origin_ref, mime_type, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)');
         $insert->execute([$title, $folderPath, $album, $file['cover_url'] ?? null, 'Google Drive', $fileId, $file['mime_type'] ?? null, $file['file_size'] ?? null]);
         $id = (int)db()->lastInsertId();
         $action = 'inserted';

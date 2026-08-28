@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($user && password_verify($password, (string)$user['password_hash'])) {
         session_regenerate_id(true);
         $_SESSION['user_id'] = (int)$user['id'];
-        $upd = db()->prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?");
+        $upd = db()->prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?");
         $upd->execute([(int)$user['id']]);
         audit_log('auth.login', ['user_id'=>(int)$user['id'],'role'=>$user['role']]);
         header('Location: ' . (($user['role'] ?? '') === 'admin' ? 'admin.php' : 'client.php'));
