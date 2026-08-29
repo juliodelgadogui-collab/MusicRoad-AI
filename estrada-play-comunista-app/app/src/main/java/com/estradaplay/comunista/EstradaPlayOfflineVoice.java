@@ -18,23 +18,29 @@ final class EstradaPlayOfflineVoice {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ArrayDeque<Integer> queue = new ArrayDeque<>();
     private MediaPlayer player;
+    private Runnable started;
     private Runnable finished;
+    private boolean startNotified;
     private int generation;
 
     EstradaPlayOfflineVoice(Context context) {
         app = context.getApplicationContext();
     }
 
-    boolean playRoadLimit(int limitKmh, Runnable onFinished) {
+    boolean playRoadLimit(int limitKmh, Runnable onFinished) { return playRoadLimit(limitKmh, null, onFinished); }
+
+    boolean playRoadLimit(int limitKmh, Runnable onStarted, Runnable onFinished) {
         String speed = speedName(limitKmh);
         if (speed == null) return false;
         ArrayList<String> clips = new ArrayList<>();
         clips.add("ep_limite_via");
         clips.add(speed);
-        return play(clips, onFinished);
+        return play(clips, onStarted, onFinished);
     }
 
-    boolean playOverspeed(int limitKmh, Runnable onFinished) {
+    boolean playOverspeed(int limitKmh, Runnable onFinished) { return playOverspeed(limitKmh, null, onFinished); }
+
+    boolean playOverspeed(int limitKmh, Runnable onStarted, Runnable onFinished) {
         String speed = speedName(limitKmh);
         if (speed == null) return false;
         ArrayList<String> clips = new ArrayList<>();
@@ -42,10 +48,14 @@ final class EstradaPlayOfflineVoice {
         clips.add("ep_acima_limite");
         clips.add("ep_limite_via");
         clips.add(speed);
-        return play(clips, onFinished);
+        return play(clips, onStarted, onFinished);
     }
 
     boolean playHazard(String type, double forwardM, int radarLimitKmh, Runnable onFinished) {
+        return playHazard(type, forwardM, radarLimitKmh, null, onFinished);
+    }
+
+    boolean playHazard(String type, double forwardM, int radarLimitKmh, Runnable onStarted, Runnable onFinished) {
         String distance = distanceName(forwardM);
         if (distance == null) return false;
         ArrayList<String> clips = new ArrayList<>();
@@ -87,22 +97,23 @@ final class EstradaPlayOfflineVoice {
                 }
                 break;
         }
-        return play(clips, onFinished);
+        return play(clips, onStarted, onFinished);
     }
 
     void stop() {
-        main.post(this::stopInternal);
+        main.post(() -> cancelCurrent(true));
     }
 
     void release() {
         main.post(() -> {
             generation++;
-            stopInternal();
+            cancelCurrent(true);
+            started = null;
             finished = null;
         });
     }
 
-    private boolean play(List<String> names, Runnable onFinished) {
+    private boolean play(List<String> names, Runnable onStarted, Runnable onFinished) {
         if (names == null || names.isEmpty()) return false;
         ArrayList<Integer> ids = new ArrayList<>(names.size());
         for (String name : names) {
@@ -110,7 +121,7 @@ final class EstradaPlayOfflineVoice {
             if (id == 0) return false;
             ids.add(id);
         }
-        main.post(() -> startSequence(ids, onFinished));
+        main.post(() -> startSequence(ids, onStarted, onFinished));
         return true;
     }
 
@@ -122,13 +133,15 @@ final class EstradaPlayOfflineVoice {
         }
     }
 
-    private void startSequence(List<Integer> ids, Runnable onFinished) {
+    private void startSequence(List<Integer> ids, Runnable onStarted, Runnable onFinished) {
         generation++;
         int token = generation;
-        stopInternal();
+        cancelCurrent(true);
         queue.clear();
         queue.addAll(ids);
+        started = onStarted;
         finished = onFinished;
+        startNotified = false;
         playNext(token);
     }
 
@@ -137,7 +150,9 @@ final class EstradaPlayOfflineVoice {
         Integer id = queue.pollFirst();
         if (id == null) {
             Runnable done = finished;
+            started = null;
             finished = null;
+            startNotified = false;
             if (done != null) done.run();
             return;
         }
@@ -164,6 +179,12 @@ final class EstradaPlayOfflineVoice {
                 return true;
             });
             mp.start();
+            if (!startNotified) {
+                startNotified = true;
+                Runnable begin = started;
+                started = null;
+                if (begin != null) begin.run();
+            }
         } catch (Throwable ignored) {
             failSequence(token);
         }
@@ -174,7 +195,18 @@ final class EstradaPlayOfflineVoice {
         queue.clear();
         stopPlayerOnly();
         Runnable done = finished;
+        started = null;
         finished = null;
+        startNotified = false;
+        if (done != null) done.run();
+    }
+
+    private void cancelCurrent(boolean notifyFinished) {
+        Runnable done = notifyFinished ? finished : null;
+        started = null;
+        finished = null;
+        startNotified = false;
+        stopInternal();
         if (done != null) done.run();
     }
 

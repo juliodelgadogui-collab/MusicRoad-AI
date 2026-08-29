@@ -86,6 +86,19 @@ final class RoadPackStore {
         return out.toString();
     }
 
+    // OFFLINE_RADAR_CORE_V141: prepare the three requested states independently
+    // from GPS tiles/corridors so the phone can go offline immediately afterwards.
+    boolean prefetchCoreStates(ApiClient api) {
+        if (api == null) return coreStatesReady();
+        boolean any = false;
+        for (String uf : new String[]{"RJ","MG","ES"}) {
+            boolean stateOk = fetchMusicRoadStateRadars(api, uf);
+            if (!stateOk) stateOk = fetchStateCoverage(api, uf);
+            any = stateOk || any;
+        }
+        return coreStatesReady() || any;
+    }
+
     synchronized int hazardCount() {
         LinkedHashMap<String, RoadHazard> unique = new LinkedHashMap<>();
         for (Pack p : packs) for (RoadHazard h : p.hazards) unique.put(h.id, h);
@@ -137,7 +150,9 @@ final class RoadPackStore {
 
     boolean prepareTravelReserve(ApiClient api, double lat, double lon, float heading) {
         if (api == null) return false;
-        boolean ok = fetchCoverage(api, lat, lon);
+        // State packs have priority over optional live tiles/corridors.
+        boolean ok = prefetchCoreStates(api);
+        ok = fetchCoverage(api, lat, lon) || ok;
         if (Float.isFinite(heading)) ok = fetchCorridor(api, lat, lon, heading) || ok;
         String uf = resolveUf(lat, lon);
         if (isSupportedUf(uf)) {
@@ -476,7 +491,12 @@ final class RoadPackStore {
 
     private boolean savePack(String key,JSONObject stored){
         try{
-            File target=new File(dir,key+".json");writeText(target,stored.toString());
+            File target=new File(dir,key+".json");
+            File temp=new File(dir,key+".json.tmp");
+            writeText(temp,stored.toString());
+            Pack parsed=parsePack(temp,stored);if(parsed==null){temp.delete();return false;}
+            if(target.exists()&&!target.delete()){temp.delete();return false;}
+            if(!temp.renameTo(target)){writeText(target,stored.toString());temp.delete();}
             Pack p=parsePack(target,stored);if(p==null)return false;
             synchronized(this){Pack old=findByKey(key);if(old!=null)packs.remove(old);packs.add(p);cleanupLocked();}
             return true;
@@ -547,8 +567,10 @@ final class RoadPackStore {
                 JSONObject json = new JSONObject(readText(f));
                 long fetched = json.optLong("fetched_at", f.lastModified());
                 String kind=json.optString("kind","tile");
-                long maxAge="state".equals(kind)?STATE_MAX_AGE_MS:MAX_AGE_MS;
-                if (now - fetched > maxAge) { f.delete(); continue; }
+                long maxAge="state".equals(kind)?Long.MAX_VALUE:MAX_AGE_MS;
+                // State packs never disappear just because they became stale. They
+                // remain usable offline and are replaced when connectivity returns.
+                if (!"state".equals(kind) && now - fetched > maxAge) { f.delete(); continue; }
                 Pack p = parsePack(f, json);
                 if (p != null && "state".equals(p.kind) && p.hazards.isEmpty()) { f.delete(); continue; }
                 if (p != null) packs.add(p);
@@ -656,7 +678,8 @@ final class RoadPackStore {
         long now = System.currentTimeMillis();
         ArrayList<Pack> stale = new ArrayList<>();
         for (Pack p : packs) {
-            long maxAge="state".equals(p.kind)?STATE_MAX_AGE_MS:MAX_AGE_MS;
+            if ("state".equals(p.kind)) continue;
+            long maxAge=MAX_AGE_MS;
             if(now-p.fetchedAt>maxAge)stale.add(p);
         }
         for (Pack p : stale) { packs.remove(p); p.file.delete(); }

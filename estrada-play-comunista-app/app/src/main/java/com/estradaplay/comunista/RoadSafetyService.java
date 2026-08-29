@@ -51,6 +51,7 @@ public final class RoadSafetyService extends Service {
     private volatile RoadPackStore packs;
     private volatile OfflineRoadStore mapRoads;
     private final AtomicBoolean storesLoading = new AtomicBoolean(false);
+    private final AtomicBoolean coreStatesPriming = new AtomicBoolean(false);
     private ApiClient api;
     private TextToSpeech tts;
     // OFFLINE_VOICE_V204: primary deterministic voice; Android TTS is fallback only.
@@ -116,9 +117,10 @@ public final class RoadSafetyService extends Service {
                     tts.setPitch(0.84f);
                     selectEstradaPlayVoice();
                     tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                        @Override public void onStart(String utteranceId) {}
+                        @Override public void onStart(String utteranceId) { main.post(RoadSafetyService.this::beginVoiceDucking); }
                         @Override public void onDone(String utteranceId) { main.post(RoadSafetyService.this::restoreAudioAfterVoice); }
                         @Override public void onError(String utteranceId) { main.post(RoadSafetyService.this::restoreAudioAfterVoice); }
+                        @Override public void onStop(String utteranceId, boolean interrupted) { main.post(RoadSafetyService.this::restoreAudioAfterVoice); }
                     });
                 } catch (Throwable ignored) {}
             }
@@ -142,16 +144,42 @@ public final class RoadSafetyService extends Service {
             } finally {
                 storesLoading.set(false);
                 main.post(() -> {
-                    if (packs != null && mapRoads != null) startLocation();
-                    else updateNotification("Proteção na estrada", "Base offline indisponível; tentando novamente", true);
+                    if (packs != null && mapRoads != null) {
+                        startLocation();
+                        primeOfflineRadarCore();
+                    } else updateNotification("Proteção na estrada", "Base offline indisponível; tentando novamente", true);
                 });
             }
         });
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (packs != null && mapRoads != null) startLocation(); else initializeStoresAsync();
+        if (packs != null && mapRoads != null) { startLocation(); primeOfflineRadarCore(); } else initializeStoresAsync();
         return START_STICKY;
+    }
+
+    // OFFLINE_RADAR_CORE_V141: state radar packs are prepared before route/map extras.
+    // They remain fully local once downloaded and do not depend on live internet to alert.
+    private void primeOfflineRadarCore() {
+        RoadPackStore local = packs;
+        if (local == null || local.coreStatesReady() || !coreStatesPriming.compareAndSet(false, true)) return;
+        io.execute(() -> {
+            try {
+                ensureApiSession(false);
+                boolean ok = local.prefetchCoreStates(api);
+                if (!ok || !local.coreStatesReady()) {
+                    ensureApiSession(true);
+                    local.prefetchCoreStates(api);
+                }
+            } catch (Throwable ignored) {
+            } finally {
+                coreStatesPriming.set(false);
+                String text = "Radares offline · " + local.coreStatesStatus();
+                updateNotification("Proteção offline", text, false);
+                Location p = previous;
+                if (p != null) broadcastSynthetic(p.getLatitude(), p.getLongitude(), text);
+            }
+        });
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
@@ -525,8 +553,7 @@ public final class RoadSafetyService extends Service {
         } catch (Throwable ignored) {}
     }
 
-    private void prepareEmbeddedVoice() {
-        try { if (tts != null) tts.stop(); } catch (Throwable ignored) {}
+    private void beginVoiceDucking() {
         duckOwnPlayer(true);
         requestVoiceFocus();
         main.removeCallbacks(restoreAudioFallback);
@@ -534,55 +561,36 @@ public final class RoadSafetyService extends Service {
     }
 
     private boolean speakRoadLimitVoice(int limitKmh) {
-        if (ttsReady && copilot != null) {
-            speak(copilot.roadLimit(limitKmh));
-            return true;
-        }
-        if (offlineVoice != null) {
-            prepareEmbeddedVoice();
-            if (offlineVoice.playRoadLimit(limitKmh, this::restoreAudioAfterVoice)) return true;
-            restoreAudioAfterVoice();
-        }
+        if (offlineVoice != null && offlineVoice.playRoadLimit(limitKmh, this::beginVoiceDucking, this::restoreAudioAfterVoice)) return true;
+        if (ttsReady && copilot != null) return speak(copilot.roadLimit(limitKmh));
         return false;
     }
 
     private boolean speakOverspeedVoice(int limitKmh) {
-        if (ttsReady && copilot != null) {
-            speak(copilot.overspeed(limitKmh));
-            return true;
-        }
-        if (offlineVoice != null) {
-            prepareEmbeddedVoice();
-            if (offlineVoice.playOverspeed(limitKmh, this::restoreAudioAfterVoice)) return true;
-            restoreAudioAfterVoice();
-        }
+        if (offlineVoice != null && offlineVoice.playOverspeed(limitKmh, this::beginVoiceDucking, this::restoreAudioAfterVoice)) return true;
+        if (ttsReady && copilot != null) return speak(copilot.overspeed(limitKmh));
         return false;
     }
 
     private void speakHazardVoice(RoadHazard h, double forwardM) {
-        if (ttsReady && copilot != null && h != null) {
-            speak(copilot.hazard(h.type, forwardM, h.speed));
-            return;
-        }
-        if (offlineVoice != null && h != null) {
-            prepareEmbeddedVoice();
-            if (offlineVoice.playHazard(h.type, forwardM, h.speed, this::restoreAudioAfterVoice)) return;
-            restoreAudioAfterVoice();
-        }
+        if (offlineVoice != null && h != null &&
+                offlineVoice.playHazard(h.type, forwardM, h.speed, this::beginVoiceDucking, this::restoreAudioAfterVoice)) return;
+        if (ttsReady && copilot != null && h != null && speak(copilot.hazard(h.type, forwardM, h.speed))) return;
         speak(voice(h, forwardM));
     }
 
-    private void speak(String text) {
-        if (!ttsReady || tts == null || text == null || text.trim().isEmpty()) return;
-        if (offlineVoice != null) offlineVoice.stop();
-        duckOwnPlayer(true);
-        requestVoiceFocus();
-        main.removeCallbacks(restoreAudioFallback);
-        main.postDelayed(restoreAudioFallback, 8000L);
+    private boolean speak(String text) {
+        if (!ttsReady || tts == null || text == null || text.trim().isEmpty()) return false;
         try {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "road-alert-" + System.currentTimeMillis());
+            String id = "road-alert-" + System.currentTimeMillis();
+            int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id);
+            if (result == TextToSpeech.ERROR) { restoreAudioAfterVoice(); return false; }
+            // Deliberately do not duck here. UtteranceProgressListener.onStart is the
+            // proof that Android actually began speaking. This prevents silent ducking.
+            return true;
         } catch (Throwable e) {
             restoreAudioAfterVoice();
+            return false;
         }
     }
 
