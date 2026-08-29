@@ -80,6 +80,10 @@ public final class RoadSafetyService extends Service {
     private int announcedRoadLimitKmh;
     private boolean roadOverspeedWarned;
     private long lastRoadLimitCheckAt;
+    // ROAD_THOUGHTS_V142: low-priority cultural layer; safety always wins.
+    private final long thoughtSessionStartedAt = System.currentTimeMillis();
+    private long lastThoughtCheckAt;
+    private long lastSafetyVoiceAt;
 
     private final Runnable restoreAudioFallback = this::restoreAudioAfterVoice;
 
@@ -294,8 +298,37 @@ public final class RoadSafetyService extends Service {
             }
             String state = lastStateText;
             if (now - lastNotificationAt > 7000L) updateNotification("Proteção na estrada ativa", state, false);
+            maybeEmitRoadThought(loc, speedKmh);
             broadcast(loc, speedKmh, null, 0, state, null, 0);
         }
+    }
+
+    private void maybeEmitRoadThought(Location loc, double speedKmh) {
+        int mode = RoadThoughts.mode(this);
+        if (mode == RoadThoughts.MODE_OFF || loc == null || speedKmh < 5.0) return;
+        long now = System.currentTimeMillis();
+        if (now - lastThoughtCheckAt < 10000L) return;
+        lastThoughtCheckAt = now;
+        if (now - thoughtSessionStartedAt < 4L * 60L * 1000L) return;
+        if (now - lastSafetyVoiceAt < 60_000L) return;
+        long previousThought = RoadThoughts.lastShownAt(this);
+        if (previousThought > 0 && now - previousThought < RoadThoughts.intervalMs(this)) return;
+
+        RoadThoughts.Entry e = RoadThoughts.next(this);
+        if (e == null) return;
+        RoadThoughts.markShown(this, now);
+        Intent thought = baseBroadcast(loc.getLatitude(), loc.getLongitude(), speedKmh, "Proteção ativa");
+        thought.putExtra("thought_author", e.author);
+        thought.putExtra("thought_text", e.text);
+        thought.putExtra("thought_paraphrase", true);
+        sendBroadcast(thought);
+        if (mode == RoadThoughts.MODE_SCREEN_VOICE && ttsReady) speak(RoadThoughts.spoken(e));
+    }
+
+    private void interruptThoughtForSafety() {
+        lastSafetyVoiceAt = System.currentTimeMillis();
+        try { if (tts != null) tts.stop(); } catch (Throwable ignored) {}
+        restoreAudioAfterVoice();
     }
 
     private void maybeResolveRoadLimit(double lat, double lon, float heading) {
@@ -561,18 +594,21 @@ public final class RoadSafetyService extends Service {
     }
 
     private boolean speakRoadLimitVoice(int limitKmh) {
+        interruptThoughtForSafety();
         if (offlineVoice != null && offlineVoice.playRoadLimit(limitKmh, this::beginVoiceDucking, this::restoreAudioAfterVoice)) return true;
         if (ttsReady && copilot != null) return speak(copilot.roadLimit(limitKmh));
         return false;
     }
 
     private boolean speakOverspeedVoice(int limitKmh) {
+        interruptThoughtForSafety();
         if (offlineVoice != null && offlineVoice.playOverspeed(limitKmh, this::beginVoiceDucking, this::restoreAudioAfterVoice)) return true;
         if (ttsReady && copilot != null) return speak(copilot.overspeed(limitKmh));
         return false;
     }
 
     private void speakHazardVoice(RoadHazard h, double forwardM) {
+        interruptThoughtForSafety();
         if (offlineVoice != null && h != null &&
                 offlineVoice.playHazard(h.type, forwardM, h.speed, this::beginVoiceDucking, this::restoreAudioAfterVoice)) return;
         if (ttsReady && copilot != null && h != null && speak(copilot.hazard(h.type, forwardM, h.speed))) return;

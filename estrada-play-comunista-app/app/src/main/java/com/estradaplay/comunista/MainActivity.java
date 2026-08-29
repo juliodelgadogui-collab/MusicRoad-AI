@@ -152,6 +152,7 @@ public final class MainActivity extends ComponentActivity {
             int packs = intent.getIntExtra("pack_count", 0);
             int points = intent.getIntExtra("hazard_count", 0);
             SafetyAlertOverlay.show(MainActivity.this, root, intent);
+            RoadThoughtOverlay.show(MainActivity.this, root, intent);
             if (roadLiveState != null) {
                 if (hazard != null && !hazard.trim().isEmpty()) {
                     roadLiveState.setText(hazard + (distance > 0 ? " · " + Math.round(distance) + " m" : ""));
@@ -800,6 +801,12 @@ private void refreshLibraryAndOpenChooser() {
         TextView mSub = text("ROTA  /  SOM  /  PROTEÇÃO  /  COPILOTO", 10, Color.rgb(255, 224, 196), true);
         mSub.setLetterSpacing(0.08f); manifesto.addView(mSub);
         page.addView(manifesto);
+
+        View thoughtCard = RoadThoughts.homeCard(this);
+        if (thoughtCard != null) {
+            page.addView(thoughtCard); margins(thoughtCard, 0, 10, 0, 0);
+            thoughtCard.setOnClickListener(v -> startActivity(new Intent(this, ThoughtsActivity.class)));
+        }
 
         LinearLayout stateLine = row();
         stateLine.setGravity(Gravity.CENTER_VERTICAL);

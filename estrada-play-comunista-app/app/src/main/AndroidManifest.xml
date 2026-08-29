@@ -99,6 +99,11 @@
             android:screenOrientation="${appOrientation}" />
 
         <activity
+            android:name=".ThoughtsActivity"
+            android:exported="false"
+            android:screenOrientation="${appOrientation}" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
