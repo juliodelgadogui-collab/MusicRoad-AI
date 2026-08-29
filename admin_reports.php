@@ -1,0 +1,26 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__ . '/api/bootstrap.php';
+require_once __DIR__ . '/api/server_intelligent.php';
+ensure_default_users();
+$user=require_admin();
+intelligent_server_ensure_schema();
+$message='';$error='';
+if($_SERVER['REQUEST_METHOD']==='POST'){
+    require_csrf();
+    $id=(int)($_POST['id']??0);$status=strtoupper(trim((string)($_POST['status']??'')));
+    if(intelligent_server_set_report_status($id,$status,(int)$user['id']))$message='Reporte atualizado.';else $error='Não foi possível atualizar o reporte.';
+}
+$filter=strtoupper(trim((string)($_GET['status']??'')));
+$stats=intelligent_server_report_stats();
+$rows=intelligent_server_reports($filter,250);
+function rr_h(string $v):string{return htmlspecialchars($v,ENT_QUOTES,'UTF-8');}
+function rr_label(string $t):string{return ['RADAR_NOVO'=>'Radar novo','RADAR_REMOVIDO'=>'Radar removido','LIMITE_ERRADO'=>'Limite errado','QUEBRA_MOLAS'=>'Quebra-molas','CAMERA_MONITORAMENTO'=>'Câmera de monitoramento'][$t]??$t;}
+?>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Reportes da Estrada - EstradaPlay</title><link rel="stylesheet" href="assets/css/app.css?v=1.0.0"><style>.rr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.rr-card{padding:14px}.rr-card strong{display:block;font-size:1.5rem}.rr-actions{display:flex;gap:6px;flex-wrap:wrap}.rr-table td,.rr-table th{vertical-align:top}.rr-pending{color:#ffb45c}.rr-ok{color:#45d483}.rr-bad{color:#ff646b}.rr-small{font-size:.82rem}.rr-coord{white-space:nowrap}</style></head><body data-role="admin"><main class="admin-main">
+<div class="toolbar admin-toolbar"><div><p class="eyebrow">ESTRADAPLAY · SERVIDOR 500 MB V3</p><h1>Reportes da Estrada</h1><p class="muted">Contribuições dos aparelhos ficam pendentes até revisão humana.</p></div><div class="row"><a class="button secondary" href="admin_server.php">Central do Servidor</a><a class="button secondary" href="admin.php">Painel Admin</a></div></div>
+<?php if($message):?><div class="panel success"><?=rr_h($message)?></div><?php endif;?><?php if($error):?><div class="alert"><?=rr_h($error)?></div><?php endif;?>
+<section class="panel"><div class="rr-grid"><article class="panel rr-card"><span class="muted">Pendentes</span><strong><?= (int)$stats['pending']?></strong></article><article class="panel rr-card"><span class="muted">Confirmados</span><strong><?= (int)$stats['confirmed']?></strong></article><article class="panel rr-card"><span class="muted">Rejeitados</span><strong><?= (int)$stats['rejected']?></strong></article><article class="panel rr-card"><span class="muted">Últimas 24h</span><strong><?= (int)$stats['last24h']?></strong></article></div></section>
+<section class="panel"><div class="rr-actions"><a class="button secondary" href="admin_reports.php">Todos</a><a class="button secondary" href="admin_reports.php?status=PENDENTE">Pendentes</a><a class="button secondary" href="admin_reports.php?status=CONFIRMADO">Confirmados</a><a class="button secondary" href="admin_reports.php?status=REJEITADO">Rejeitados</a></div></section>
+<section class="panel"><div class="table-wrap"><table class="rr-table"><thead><tr><th>ID</th><th>Tipo</th><th>Local</th><th>Dados</th><th>Quando</th><th>Status</th><th>Revisão</th></tr></thead><tbody><?php if(!$rows):?><tr><td colspan="7">Nenhum reporte.</td></tr><?php endif;?><?php foreach($rows as $r):$st=strtoupper((string)$r['status']);$cls=$st==='CONFIRMADO'?'rr-ok':($st==='REJEITADO'?'rr-bad':'rr-pending');$lat=(float)$r['latitude'];$lon=(float)$r['longitude'];$map='https://www.openstreetmap.org/?mlat='.rawurlencode((string)$lat).'&mlon='.rawurlencode((string)$lon).'#map=17/'.$lat.'/'.$lon;?><tr><td>#<?= (int)$r['id']?></td><td><strong><?=rr_h(rr_label((string)$r['type']))?></strong><br><small><?=rr_h((string)($r['source']??'APP'))?></small></td><td class="rr-coord"><a href="<?=rr_h($map)?>" target="_blank" rel="noopener"><?=number_format($lat,6,'.','')?>, <?=number_format($lon,6,'.','')?></a></td><td><?php if($r['speed_kmh']!==null):?>Velocidade: <?= (int)$r['speed_kmh']?> km/h<br><?php endif;?><?php if($r['limit_kmh']!==null):?>Limite: <?= (int)$r['limit_kmh']?> km/h<br><?php endif;?><?php if(!empty($r['note'])):?><small><?=rr_h((string)$r['note'])?></small><?php endif;?></td><td><?=rr_h((string)$r['created_at'])?></td><td><span class="<?=$cls?>"><?=rr_h($st)?></span></td><td><form method="post" class="rr-actions"><input type="hidden" name="csrf" value="<?=rr_h(csrf_token())?>"><input type="hidden" name="id" value="<?= (int)$r['id']?>"><button class="button secondary" name="status" value="CONFIRMADO" type="submit">Confirmar</button><button class="button secondary" name="status" value="REJEITADO" type="submit">Rejeitar</button><button class="button secondary" name="status" value="PENDENTE" type="submit">Pendente</button></form></td></tr><?php endforeach;?></tbody></table></div></section>
+</main></body></html>
