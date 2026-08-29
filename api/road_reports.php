@@ -1,27 +1,48 @@
 <?php
 declare(strict_types=1);
-require __DIR__.'/bootstrap.php';
-require_login();
+
+require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/native_auth.php';
+require_once __DIR__ . '/server_intelligent.php';
+
+header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
-$driver=(string)db()->getAttribute(PDO::ATTR_DRIVER_NAME);
-if($driver==='mysql'){
-    db()->exec("CREATE TABLE IF NOT EXISTS road_reports (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      user_id BIGINT NULL, device_token VARCHAR(190) NULL,
-      type VARCHAR(50) NOT NULL, latitude DOUBLE NOT NULL, longitude DOUBLE NOT NULL,
-      status VARCHAR(30) NOT NULL DEFAULT 'PENDENTE', created_at DATETIME NOT NULL,
-      INDEX idx_rr_status(status), INDEX idx_rr_geo(latitude,longitude)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-}else{
-    db()->exec("CREATE TABLE IF NOT EXISTS road_reports (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,device_token TEXT,type TEXT NOT NULL,latitude REAL NOT NULL,longitude REAL NOT NULL,status TEXT NOT NULL DEFAULT 'PENDENTE',created_at TEXT NOT NULL)");
+$body = input_json();
+$user = native_require_json_user($body);
+intelligent_server_ensure_schema();
+
+$type = strtoupper(trim((string)($body['type'] ?? '')));
+$lat = (float)($body['lat'] ?? 0);
+$lon = (float)($body['lon'] ?? 0);
+$speed = isset($body['speed_kmh']) ? (int)$body['speed_kmh'] : null;
+$limit = isset($body['limit_kmh']) ? (int)$body['limit_kmh'] : null;
+$note = trim((string)($body['note'] ?? ''));
+$source = strtoupper(trim((string)($body['source'] ?? 'APP')));
+$allowed = ['RADAR_NOVO','RADAR_REMOVIDO','LIMITE_ERRADO','QUEBRA_MOLAS','CAMERA_MONITORAMENTO'];
+
+if (!in_array($type,$allowed,true)) json_response(['ok'=>false,'error'=>'Tipo de reporte inválido.'],422);
+if (!is_finite($lat) || !is_finite($lon) || $lat < -35 || $lat > 6 || $lon < -75 || $lon > -30) json_response(['ok'=>false,'error'=>'Coordenada inválida.'],422);
+if ($speed !== null && ($speed < 0 || $speed > 250)) $speed = null;
+if ($limit !== null && ($limit < 10 || $limit > 180)) $limit = null;
+if ($note !== '') $note = function_exists('mb_substr') ? mb_substr($note,0,500) : substr($note,0,500);
+$source = preg_replace('/[^A-Z0-9_.-]/','',$source) ?: 'APP';
+$source = substr($source,0,32);
+
+$userId = (int)($user['id'] ?? 0);
+$device = native_device_token_from_request($body);
+$duplicate = intelligent_server_find_duplicate($userId,$device,$type,$lat,$lon);
+if ($duplicate > 0) {
+    json_response(['ok'=>true,'id'=>$duplicate,'status'=>'PENDENTE','duplicate'=>true]);
 }
-$body=json_decode((string)file_get_contents('php://input'),true)?:[];
-$type=strtoupper(trim((string)($body['type']??'')));
-$lat=(float)($body['lat']??0);$lon=(float)($body['lon']??0);
-$allowed=['RADAR_NOVO','RADAR_REMOVIDO','LIMITE_ERRADO','QUEBRA_MOLAS','CAMERA_MONITORAMENTO'];
-if(!in_array($type,$allowed,true)||$lat<-35||$lat>6||$lon<-75||$lon>-30)json_response(['ok'=>false,'error'=>'Reporte inválido.'],422);
-$user=$_SESSION['user_id']??null;$device=(string)($_SESSION['device_token']??'');
-$stmt=db()->prepare('INSERT INTO road_reports (user_id,device_token,type,latitude,longitude,status,created_at) VALUES (?,?,?,?,?,\'PENDENTE\',?)');
-$stmt->execute([$user,$device!==''?$device:null,$type,$lat,$lon,gmdate('Y-m-d H:i:s')]);
-json_response(['ok'=>true,'id'=>(int)db()->lastInsertId(),'status'=>'PENDENTE']);
+
+try {
+    $stmt=db()->prepare('INSERT INTO road_reports (user_id,device_token,type,latitude,longitude,speed_kmh,limit_kmh,note,source,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,\'PENDENTE\',?)');
+    $stmt->execute([$userId ?: null,$device !== '' ? $device : null,$type,$lat,$lon,$speed,$limit,$note !== '' ? $note : null,$source,date('Y-m-d H:i:s')]);
+    $id=(int)db()->lastInsertId();
+    audit_log('road_report.submit',['report_id'=>$id,'type'=>$type]);
+    json_response(['ok'=>true,'id'=>$id,'status'=>'PENDENTE']);
+} catch (Throwable $e) {
+    error_log('ROAD_REPORT: '.$e->getMessage());
+    json_response(['ok'=>false,'error'=>'Não foi possível registrar o reporte agora.'],503);
+}
