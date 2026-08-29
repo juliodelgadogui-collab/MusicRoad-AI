@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
-$user = require_login();
+require_once __DIR__ . '/native_auth.php';
+if (!native_restore_user_from_request(null)) json_response(['ok'=>false,'error'=>'Sessão expirada. Entre novamente neste aparelho.'],401);
 require __DIR__ . '/radar_db.php';
 radar_ensure_tables();
 

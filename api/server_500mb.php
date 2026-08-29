@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-// SERVER_500MB_V2: metadata-only runtime + protected control-center telemetry.
+// SERVER_500MB_V3: metadata-only runtime + protected control-center telemetry.
 function server_ensure_500mb_schema(): void
 {
     try {
@@ -258,7 +258,7 @@ function server_diagnostic_snapshot(): array
     }
     return [
         'status'=>$health['quota_level'] === 'critical' ? 'CRITICAL' : ($folderWarn > 0 ? 'WARN' : 'OK'),
-        'server_version'=>'500MB-v2',
+        'server_version'=>'500MB-v3',
         'php'=>PHP_VERSION,
         'sapi'=>PHP_SAPI,
         'db_driver'=>(string)db()->getAttribute(PDO::ATTR_DRIVER_NAME),

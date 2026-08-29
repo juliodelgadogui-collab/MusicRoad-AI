@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
-require_login();
+require_once __DIR__ . '/native_auth.php';
+if (!native_restore_user_from_request(null)) json_response(['ok'=>false,'error'=>'Sessão expirada. Entre novamente neste aparelho.'],401);
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 

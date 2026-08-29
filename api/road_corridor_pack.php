@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
-require_login();
+require_once __DIR__.'/native_auth.php';
+if (!native_restore_user_from_request(null)) json_response(['ok'=>false,'error'=>'Sessão expirada. Entre novamente neste aparelho.'],401);
 require __DIR__.'/road_safety_pack_helpers.php';
 require __DIR__.'/road_hazard_db.php';
 @set_time_limit(110);
