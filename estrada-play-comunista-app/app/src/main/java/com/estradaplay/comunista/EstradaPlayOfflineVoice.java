@@ -2,7 +2,10 @@ package com.estradaplay.comunista;
 
 import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -22,9 +25,13 @@ final class EstradaPlayOfflineVoice {
     private Runnable finished;
     private boolean startNotified;
     private int generation;
+    private final AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
+    private boolean focusHeld;
 
     EstradaPlayOfflineVoice(Context context) {
         app = context.getApplicationContext();
+        audioManager = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
     }
 
     boolean playRoadLimit(int limitKmh, Runnable onFinished) { return playRoadLimit(limitKmh, null, onFinished); }
@@ -153,6 +160,7 @@ final class EstradaPlayOfflineVoice {
             started = null;
             finished = null;
             startNotified = false;
+            abandonLocalFocus();
             if (done != null) done.run();
             return;
         }
@@ -178,7 +186,12 @@ final class EstradaPlayOfflineVoice {
                 failSequence(token);
                 return true;
             });
+            if (!startNotified) requestLocalFocus();
+            mp.setVolume(1f, 1f);
             mp.start();
+            boolean audibleStart = false;
+            try { audibleStart = mp.isPlaying(); } catch (Throwable ignored) {}
+            if (!audibleStart) { failSequence(token); return; }
             if (!startNotified) {
                 startNotified = true;
                 Runnable begin = started;
@@ -194,6 +207,7 @@ final class EstradaPlayOfflineVoice {
         if (token != generation) return;
         queue.clear();
         stopPlayerOnly();
+        abandonLocalFocus();
         Runnable done = finished;
         started = null;
         finished = null;
@@ -207,6 +221,7 @@ final class EstradaPlayOfflineVoice {
         finished = null;
         startNotified = false;
         stopInternal();
+        abandonLocalFocus();
         if (done != null) done.run();
     }
 
@@ -222,6 +237,35 @@ final class EstradaPlayOfflineVoice {
             try { p.stop(); } catch (Throwable ignored) {}
             safeRelease(p);
         }
+    }
+
+
+    private void requestLocalFocus() {
+        if (audioManager == null || focusHeld) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                if (focusRequest == null) {
+                    AudioAttributes attrs = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
+                    focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                            .setAudioAttributes(attrs).setAcceptsDelayedFocusGain(false).setWillPauseWhenDucked(false).build();
+                }
+                focusHeld = audioManager.requestAudioFocus(focusRequest) != AudioManager.AUDIOFOCUS_REQUEST_FAILED;
+            } else {
+                focusHeld = audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC,
+                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK) != AudioManager.AUDIOFOCUS_REQUEST_FAILED;
+            }
+        } catch (Throwable ignored) { focusHeld = false; }
+    }
+
+    private void abandonLocalFocus() {
+        if (audioManager == null || !focusHeld) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) audioManager.abandonAudioFocusRequest(focusRequest);
+            else audioManager.abandonAudioFocus(null);
+        } catch (Throwable ignored) {}
+        focusHeld = false;
     }
 
     private static void safeRelease(MediaPlayer p) {

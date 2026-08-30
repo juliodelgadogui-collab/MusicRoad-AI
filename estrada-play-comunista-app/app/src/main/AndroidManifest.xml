@@ -68,6 +68,11 @@
             android:screenOrientation="${appOrientation}" />
 
         <activity
+            android:name=".VoiceDiagnosticsActivity"
+            android:exported="false"
+            android:screenOrientation="${appOrientation}" />
+
+        <activity
             android:name=".DriveToolsActivity"
             android:exported="false"
             android:screenOrientation="${appOrientation}" />

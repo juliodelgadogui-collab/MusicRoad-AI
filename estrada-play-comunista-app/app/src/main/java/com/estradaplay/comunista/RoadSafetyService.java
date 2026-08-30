@@ -90,8 +90,12 @@ public final class RoadSafetyService extends Service {
     private long continuousDrivingStartedAt,lastMovingForRestAt;
     private boolean restSuggested;
     private long lastUpcomingAt; private String upcomingCache="";
-
-    private final Runnable restoreAudioFallback = this::restoreAudioAfterVoice;
+    // VOICE_RELIABILITY_V151: stale callbacks from an older utterance must never alter a newer one.
+    private int voiceSessionCounter;
+    private int activeVoiceToken;
+    private String activeVoiceKind="";
+    private long voiceBusyUntil;
+    private Runnable voiceRestoreWatchdog;
 
     // STATIONARY_SPEED_V178: if the head unit stops delivering fresh GPS fixes,
     // a previous moving speed must never remain frozen on screen indefinitely.
@@ -130,10 +134,10 @@ public final class RoadSafetyService extends Service {
                     tts.setPitch(0.84f);
                     selectEstradaPlayVoice();
                     tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                        @Override public void onStart(String utteranceId) { main.post(RoadSafetyService.this::beginVoiceDucking); }
-                        @Override public void onDone(String utteranceId) { main.post(RoadSafetyService.this::restoreAudioAfterVoice); }
-                        @Override public void onError(String utteranceId) { main.post(RoadSafetyService.this::restoreAudioAfterVoice); }
-                        @Override public void onStop(String utteranceId, boolean interrupted) { main.post(RoadSafetyService.this::restoreAudioAfterVoice); }
+                        @Override public void onStart(String utteranceId) { int t=voiceTokenFromId(utteranceId); main.post(() -> { if(t==activeVoiceToken){ requestVoiceFocus(); beginVoiceDucking(t); } }); }
+                        @Override public void onDone(String utteranceId) { int t=voiceTokenFromId(utteranceId); main.post(() -> restoreAudioAfterVoice(t)); }
+                        @Override public void onError(String utteranceId) { int t=voiceTokenFromId(utteranceId); main.post(() -> restoreAudioAfterVoice(t)); }
+                        @Override public void onStop(String utteranceId, boolean interrupted) { int t=voiceTokenFromId(utteranceId); main.post(() -> restoreAudioAfterVoice(t)); }
                     });
                 } catch (Throwable ignored) {}
             }
@@ -319,7 +323,7 @@ public final class RoadSafetyService extends Service {
 
     private void maybeEmitRoadThought(Location loc, double speedKmh) {
         int mode = RoadThoughts.mode(this);
-        if (mode == RoadThoughts.MODE_OFF || loc == null || speedKmh < 5.0) return;
+        if (mode == RoadThoughts.MODE_OFF || loc == null || speedKmh < 5.0 || voiceBusy()) return;
         long now = System.currentTimeMillis();
         if (now - lastThoughtCheckAt < 10000L) return;
         lastThoughtCheckAt = now;
@@ -336,13 +340,11 @@ public final class RoadSafetyService extends Service {
         thought.putExtra("thought_text", e.text);
         thought.putExtra("thought_paraphrase", true);
         sendBroadcast(thought);
-        if (mode == RoadThoughts.MODE_SCREEN_VOICE && ttsReady) speak(RoadThoughts.spoken(e));
+        if (mode == RoadThoughts.MODE_SCREEN_VOICE && ttsReady) speakThought(RoadThoughts.spoken(e));
     }
 
     private void interruptThoughtForSafety() {
         lastSafetyVoiceAt = System.currentTimeMillis();
-        try { if (tts != null) tts.stop(); } catch (Throwable ignored) {}
-        restoreAudioAfterVoice();
     }
 
     private void maybeResolveRoadLimit(double lat, double lon, float heading) {
@@ -600,48 +602,113 @@ public final class RoadSafetyService extends Service {
         } catch (Throwable ignored) {}
     }
 
-    private void beginVoiceDucking() {
+    private boolean voiceBusy() {
+        return activeVoiceToken > 0 && System.currentTimeMillis() < voiceBusyUntil;
+    }
+
+    private int openVoiceSession(String kind, boolean interrupt) {
+        if (!interrupt && voiceBusy()) return 0;
+        int token = ++voiceSessionCounter;
+        activeVoiceToken = token;
+        activeVoiceKind = kind == null ? "" : kind;
+        voiceBusyUntil = System.currentTimeMillis() + 15_000L;
+        if (interrupt) {
+            try { if (offlineVoice != null) offlineVoice.stop(); } catch (Throwable ignored) {}
+            try { if (tts != null) tts.stop(); } catch (Throwable ignored) {}
+        }
+        return token;
+    }
+
+    private void beginVoiceDucking(int token) {
+        if (token <= 0 || token != activeVoiceToken) return;
         duckOwnPlayer(true);
-        requestVoiceFocus();
-        main.removeCallbacks(restoreAudioFallback);
-        main.postDelayed(restoreAudioFallback, 8000L);
+        voiceBusyUntil = System.currentTimeMillis() + 15_000L;
+        if (voiceRestoreWatchdog != null) main.removeCallbacks(voiceRestoreWatchdog);
+        voiceRestoreWatchdog = () -> restoreAudioAfterVoice(token);
+        main.postDelayed(voiceRestoreWatchdog, 15_000L);
+    }
+
+    private void restoreAudioAfterVoice(int token) {
+        if (token <= 0 || token != activeVoiceToken) return;
+        if (voiceRestoreWatchdog != null) { main.removeCallbacks(voiceRestoreWatchdog); voiceRestoreWatchdog = null; }
+        activeVoiceToken = 0;
+        activeVoiceKind = "";
+        voiceBusyUntil = 0L;
+        forceRestoreAudio();
+    }
+
+    private void restoreAudioAfterVoice() {
+        int token = activeVoiceToken;
+        if (token > 0) restoreAudioAfterVoice(token); else forceRestoreAudio();
+    }
+
+    private void forceRestoreAudio() {
+        duckOwnPlayer(false);
+        if (audioManager == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 26 && alertFocusRequest != null) audioManager.abandonAudioFocusRequest(alertFocusRequest);
+            else audioManager.abandonAudioFocus(null);
+        } catch (Throwable ignored) {}
+    }
+
+    private int voiceTokenFromId(String id) {
+        if (id == null || !id.startsWith("ep-voice-")) return -1;
+        try { return Integer.parseInt(id.substring("ep-voice-".length())); }
+        catch (Throwable ignored) { return -1; }
     }
 
     private boolean speakRoadLimitVoice(int limitKmh) {
+        if (voiceBusy() && !"thought".equals(activeVoiceKind)) return false;
         interruptThoughtForSafety();
-        if (offlineVoice != null && offlineVoice.playRoadLimit(limitKmh, this::beginVoiceDucking, this::restoreAudioAfterVoice)) return true;
-        if (ttsReady && copilot != null) return speak(copilot.roadLimit(limitKmh));
+        int token = openVoiceSession("limit", true);
+        int mode = VoiceSettings.mode(this);
+        if (mode != VoiceSettings.MODE_ANDROID && offlineVoice != null &&
+                offlineVoice.playRoadLimit(limitKmh, () -> beginVoiceDucking(token), () -> restoreAudioAfterVoice(token))) return true;
+        if (mode != VoiceSettings.MODE_EMBEDDED && ttsReady && copilot != null && speakWithToken(copilot.roadLimit(limitKmh), token)) return true;
+        restoreAudioAfterVoice(token);
         return false;
     }
 
     private boolean speakOverspeedVoice(int limitKmh) {
+        if (voiceBusy() && !"thought".equals(activeVoiceKind)) return false;
         interruptThoughtForSafety();
-        if (offlineVoice != null && offlineVoice.playOverspeed(limitKmh, this::beginVoiceDucking, this::restoreAudioAfterVoice)) return true;
-        if (ttsReady && copilot != null) return speak(copilot.overspeed(limitKmh));
+        int token = openVoiceSession("overspeed", true);
+        int mode = VoiceSettings.mode(this);
+        if (mode != VoiceSettings.MODE_ANDROID && offlineVoice != null &&
+                offlineVoice.playOverspeed(limitKmh, () -> beginVoiceDucking(token), () -> restoreAudioAfterVoice(token))) return true;
+        if (mode != VoiceSettings.MODE_EMBEDDED && ttsReady && copilot != null && speakWithToken(copilot.overspeed(limitKmh), token)) return true;
+        restoreAudioAfterVoice(token);
         return false;
     }
 
     private void speakHazardVoice(RoadHazard h, double forwardM) {
         interruptThoughtForSafety();
-        if (offlineVoice != null && h != null &&
-                offlineVoice.playHazard(h.type, forwardM, h.speed, this::beginVoiceDucking, this::restoreAudioAfterVoice)) return;
-        if (ttsReady && copilot != null && h != null && speak(copilot.hazard(h.type, forwardM, h.speed))) return;
-        speak(voice(h, forwardM));
+        int token = openVoiceSession("hazard", true);
+        int mode = VoiceSettings.mode(this);
+        if (mode != VoiceSettings.MODE_ANDROID && offlineVoice != null && h != null &&
+                offlineVoice.playHazard(h.type, forwardM, h.speed, () -> beginVoiceDucking(token), () -> restoreAudioAfterVoice(token))) return;
+        if (mode != VoiceSettings.MODE_EMBEDDED && ttsReady && copilot != null && h != null && speakWithToken(copilot.hazard(h.type, forwardM, h.speed), token)) return;
+        if (mode != VoiceSettings.MODE_EMBEDDED && speakWithToken(voice(h, forwardM), token)) return;
+        restoreAudioAfterVoice(token);
     }
 
-    private boolean speak(String text) {
-        if (!ttsReady || tts == null || text == null || text.trim().isEmpty()) return false;
+    private boolean speakThought(String text) {
+        if (!ttsReady || voiceBusy()) return false;
+        int token = openVoiceSession("thought", false);
+        if (token <= 0) return false;
+        if (speakWithToken(text, token)) return true;
+        restoreAudioAfterVoice(token);
+        return false;
+    }
+
+    private boolean speakWithToken(String text, int token) {
+        if (!ttsReady || tts == null || token <= 0 || token != activeVoiceToken || text == null || text.trim().isEmpty()) return false;
         try {
-            String id = "road-alert-" + System.currentTimeMillis();
-            int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id);
-            if (result == TextToSpeech.ERROR) { restoreAudioAfterVoice(); return false; }
-            // Deliberately do not duck here. UtteranceProgressListener.onStart is the
-            // proof that Android actually began speaking. This prevents silent ducking.
+            int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ep-voice-" + token);
+            if (result == TextToSpeech.ERROR) return false;
+            // No duck here. Android's onStart is the proof that audible playback actually began.
             return true;
-        } catch (Throwable e) {
-            restoreAudioAfterVoice();
-            return false;
-        }
+        } catch (Throwable ignored) { return false; }
     }
 
     private String voice(RoadHazard h, double forward) {
@@ -692,15 +759,6 @@ public final class RoadSafetyService extends Service {
         } catch (Throwable ignored) {}
     }
 
-    private void restoreAudioAfterVoice() {
-        main.removeCallbacks(restoreAudioFallback);
-        duckOwnPlayer(false);
-        if (audioManager == null) return;
-        try {
-            if (Build.VERSION.SDK_INT >= 26 && alertFocusRequest != null) audioManager.abandonAudioFocusRequest(alertFocusRequest);
-            else audioManager.abandonAudioFocus(null);
-        } catch (Throwable ignored) {}
-    }
 
     private String distanceSpeech(double m) {
         if (m < 120) return Math.max(30, (int)(Math.round(m / 10.0) * 10)) + " metros";
@@ -836,7 +894,9 @@ public final class RoadSafetyService extends Service {
 
     @Override public void onDestroy() {
         main.removeCallbacks(staleSpeedWatchdog);
-        restoreAudioAfterVoice();
+        activeVoiceToken = ++voiceSessionCounter;
+        if (voiceRestoreWatchdog != null) main.removeCallbacks(voiceRestoreWatchdog);
+        forceRestoreAudio();
         try { if (locationManager != null) locationManager.removeUpdates(listener); } catch (Throwable ignored) {}
         try { if (offlineVoice != null) offlineVoice.release(); } catch (Throwable ignored) {}
         try { if (surfaceMonitor != null) surfaceMonitor.stop(); } catch (Throwable ignored) {}
