@@ -98,6 +98,7 @@ public final class CameraActivity extends ComponentActivity {
         if(limitState!=null)limitState.setText(roadLimit>0?"LIMITE "+roadLimit:"LIMITE --");
         if(thermalState!=null)thermalState.setText(thermalStatus>=3?"MODO TÉRMICO":"SISTEMA NORMAL");
         SafetyAlertOverlay.show(CameraActivity.this,root,i);
+        if(i.getBooleanExtra("road_surface_event",false)&&autoDashcam()&&DriveSettings.protectImpactVideo(CameraActivity.this)) preserveMoment();
     }};
 
     @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);prefs=getSharedPreferences(PREFS,MODE_PRIVATE);root=new FrameLayout(this);root.setBackgroundColor(BG);setContentView(root);migrateLegacyVideosAsync();pruneOldAutoSegmentsAsync();if(isEnabled()&&hasCameraPermission())buildCameraUi();else buildGateUi();}

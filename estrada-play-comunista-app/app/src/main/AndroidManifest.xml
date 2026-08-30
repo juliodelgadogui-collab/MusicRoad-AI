@@ -72,6 +72,10 @@
             android:exported="false"
             android:screenOrientation="${appOrientation}" />
 
+        <activity android:name=".OfflineCenterActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".CollectiveRoadActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".VehicleCostActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+
         <activity
             android:name=".TripHistoryActivity"
             android:exported="false"

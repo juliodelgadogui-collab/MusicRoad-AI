@@ -86,6 +86,16 @@ final class RoadPackStore {
         return out.toString();
     }
 
+    synchronized int stateHazardCount(String uf) {
+        LinkedHashMap<String,RoadHazard> unique=new LinkedHashMap<>();
+        for(Pack p:packs) if("state".equals(p.kind)&&uf.equals(p.uf)) for(RoadHazard h:p.hazards) unique.put(h.id,h);
+        return unique.size();
+    }
+
+    synchronized long stateFetchedAt(String uf) {
+        long best=0; for(Pack p:packs) if("state".equals(p.kind)&&uf.equals(p.uf)) best=Math.max(best,p.fetchedAt); return best;
+    }
+
     // OFFLINE_RADAR_CORE_V141: prepare the three requested states independently
     // from GPS tiles/corridors so the phone can go offline immediately afterwards.
     boolean prefetchCoreStates(ApiClient api) {

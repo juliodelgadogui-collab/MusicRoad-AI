@@ -40,6 +40,7 @@ public final class RoadSafetyService extends Service {
     private static final String CHANNEL = "estradaplay_road_safety";
     private static final int NOTIFICATION_ID = 4110;
     private static final long ALERT_COOLDOWN_MS = 8L * 60L * 1000L;
+    static final String ACTION_PREFETCH_CORE = "com.estradaplay.comunista.PREFETCH_CORE";
 
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final ExecutorService limitIo = Executors.newSingleThreadExecutor();
@@ -58,6 +59,8 @@ public final class RoadSafetyService extends Service {
     private EstradaPlayOfflineVoice offlineVoice;
     private CommunistCopilot copilot;
     private TripRecorder tripRecorder;
+    private CollectiveRoadStore collectiveStore;
+    private RoadSurfaceMonitor surfaceMonitor;
     private boolean ttsReady;
     private AudioManager audioManager;
     private AudioFocusRequest alertFocusRequest;
@@ -84,6 +87,9 @@ public final class RoadSafetyService extends Service {
     private final long thoughtSessionStartedAt = System.currentTimeMillis();
     private long lastThoughtCheckAt;
     private long lastSafetyVoiceAt;
+    private long continuousDrivingStartedAt,lastMovingForRestAt;
+    private boolean restSuggested;
+    private long lastUpcomingAt; private String upcomingCache="";
 
     private final Runnable restoreAudioFallback = this::restoreAudioAfterVoice;
 
@@ -106,6 +112,9 @@ public final class RoadSafetyService extends Service {
         offlineVoice = new EstradaPlayOfflineVoice(this);
         copilot = new CommunistCopilot(this);
         tripRecorder = new TripRecorder(this);
+        collectiveStore = new CollectiveRoadStore(this);
+        surfaceMonitor = new RoadSurfaceMonitor(this, this::handleRoadImpact);
+        surfaceMonitor.start();
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
         audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
         createChannel();
@@ -159,6 +168,7 @@ public final class RoadSafetyService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (packs != null && mapRoads != null) { startLocation(); primeOfflineRadarCore(); } else initializeStoresAsync();
+        if(intent!=null&&ACTION_PREFETCH_CORE.equals(intent.getAction())) primeOfflineRadarCore();
         return START_STICKY;
     }
 
@@ -237,6 +247,8 @@ public final class RoadSafetyService extends Service {
         main.postDelayed(staleSpeedWatchdog, 4500L);
         previous = new Location(loc);
         if (tripRecorder != null) tripRecorder.onLocation(loc, speedKmh);
+        if (surfaceMonitor != null) surfaceMonitor.updateDriveState(loc, speedKmh);
+        updateRestClock(loc, speedKmh);
 
         maybeResolveRoadLimit(loc.getLatitude(), loc.getLongitude(), heading);
         evaluateRoadLimit(speedKmh);
@@ -277,6 +289,7 @@ public final class RoadSafetyService extends Service {
         if (best != null) {
             rememberAlert(best);
             if (tripRecorder != null) tripRecorder.onHazard(best.type);
+            if (collectiveStore != null && "RADAR".equals(best.type)) collectiveStore.addRadarConfirmation(best,loc);
             speakHazardVoice(best, bestForward);
             String title = best.label() + " à frente";
             String detail = distanceText(bestForward);
@@ -296,7 +309,8 @@ public final class RoadSafetyService extends Service {
                         : (fetching.get() ? "Preparando alertas e mapa offline…" : "Aguardando proteção offline desta região");
                 lastStateRefreshAt = now;
             }
-            String state = lastStateText;
+            String ahead=upcomingSummary(loc.getLatitude(),loc.getLongitude(),heading);
+            String state = ahead.isEmpty()?lastStateText:lastStateText+"\nÀ frente · "+ahead;
             if (now - lastNotificationAt > 7000L) updateNotification("Proteção na estrada ativa", state, false);
             maybeEmitRoadThought(loc, speedKmh);
             broadcast(loc, speedKmh, null, 0, state, null, 0);
@@ -747,8 +761,28 @@ public final class RoadSafetyService extends Service {
         i.putExtra("reserve_km", 250);
         i.putExtra("hazard_count", packs.hazardCount());
         i.putExtra("map_pack_count", mapRoads.packCount());
+        if(collectiveStore!=null){i.putExtra("collective_impact_count",collectiveStore.impactCount());i.putExtra("collective_queue_count",collectiveStore.queuedCount());}
+        i.putExtra("upcoming_text",upcomingCache);
         i.putExtra("status", status == null ? "" : status);
         return i;
+    }
+
+    private void handleRoadImpact(RoadSurfaceMonitor.Impact impact) {
+        if(impact==null)return;
+        if(tripRecorder!=null)tripRecorder.onRoadImpact(impact);
+        if(collectiveStore!=null){collectiveStore.recordImpact(impact);io.execute(()->{try{ensureApiSession(false);collectiveStore.flush(api);}catch(Throwable ignored){}});}
+        Intent i=baseBroadcast(impact.lat,impact.lon,impact.speedKmh,"Irregularidade detectada pela suspensão/sensor");
+        i.putExtra("road_surface_event",true);i.putExtra("road_surface_force",impact.force);sendBroadcast(i);
+    }
+
+    private void updateRestClock(Location loc,double speedKmh){
+        long now=System.currentTimeMillis();
+        if(speedKmh>=10){if(continuousDrivingStartedAt==0)continuousDrivingStartedAt=now;lastMovingForRestAt=now;if(!restSuggested&&now-continuousDrivingStartedAt>=2L*60L*60L*1000L){restSuggested=true;if(tripRecorder!=null)tripRecorder.onRestSuggested();Intent i=baseBroadcast(loc.getLatitude(),loc.getLongitude(),speedKmh,"Pausa sugerida após 2 horas em movimento");i.putExtra("rest_suggested",true);sendBroadcast(i);updateNotification("Pausa sugerida","Você está há cerca de 2 horas em movimento. Pare quando for seguro.",false);}}else if(lastMovingForRestAt>0&&now-lastMovingForRestAt>=15L*60L*1000L){continuousDrivingStartedAt=0;restSuggested=false;}
+    }
+
+    private String upcomingSummary(double lat,double lon,float heading){
+        long now=System.currentTimeMillis();if(now-lastUpcomingAt<5000L)return upcomingCache;lastUpcomingAt=now;if(!Float.isFinite(heading)){upcomingCache="";return upcomingCache;}
+        try{List<RoadHazard> list=packs.nearby(lat,lon,7000);ArrayList<String> rows=new ArrayList<>();ArrayList<Double> ds=new ArrayList<>();double rad=Math.toRadians(heading);for(RoadHazard h:list){double north=(h.lat-lat)*110540.0;double east=(h.lon-lon)*111320.0*Math.max(.25,Math.cos(Math.toRadians(lat)));double forward=east*Math.sin(rad)+north*Math.cos(rad);double lateral=Math.abs(east*Math.cos(rad)-north*Math.sin(rad));if(forward<150||forward>7000||lateral>220)continue;int at=0;while(at<ds.size()&&ds.get(at)<forward)at++;ds.add(at,forward);String d=forward>=1000?String.format(Locale.getDefault(),"%.1f km",forward/1000.0):Math.round(forward)+" m";String label=h.label()+(h.speed>0&&"RADAR".equals(h.type)?" "+h.speed:"")+" · "+d;rows.add(at,label);if(rows.size()>3){rows.remove(3);ds.remove(3);}}StringBuilder out=new StringBuilder();for(int i=0;i<rows.size();i++){if(i>0)out.append(" → ");out.append(rows.get(i));}upcomingCache=out.toString();return upcomingCache;}catch(Throwable ignored){upcomingCache="";return "";}
     }
 
     private int thermalStatus() {
@@ -805,6 +839,7 @@ public final class RoadSafetyService extends Service {
         restoreAudioAfterVoice();
         try { if (locationManager != null) locationManager.removeUpdates(listener); } catch (Throwable ignored) {}
         try { if (offlineVoice != null) offlineVoice.release(); } catch (Throwable ignored) {}
+        try { if (surfaceMonitor != null) surfaceMonitor.stop(); } catch (Throwable ignored) {}
         try { if (tripRecorder != null) tripRecorder.finish("serviço encerrado"); } catch (Throwable ignored) {}
         try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Throwable ignored) {}
         io.shutdownNow();
