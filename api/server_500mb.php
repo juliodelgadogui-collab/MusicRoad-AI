@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-// SERVER_500MB_V3: metadata-only runtime + protected control-center telemetry.
+// SERVER_500MB_V4: metadata-only runtime + protected control-center telemetry.
 function server_ensure_500mb_schema(): void
 {
     try {
@@ -107,6 +107,10 @@ function server_housekeeping(bool $force = false): void
         $cut = date('Y-m-d H:i:s', time() - $retentionDays * 86400);
         $s = db()->prepare('DELETE FROM audit_logs WHERE created_at < ?');
         $s->execute([$cut]);
+
+        try {
+            db()->exec("DELETE FROM road_collective_events WHERE created_at < DATE_SUB(NOW(), INTERVAL 180 DAY)");
+        } catch (Throwable $ignored) {}
 
         try {
             db()->exec("DELETE FROM drive_sync_history WHERE finished_at < DATE_SUB(NOW(), INTERVAL 60 DAY)");
@@ -258,7 +262,7 @@ function server_diagnostic_snapshot(): array
     }
     return [
         'status'=>$health['quota_level'] === 'critical' ? 'CRITICAL' : ($folderWarn > 0 ? 'WARN' : 'OK'),
-        'server_version'=>'500MB-v3',
+        'server_version'=>'500MB-v4',
         'php'=>PHP_VERSION,
         'sapi'=>PHP_SAPI,
         'db_driver'=>(string)db()->getAttribute(PDO::ATTR_DRIVER_NAME),

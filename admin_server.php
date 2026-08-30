@@ -74,8 +74,8 @@ $percent = (float)($health['quota_percent'] ?? 0);
 <body data-role="admin">
 <main class="admin-main">
   <div class="toolbar admin-toolbar">
-    <div><p class="eyebrow">ESTRADAPLAY · SERVIDOR 500 MB V3</p><h1>Central do Servidor</h1><p class="muted">Diagnóstico, espaço, catálogo e sincronização do Google Drive público.</p></div>
-    <div class="row"><a class="button secondary" href="admin_reports.php">Reportes da Estrada</a><a class="button secondary" href="admin.php">Painel Admin</a><a class="button secondary" href="logout.php">Sair</a></div>
+    <div><p class="eyebrow">ESTRADAPLAY · SERVIDOR 500 MB V4</p><h1>Central do Servidor</h1><p class="muted">Diagnóstico, espaço, catálogo e sincronização do Google Drive público.</p></div>
+    <div class="row"><a class="button secondary" href="admin_reports.php">Reportes da Estrada</a> <a class="button secondary" href="admin_collective.php">Inteligência Coletiva</a><a class="button secondary" href="admin.php">Painel Admin</a><a class="button secondary" href="logout.php">Sair</a></div>
   </div>
 
   <?php if ($message): ?><div class="panel success"><?= htmlspecialchars($message) ?></div><?php endif; ?>

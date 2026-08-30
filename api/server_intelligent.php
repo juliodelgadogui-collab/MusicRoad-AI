@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
 
-const ESTRADAPLAY_SERVER_INTELLIGENT_VERSION = '500MB-v3';
+const ESTRADAPLAY_SERVER_INTELLIGENT_VERSION = '500MB-v4';
 
 function intelligent_server_ensure_schema(): void
 {
