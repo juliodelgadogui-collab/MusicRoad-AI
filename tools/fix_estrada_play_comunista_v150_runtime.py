@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+from pathlib import Path
+J=Path('estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista')
+def r(p):return p.read_text(encoding='utf-8')
+def w(p,s):p.write_text(s,encoding='utf-8')
+# Preserve existing v140 driving settings across the update.
+p=J/'DriveSettings.java';s=r(p).replace('epc_drive_settings_v150','epc_drive_settings_v140');w(p,s)
+# Fix fuel cost formatting in trip history.
+p=J/'TripHistoryActivity.java';s=r(p)
+s=s.replace('if(fuel>0)c.addView(t(String.format(Locale.getDefault(),"Combustível estimado %.1f L%s",fuel,cost>0?" · R$ %.2f":"",cost),11,MUTED,false));','if(fuel>0){String ft=String.format(Locale.getDefault(),"Combustível estimado %.1f L",fuel);if(cost>0)ft+=String.format(Locale.getDefault()," · R$ %.2f",cost);c.addView(t(ft,11,MUTED,false));}')
+w(p,s)
+# Offline center parses large state packs off the main thread.
+w(J/'OfflineCenterActivity.java',r'''package com.estradaplay.comunista;
+import android.content.*;import android.graphics.*;import android.os.*;import android.view.*;import android.widget.*;import androidx.activity.ComponentActivity;import java.text.*;import java.util.*;import java.util.concurrent.*;
+public final class OfflineCenterActivity extends ComponentActivity{
+ private final int BG=Color.rgb(9,5,7),TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(174,151,146),RED=Color.rgb(190,18,38),GREEN=Color.rgb(69,212,131);private LinearLayout page;private final ExecutorService io=Executors.newSingleThreadExecutor();
+ @Override protected void onCreate(Bundle b){super.onCreate(b);load();}
+ @Override protected void onDestroy(){io.shutdownNow();super.onDestroy();}
+ private void load(){ScrollView sv=new ScrollView(this);page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setPadding(dp(18),dp(18),dp(18),dp(30));page.setBackgroundColor(BG);sv.addView(page);setContentView(sv);page.addView(t("CENTRAL OFFLINE",27,TEXT,true));page.addView(t("Lendo os pacotes estaduais…",13,MUTED,false));io.execute(()->{RoadPackStore store=new RoadPackStore(getApplicationContext());runOnUiThread(()->render(store));});}
+ private void render(RoadPackStore s){page.removeAllViews();page.addView(t("CENTRAL OFFLINE",27,TEXT,true));page.addView(t("Antes de viajar sem sinal, confira os três estados.",12,MUTED,false));for(String uf:new String[]{"RJ","MG","ES"}){int n=s.stateHazardCount(uf);long at=s.stateFetchedAt(uf);String date=at>0?new SimpleDateFormat("dd/MM HH:mm",Locale.getDefault()).format(new Date(at)):"não baixado";TextView row=t(uf+"  "+(n>0?"✓":"…")+"   "+n+" pontos\nÚltima base: "+date,16,n>0?GREEN:TEXT,true);row.setPadding(dp(12),dp(14),dp(12),dp(14));page.addView(row,new LinearLayout.LayoutParams(-1,-2));}page.addView(t("Total local: "+s.hazardCount()+" pontos · "+s.coreStatesStatus(),13,MUTED,false));Button check=new Button(this);check.setText("PREPARAR / VERIFICAR RJ + MG + ES");check.setTextColor(TEXT);check.setBackgroundColor(RED);page.addView(check,new LinearLayout.LayoutParams(-1,dp(58)));check.setOnClickListener(v->{Intent i=new Intent(this,RoadSafetyService.class).setAction(RoadSafetyService.ACTION_PREFETCH_CORE);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);Toast.makeText(this,"Verificação iniciada. Mantenha internet por alguns minutos.",Toast.LENGTH_LONG).show();});Button reload=new Button(this);reload.setText("RELER BASE LOCAL");reload.setOnClickListener(v->load());page.addView(reload,new LinearLayout.LayoutParams(-1,dp(50)));}
+ private TextView t(String v,float s,int c,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);if(b)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}
+}
+''')
+print('runtime hardened v1.5.0')
