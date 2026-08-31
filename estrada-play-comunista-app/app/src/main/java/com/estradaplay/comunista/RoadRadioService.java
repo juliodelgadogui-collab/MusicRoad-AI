@@ -22,7 +22,7 @@ public final class RoadRadioService extends Service {
     private static final String CHANNEL="epc_road_radio";private static final int NOTIF=6210;
     private final Handler main=new Handler(Looper.getMainLooper());private final ExecutorService io=Executors.newSingleThreadExecutor();private final ConcurrentHashMap<String,PeerState> peers=new ConcurrentHashMap<>();
     private ApiClient api;private OfflineRoadStore roads;private RoadIdentityResolver.Identity identity;private boolean wanted,joined,muted,ptt,safetyMuted,registered;private int participants;private long lastSignalId,lastResolveAt;private double lat=Double.NaN,lon=Double.NaN;private float heading=Float.NaN;private String status="Rádio desligado",alertsJson="[]",self="";
-    private PeerConnectionFactory factory;private AudioDeviceModule adm;private AudioSource audioSource;private org.webrtc.AudioTrack localTrack;private final ArrayList<PeerConnection.IceServer> iceServers=new ArrayList<>();
+    private PeerConnectionFactory factory;private org.webrtc.audio.AudioDeviceModule adm;private AudioSource audioSource;private org.webrtc.AudioTrack localTrack;private final ArrayList<PeerConnection.IceServer> iceServers=new ArrayList<>();
     private BroadcastReceiver roadRx;
     private final Runnable tick=new Runnable(){@Override public void run(){if(wanted)io.execute(()->{try{resolveAndSync();}catch(Throwable e){setStatus("Rádio aguardando conexão…");}});main.postDelayed(this,3000L);}};
 
