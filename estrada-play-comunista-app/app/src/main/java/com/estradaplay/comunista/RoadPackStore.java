@@ -41,6 +41,8 @@ final class RoadPackStore {
     private final Context app;
     private final File dir;
     private final ArrayList<Pack> packs = new ArrayList<>();
+    // STABILITY_V152: baseBroadcast runs frequently; never recount every hazard per GPS fix.
+    private int cachedHazardCount = -1;
 
     RoadPackStore(Context context) {
         app = context.getApplicationContext();
@@ -110,9 +112,11 @@ final class RoadPackStore {
     }
 
     synchronized int hazardCount() {
+        if (cachedHazardCount >= 0) return cachedHazardCount;
         LinkedHashMap<String, RoadHazard> unique = new LinkedHashMap<>();
         for (Pack p : packs) for (RoadHazard h : p.hazards) unique.put(h.id, h);
-        return unique.size();
+        cachedHazardCount = unique.size();
+        return cachedHazardCount;
     }
 
     synchronized boolean hasAnyCoverage(double lat, double lon) {
@@ -685,6 +689,7 @@ final class RoadPackStore {
     }
 
     private void cleanupLocked() {
+        cachedHazardCount = -1;
         long now = System.currentTimeMillis();
         ArrayList<Pack> stale = new ArrayList<>();
         for (Pack p : packs) {

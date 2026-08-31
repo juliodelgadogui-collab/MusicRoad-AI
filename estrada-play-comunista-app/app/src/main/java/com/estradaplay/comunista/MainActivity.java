@@ -1008,43 +1008,72 @@ private void refreshLibraryAndOpenChooser() {
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i);
     }
 
+    // STABILITY_V152_ASYNC_ROAD_SCREEN: state-pack JSON never opens on the UI thread.
     private void showRoad() {
         root.removeAllViews();
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
-        LinearLayout page = column(); page.setPadding(dp(18), dp(10), dp(18), dp(26)); scroll.addView(page, new ScrollView.LayoutParams(-1, -2)); root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        LinearLayout page = column(); page.setPadding(dp(18), dp(10), dp(18), dp(26));
+        scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+        root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         page.addView(topBar("Estrada"));
 
-        RoadPackStore store = new RoadPackStore(this);
         LinearLayout live = featureCard(GREEN); page.addView(live); margins(live, 0, 8, 0, 0);
         LinearLayout liveTop = row(); liveTop.setGravity(Gravity.CENTER_VERTICAL);
-        TextView liveBadge = chip(hasLocationPermission() ? "PROTEÇÃO ATIVA" : "GPS DESATIVADO", hasLocationPermission() ? GREEN : RED, hasLocationPermission() ? GREEN_SOFT : Color.rgb(63, 27, 31)); liveTop.addView(liveBadge);
-        TextView passive = overline("SEM ROTA", MUTED); liveTop.addView(passive, new LinearLayout.LayoutParams(0, -2, 1)); passive.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        TextView liveBadge = chip(hasLocationPermission() ? "PROTEÇÃO ATIVA" : "GPS DESATIVADO",
+                hasLocationPermission() ? GREEN : RED,
+                hasLocationPermission() ? GREEN_SOFT : Color.rgb(63, 27, 31));
+        liveTop.addView(liveBadge);
+        TextView passive = overline("SEM ROTA", MUTED); liveTop.addView(passive, new LinearLayout.LayoutParams(0, -2, 1));
+        passive.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         live.addView(liveTop);
-        roadLiveState = text(hasLocationPermission() ? "Monitorando sua direção" : "Ative a localização", 27, TEXT, true); live.addView(roadLiveState); margins(roadLiveState, 0, 16, 0, 4);
-        String initialDetail = store.packCount() == 0 ? "Aguardando a primeira sincronização offline…" : store.hazardCount() + " pontos de segurança disponíveis no aparelho";
-        roadLiveDetail = text(initialDetail, 13, MUTED, false); live.addView(roadLiveDetail);
+        roadLiveState = text(hasLocationPermission() ? "Monitorando sua direção" : "Ative a localização", 27, TEXT, true);
+        live.addView(roadLiveState); margins(roadLiveState, 0, 16, 0, 4);
+        roadLiveDetail = text("Carregando resumo offline sem bloquear a tela…", 13, MUTED, false);
+        live.addView(roadLiveDetail);
 
         TextView coverageLabel = overline("COBERTURA OFFLINE", MUTED); page.addView(coverageLabel); margins(coverageLabel, 0, 20, 0, 8);
         LinearLayout coverage = card(); page.addView(coverage);
-        LinearLayout coverageRow = row();
-        LinearLayout stateMetric = metric("BASE", "ESTADUAL", GREEN); coverageRow.addView(stateMetric, new LinearLayout.LayoutParams(0, dp(76), 1));
-        LinearLayout reserveMetric = metric("RESERVA", "250 KM", ACCENT); coverageRow.addView(reserveMetric, new LinearLayout.LayoutParams(0, dp(76), 1)); margins(reserveMetric, 8, 0, 0, 0);
-        LinearLayout pointsMetric = metric("ALERTAS", String.valueOf(store.hazardCount()), BLUE); coverageRow.addView(pointsMetric, new LinearLayout.LayoutParams(0, dp(76), 1)); margins(pointsMetric, 8, 0, 0, 0);
-        coverage.addView(coverageRow);
-        TextView coverageInfo = text("Enquanto houver internet, o EstradaPlay recompõe a reserva à frente. Sem sinal, usa o que já está salvo.", 11, MUTED, false); coverage.addView(coverageInfo); margins(coverageInfo, 0, 12, 0, 0);
+        TextView coverageInfo = text("RJ · MG · ES · lendo base local…", 13, TEXT, true);
+        coverage.addView(coverageInfo);
+        TextView coverageDetail = text("A proteção usa os arquivos já salvos no aparelho. A leitura detalhada acontece fora da interface.", 11, MUTED, false);
+        coverage.addView(coverageDetail); margins(coverageDetail, 0, 8, 0, 0);
 
         TextView alertsLabel = overline("O QUE O APP OBSERVA", MUTED); page.addView(alertsLabel); margins(alertsLabel, 0, 20, 0, 8);
         LinearLayout types = card(); page.addView(types);
-        LinearLayout r1 = row(); r1.addView(alertType("RADAR", "velocidade", ACCENT), new LinearLayout.LayoutParams(0, dp(72), 1)); r1.addView(alertType("SEMÁFORO", "sinalização", BLUE), new LinearLayout.LayoutParams(0, dp(72), 1)); margins(r1.getChildAt(1), 8, 0, 0, 0); types.addView(r1);
-        LinearLayout r2 = row(); r2.addView(alertType("LOMBADA", "quebra-molas", PURPLE), new LinearLayout.LayoutParams(0, dp(72), 1)); r2.addView(alertType("PEDÁGIO", "e ferrovia", GREEN), new LinearLayout.LayoutParams(0, dp(72), 1)); margins(r2.getChildAt(1), 8, 0, 0, 0); types.addView(r2); margins(r2, 0, 8, 0, 0);
+        LinearLayout r1 = row();
+        r1.addView(alertType("RADAR", "velocidade", ACCENT), new LinearLayout.LayoutParams(0, dp(72), 1));
+        r1.addView(alertType("SEMÁFORO", "sinalização", BLUE), new LinearLayout.LayoutParams(0, dp(72), 1));
+        margins(r1.getChildAt(1), 8, 0, 0, 0); types.addView(r1);
+        LinearLayout r2 = row();
+        r2.addView(alertType("LOMBADA", "quebra-molas", PURPLE), new LinearLayout.LayoutParams(0, dp(72), 1));
+        r2.addView(alertType("PEDÁGIO", "e ferrovia", GREEN), new LinearLayout.LayoutParams(0, dp(72), 1));
+        margins(r2.getChildAt(1), 8, 0, 0, 0); types.addView(r2); margins(r2, 0, 8, 0, 0);
 
-        Button action = button(hasLocationPermission() ? "GARANTIR PROTEÇÃO ATIVA" : "ATIVAR LOCALIZAÇÃO", true); page.addView(action, lp(-1, 58)); margins(action, 0, 14, 0, 0);
+        Button action = button(hasLocationPermission() ? "GARANTIR PROTEÇÃO ATIVA" : "ATIVAR LOCALIZAÇÃO", true);
+        page.addView(action, lp(-1, 58)); margins(action, 0, 14, 0, 0);
         action.setOnClickListener(v -> {
             if (!hasLocationPermission()) startActivity(new Intent(this, GateActivity.class));
             else { startRoadSafetyIfAllowed(); toast("Proteção da estrada ativa."); }
         });
 
-        TextView note = text("Não é necessário informar destino. O app usa posição, sentido e distância lateral para reduzir alertas de vias paralelas ou do sentido contrário.", 11, MUTED, false); note.setGravity(Gravity.CENTER); page.addView(note); margins(note, 10, 12, 10, 0);
+        io.execute(() -> {
+            try {
+                RoadPackStore store = new RoadPackStore(getApplicationContext());
+                final int points = store.hazardCount();
+                final int states = store.coreStatePackCount();
+                final String core = store.coreStatesStatus();
+                ui.post(() -> {
+                    if (isFinishing() || (Build.VERSION.SDK_INT >= 17 && isDestroyed())) return;
+                    coverageInfo.setText(core + " · " + points + " pontos");
+                    coverageDetail.setText(states == 3
+                            ? "Núcleo offline completo. Radares e perigos permanecem disponíveis sem internet."
+                            : "Núcleo offline " + states + "/3. Conecte-se para completar os estados restantes.");
+                    if (roadLiveDetail != null) roadLiveDetail.setText(points + " pontos de segurança disponíveis no aparelho");
+                });
+            } catch (Throwable ignored) {
+                ui.post(() -> coverageInfo.setText("Base offline temporariamente indisponível"));
+            }
+        });
     }
 
     private void showAccount() {

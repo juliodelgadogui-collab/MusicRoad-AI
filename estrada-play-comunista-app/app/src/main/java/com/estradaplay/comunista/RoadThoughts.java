@@ -21,6 +21,7 @@ final class RoadThoughts {
     private static final String KEY_INTERVAL = "interval_min";
     private static final String KEY_LAST = "last_shown_at";
     private static final String KEY_INDEX = "next_index";
+    private static final String KEY_MIGRATED_152 = "stability_152_screen_default";
 
     static final class Entry {
         final String author;
@@ -58,7 +59,15 @@ final class RoadThoughts {
     private RoadThoughts() {}
 
     static int mode(Context c) {
-        return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_MODE, MODE_SCREEN_VOICE);
+        SharedPreferences p = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        int value = p.getInt(KEY_MODE, MODE_SCREEN);
+        if (!p.getBoolean(KEY_MIGRATED_152, false)) {
+            // Stability migration: an old screen+voice default must not introduce
+            // a second Android TTS voice next to the embedded safety voice.
+            if (value == MODE_SCREEN_VOICE) value = MODE_SCREEN;
+            p.edit().putInt(KEY_MODE, value).putBoolean(KEY_MIGRATED_152, true).apply();
+        }
+        return Math.max(MODE_OFF, Math.min(MODE_SCREEN_VOICE, value));
     }
 
     static void setMode(Context c, int mode) {

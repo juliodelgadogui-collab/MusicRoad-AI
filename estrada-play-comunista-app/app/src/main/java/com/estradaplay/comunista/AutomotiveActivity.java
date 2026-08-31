@@ -167,8 +167,6 @@ public final class AutomotiveActivity extends ComponentActivity {
         super.onCreate(state);
         enterImmersive();
         library = new LibraryStore(this);
-        roadStore = new RoadPackStore(this);
-        offlineRoadStore = new OfflineRoadStore(this);
 
         if (!hasAccount() || !library.hasSetupDone()) {
             startActivity(new Intent(this, MainActivity.class));
@@ -446,16 +444,18 @@ public final class AutomotiveActivity extends ComponentActivity {
 
     private void togglePlayer() {
         if (currentTrack.isEmpty()) {
-            List<Track> tracks = library.downloadedTracks();
-            if (tracks.isEmpty()) {
-                openManager("library");
-                return;
-            }
-            Track first = tracks.get(0);
-            Intent i = new Intent(this, PlayerService.class).setAction(PlayerService.ACTION_PLAY_TRACK);
-            i.putExtra(PlayerService.EXTRA_KEY, first.key());
-            i.putExtra(PlayerService.EXTRA_FOLDER, "__ALL__");
-            startService(i);
+            // STABILITY_V152: parsing the downloaded library never happens on UI.
+            io.execute(() -> {
+                List<Track> tracks = library.downloadedTracks();
+                ui.post(() -> {
+                    if (tracks.isEmpty()) { openManager("library"); return; }
+                    Track first = tracks.get(0);
+                    Intent i = new Intent(this, PlayerService.class).setAction(PlayerService.ACTION_PLAY_TRACK);
+                    i.putExtra(PlayerService.EXTRA_KEY, first.key());
+                    i.putExtra(PlayerService.EXTRA_FOLDER, "__ALL__");
+                    try { startService(i); } catch (Throwable ignored) {}
+                });
+            });
             return;
         }
         sendPlayer(PlayerService.ACTION_TOGGLE);
@@ -481,24 +481,31 @@ public final class AutomotiveActivity extends ComponentActivity {
 
     private void refreshMapData(double lat, double lon, int reportedCount) {
         long now = System.currentTimeMillis();
-        if (now - lastMapRefreshAt < 2200L) return;
+        if (now - lastMapRefreshAt < 3000L) return;
         lastMapRefreshAt = now;
         io.execute(() -> {
             try {
-                if (loadedHazardCount != reportedCount) {
-                    roadStore = new RoadPackStore(this);
-                    loadedHazardCount = roadStore.hazardCount();
+                RoadPackStore localRoad = roadStore;
+                if (localRoad == null || loadedHazardCount != reportedCount) {
+                    localRoad = new RoadPackStore(getApplicationContext());
+                    roadStore = localRoad;
+                    loadedHazardCount = localRoad.hazardCount();
                 }
-                List<RoadHazard> nearby = roadStore.nearby(lat, lon, 6000);
-                long revision = offlineRoadStore.revision();
+                List<RoadHazard> nearby = localRoad.nearby(lat, lon, 6000);
+                OfflineRoadStore localOffline = offlineRoadStore;
+                if (localOffline == null) {
+                    localOffline = new OfflineRoadStore(getApplicationContext());
+                    offlineRoadStore = localOffline;
+                }
+                long revision = localOffline.revision();
                 String roads = null;
                 if (revision != loadedRoadRevision) {
-                    roads = offlineRoadStore.combinedGeoJson(lat, lon);
+                    roads = localOffline.combinedGeoJson(lat, lon);
                     loadedRoadRevision = revision;
                 }
                 final String finalRoads = roads;
                 ui.post(() -> {
-                    if (roadMap == null) return;
+                    if (roadMap == null || isFinishing()) return;
                     roadMap.setHazards(nearby);
                     if (finalRoads != null) roadMap.setOfflineRoadGeoJson(finalRoads);
                 });
@@ -565,8 +572,8 @@ public final class AutomotiveActivity extends ComponentActivity {
     }
 
     private String storageSummary() {
-        int songs = library.downloadedTracks().size();
-        return songs + " música(s) offline";
+        // STABILITY_V152: use the lightweight boot hint instead of parsing the full catalog.
+        return library.hasDownloadedHint() ? "Biblioteca offline pronta" : "Nenhuma música offline";
     }
 
     private void enterImmersive() {

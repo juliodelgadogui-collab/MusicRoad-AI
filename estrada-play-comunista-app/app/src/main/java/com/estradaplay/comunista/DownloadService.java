@@ -194,5 +194,12 @@ public final class DownloadService extends Service {
         if (nm != null) nm.notify(NOTIFICATION_ID, n);
     }
 
-    @Override public void onDestroy() { running = false; io.shutdownNow(); super.onDestroy(); }
+    // STABILITY_V152_TASK_REMOVED: user closed the app; cancel background downloads.
+    @Override public void onTaskRemoved(Intent rootIntent) {
+        running = false;
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
+
+    @Override public void onDestroy() { running = false; io.shutdownNow(); stopForeground(true); super.onDestroy(); }
 }

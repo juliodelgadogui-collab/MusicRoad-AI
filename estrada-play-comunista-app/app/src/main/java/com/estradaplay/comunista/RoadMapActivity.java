@@ -178,7 +178,6 @@ public final class RoadMapActivity extends ComponentActivity {
             return;
         }
 
-        offlineRoadStore = new OfflineRoadStore(this);
         destination = DestinationStore.read(this);
         root = new FrameLayout(this);
         root.setBackgroundColor(BG);
@@ -659,11 +658,11 @@ public final class RoadMapActivity extends ComponentActivity {
         io.execute(() -> {
             try {
                 if (mapStore == null || loadedHazardCount != reportedCount) {
-                    mapStore = new RoadPackStore(this);
+                    mapStore = new RoadPackStore(getApplicationContext());
                     loadedHazardCount = mapStore.hazardCount();
                 }
                 List<RoadHazard> nearby = mapStore.nearby(lat, lon, 5200);
-                if (offlineRoadStore == null) offlineRoadStore = new OfflineRoadStore(this);
+                if (offlineRoadStore == null) offlineRoadStore = new OfflineRoadStore(getApplicationContext());
                 long revision = offlineRoadStore.revision();
                 String roads = null;
                 if (revision != loadedRoadRevision) {

@@ -201,5 +201,11 @@ public final class PlayerService extends Service {
         }
     }
 
+    // STABILITY_V152_TASK_REMOVED: no music service survives a closed app task.
+    @Override public void onTaskRemoved(Intent rootIntent) {
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
+
     @Override public void onDestroy() { io.shutdownNow(); releasePlayer(); stopForeground(true); super.onDestroy(); }
 }

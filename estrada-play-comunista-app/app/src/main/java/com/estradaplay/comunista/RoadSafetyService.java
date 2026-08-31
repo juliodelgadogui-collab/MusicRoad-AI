@@ -173,7 +173,7 @@ public final class RoadSafetyService extends Service {
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (packs != null && mapRoads != null) { startLocation(); primeOfflineRadarCore(); } else initializeStoresAsync();
         if(intent!=null&&ACTION_PREFETCH_CORE.equals(intent.getAction())) primeOfflineRadarCore();
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     // OFFLINE_RADAR_CORE_V141: state radar packs are prepared before route/map extras.
@@ -340,7 +340,7 @@ public final class RoadSafetyService extends Service {
         thought.putExtra("thought_text", e.text);
         thought.putExtra("thought_paraphrase", true);
         sendBroadcast(thought);
-        if (mode == RoadThoughts.MODE_SCREEN_VOICE && ttsReady) speakThought(RoadThoughts.spoken(e));
+        if (mode == RoadThoughts.MODE_SCREEN_VOICE && VoiceSettings.mode(this) == VoiceSettings.MODE_ANDROID && ttsReady) speakThought(RoadThoughts.spoken(e));
     }
 
     private void interruptThoughtForSafety() {
@@ -890,6 +890,14 @@ public final class RoadSafetyService extends Service {
     private static double angleDiff(double a, double b) {
         double d = Math.abs(a - b) % 360.0;
         return d > 180.0 ? 360.0 - d : d;
+    }
+
+    // STABILITY_V152_TASK_REMOVED: closing the app task means closing protection.
+    @Override public void onTaskRemoved(Intent rootIntent) {
+        try { stopService(new Intent(this, PlayerService.class)); } catch (Throwable ignored) {}
+        try { stopService(new Intent(this, DownloadService.class)); } catch (Throwable ignored) {}
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override public void onDestroy() {
