@@ -165,6 +165,13 @@ public final class AutomotiveActivity extends ComponentActivity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // UNIVERSAL_ORIENTATION_V153_REDIRECT: legacy automotive shell was
+        // landscape-only. Universal always uses the responsive cockpit.
+        if ("universal".equals(BuildConfig.FIXED_LAYOUT)) {
+            startActivity(new Intent(this, RoadMapActivity.class));
+            finish();
+            return;
+        }
         enterImmersive();
         library = new LibraryStore(this);
 

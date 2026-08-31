@@ -220,7 +220,7 @@ public final class RoadMapActivity extends ComponentActivity {
         touchTargets.clear();
         routedTouchTarget = null;
 
-        if ("vertical".equals(BuildConfig.FIXED_LAYOUT)) {
+        if (usePortraitLayout()) {
             buildPortraitUi(width, height);
         } else {
             buildLandscapeUi(width, height);
@@ -827,6 +827,16 @@ public final class RoadMapActivity extends ComponentActivity {
         d.setCornerRadius(dp(radiusDp));
         if (strokeColor != 0) d.setStroke(dp(1), strokeColor);
         return d;
+    }
+
+    // UNIVERSAL_ORIENTATION_V153: fixed flavors retain their old behavior,
+    // while the Universal flavor follows the real screen shape on every rotation.
+    private boolean usePortraitLayout() {
+        String mode = BuildConfig.FIXED_LAYOUT == null ? "" : BuildConfig.FIXED_LAYOUT;
+        if ("vertical".equals(mode)) return true;
+        if ("horizontal".equals(mode)) return false;
+        int[] size = screenSize();
+        return size[1] >= size[0];
     }
 
     private int[] screenSize() {

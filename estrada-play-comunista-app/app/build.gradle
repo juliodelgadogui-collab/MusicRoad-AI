@@ -13,8 +13,8 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 35
-        versionCode 152
-        versionName '1.5.2'
+        versionCode 153
+        versionName '1.5.3'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
     }
 
@@ -22,6 +22,15 @@ android {
 
     flavorDimensions += 'orientation'
     productFlavors {
+        universal {
+            dimension 'orientation'
+            applicationIdSuffix '.universal'
+            manifestPlaceholders = [
+                appLabel: 'Estrada Play Comunista',
+                appOrientation: 'fullSensor'
+            ]
+            buildConfigField 'String', 'FIXED_LAYOUT', '"universal"'
+        }
         vertical {
             dimension 'orientation'
             applicationIdSuffix '.vertical'
