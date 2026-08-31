@@ -1,0 +1,133 @@
+name: Estrada Play Comunista 1.5.2 Stability
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'tools/patch_estrada_play_comunista_stability_v152.py'
+      - '.github/workflows/build-estrada-play-comunista-v152-stability.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Apply 1.5.2 stability patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/patch_estrada_play_comunista_stability_v152.py
+          python3 tools/patch_estrada_play_comunista_stability_v152.py
+
+      - name: Verify stability architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          G=estrada-play-comunista-app/app/build.gradle
+          J=estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista
+          M=estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q "versionName '1.5.2'" "$G"
+          grep -q 'versionCode 152' "$G"
+          test "$(grep -c 'android:stopWithTask="true"' "$M")" -ge 3
+          grep -q 'return START_NOT_STICKY;' "$J/RoadSafetyService.java"
+          ! grep -q 'return START_STICKY;' "$J/RoadSafetyService.java"
+          grep -q 'STABILITY_V152_TASK_REMOVED' "$J/RoadSafetyService.java"
+          grep -q 'STABILITY_V152_TASK_REMOVED' "$J/PlayerService.java"
+          grep -q 'STABILITY_V152_TASK_REMOVED' "$J/DownloadService.java"
+          grep -q 'stability_152_single_voice' "$J/VoiceSettings.java"
+          grep -q 'return stored == MODE_ANDROID ? MODE_ANDROID : MODE_EMBEDDED' "$J/VoiceSettings.java"
+          grep -q 'stability_152_screen_default' "$J/RoadThoughts.java"
+          grep -q 'VoiceSettings.mode(this) == VoiceSettings.MODE_ANDROID' "$J/RoadSafetyService.java"
+          grep -q 'cachedHazardCount' "$J/RoadPackStore.java"
+          grep -q 'STABILITY_V152_ASYNC_ROAD_SCREEN' "$J/MainActivity.java"
+          ! grep -q 'RoadPackStore store = new RoadPackStore(this);' "$J/MainActivity.java"
+          ! grep -q 'roadStore = new RoadPackStore(this);' "$J/AutomotiveActivity.java"
+          ! grep -q 'offlineRoadStore = new OfflineRoadStore(this);' "$J/RoadMapActivity.java"
+          grep -q 'library.hasDownloadedHint()' "$J/AutomotiveActivity.java"
+          grep -q "versionName '2.0.11'" estradaplay-app-v2/app/build.gradle
+          if grep -R -q 'android.webkit.WebView\|new WebView' "$J"; then exit 1; fi
+
+      - name: Commit generated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estrada-play-comunista-app
+          git commit -m "Generate Comunista 1.5.2 stability [skip ci]" || true
+          git push origin HEAD:agent/estrada-play-comunista
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Prepare signer
+        run: base64 -d estrada-play-comunista-app/signing/estradaplay-dev.keystore.b64 > estrada-play-comunista-app/signing/estradaplay-dev.keystore
+
+      - name: Generate and validate embedded safety voice bank
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          rm -rf /tmp/epc-voice && mkdir -p /tmp/epc-voice
+          tar -xjf "$MODEL" -C /tmp/epc-voice
+          python3 estrada-play-comunista-app/tools/generate_voice_bank.py --model-root /tmp/epc-voice --output estrada-play-comunista-app/app/src/main/res/raw --metadata-output estrada-play-comunista-app/app/src/main/assets/estradaplay_voice
+          COUNT=$(find estrada-play-comunista-app/app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)
+          test "$COUNT" -ge 77
+          for f in ep_radar_frente.wav ep_limite_radar.wav ep_reduza.wav ep_dist_0500.wav ep_speed_060.wav ep_quebra_molas_frente.wav; do test -s "estrada-play-comunista-app/app/src/main/res/raw/$f"; done
+
+      - name: Build both APKs
+        working-directory: estrada-play-comunista-app
+        run: gradle --no-daemon clean assembleVerticalDebug assembleHorizontalDebug
+
+      - name: Verify identities and signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=estrada-play-comunista-app/app/build/outputs/apk/vertical/debug/app-vertical-debug.apk
+          H=estrada-play-comunista-app/app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk
+          test -f "$V" && test -f "$H"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$V" | tee /tmp/v152.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/h152.txt
+          grep -q "package: name='com.estradaplay.comunista.vertical' versionCode='152' versionName='1.5.2'" /tmp/v152.txt
+          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='152' versionName='1.5.2'" /tmp/h152.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$V" >/tmp/v152-cert.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H" >/tmp/h152-cert.txt
+          cp "$V" Estrada-Play-Comunista-Vertical-1.5.2.apk
+          cp "$H" Estrada-Play-Comunista-Horizontal-1.5.2.apk
+          sha256sum Estrada-Play-Comunista-Vertical-1.5.2.apk Estrada-Play-Comunista-Horizontal-1.5.2.apk | tee /tmp/v152-sha.txt
+
+      - name: Publish 1.5.2 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-1.5.2-stability-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" --title "Estrada Play Comunista 1.5.2 - Estabilidade" --notes "Versão de estabilização. RoadSafetyService deixa de ser sticky e todos os foreground services encerram quando a tarefa do app é removida. Uma única voz é usada por vez, com voz embarcada como padrão; Pensamentos ficam só na tela por padrão e só usam TTS quando o usuário escolhe explicitamente TTS Android. Contagem de perigos passa a ser cacheada em vez de percorrer toda a base a cada GPS. Carregamento de RoadPackStore/OfflineRoadStore e catálogo de música é retirado da thread da interface nos pontos críticos. Mantém Inteligência Coletiva, radares offline RJ/MG/ES, dashcam, câmera opcional, HUD e Vertical/Horizontal. Sem WebView." Estrada-Play-Comunista-Vertical-1.5.2.apk Estrada-Play-Comunista-Horizontal-1.5.2.apk
+
+      - name: Temporary artifacts
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-1.5.2
+          path: |
+            Estrada-Play-Comunista-Vertical-1.5.2.apk
+            Estrada-Play-Comunista-Horizontal-1.5.2.apk
+          retention-days: 1
+          compression-level: 0
