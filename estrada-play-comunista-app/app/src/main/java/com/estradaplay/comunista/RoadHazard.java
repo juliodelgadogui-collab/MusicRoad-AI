@@ -62,6 +62,16 @@ final class RoadHazard {
         return key;
     }
 
+    // UNIVERSAL_CONFIDENCE_V160: provenance label; never invents an official status.
+    String confidenceLabel() {
+        String s = source == null ? "" : source.toUpperCase(java.util.Locale.ROOT);
+        if (s.contains("DER-") || s.contains("DNIT") || s.contains("PRF") || s.contains("OFICIAL")) return "OFICIAL";
+        if (s.contains("OPENSTREETMAP") || s.contains("OSM")) return "MAPA · A CONFIRMAR";
+        if (s.contains("USU") || s.contains("COLET") || s.contains("COMUN")) return "COMUNIDADE";
+        if (!s.isEmpty()) return "BASE LOCAL";
+        return "ORIGEM NÃO INFORMADA";
+    }
+
     String label() {
         switch (type) {
             case "SEMAFORO": return "Semáforo";

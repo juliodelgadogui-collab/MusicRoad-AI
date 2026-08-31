@@ -41,6 +41,7 @@ final class RoadMapView extends FrameLayout {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ArrayList<RoadHazard> hazards = new ArrayList<>();
+    private final ArrayList<RoadQualityStore.Point> qualityPoints = new ArrayList<>();
     private final HazardOverlay overlay;
     private final TextView fallback;
     private MapView mapView;
@@ -211,6 +212,8 @@ final class RoadMapView extends FrameLayout {
         overlay.invalidate();
     }
 
+    void setRoadQualityPoints(List<RoadQualityStore.Point> value) { qualityPoints.clear(); if(value!=null)qualityPoints.addAll(value); overlay.invalidate(); }
+
     void setHazards(List<RoadHazard> value) {
         hazards.clear();
         if (value != null) hazards.addAll(value);
@@ -258,6 +261,7 @@ final class RoadMapView extends FrameLayout {
     }
 
     private boolean online() {
+        if (DriveSettings.offlineTestMode(getContext())) return false;
         try {
             ConnectivityManager cm = (ConnectivityManager)getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
             if (cm == null) return false;
@@ -308,6 +312,7 @@ final class RoadMapView extends FrameLayout {
         @Override protected void onDraw(Canvas c) {
             super.onDraw(c);
             if (map != null && mapReady) {
+                for (RoadQualityStore.Point q : qualityPoints) { PointF sp=screen(q.lat,q.lon); if(sp==null)continue; int qc=q.score>=75?Color.rgb(72,212,134):(q.score>=50?Color.rgb(226,185,76):Color.rgb(226,55,55)); Paint qp=circlePaint(qc); c.drawCircle(sp.x,sp.y,dp(4.2f),qp); }
                 for (RoadHazard h : hazards) {
                     PointF s = screen(h.lat, h.lon);
                     if (s == null) continue;

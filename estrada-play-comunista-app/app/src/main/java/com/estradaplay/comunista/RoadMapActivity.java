@@ -25,6 +25,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.ComponentActivity;
 
@@ -68,6 +69,11 @@ public final class RoadMapActivity extends ComponentActivity {
     private TextView clockText;
     private TextView gpsText;
     private TextView destinationText;
+    // UNIVERSAL_DASH_V160
+    private TextView universalNowText, universalAheadText, universalMetaText, universalRouteText;
+    private double universalSpeed, currentLatForSave=Double.NaN, currentLonForSave=Double.NaN;
+    private int universalLimit; private String universalHazard="", universalUpcoming="", universalSource="", universalConfidence="";
+    private RoadQualityStore roadQualityStore;
 
     private RoadPackStore mapStore;
     private OfflineRoadStore offlineRoadStore;
@@ -118,6 +124,12 @@ public final class RoadMapActivity extends ComponentActivity {
             String road = intent.getStringExtra("road");
             double distance = intent.getDoubleExtra("distance_m", 0);
             int limit = intent.getIntExtra("limit_kmh", 0);
+            universalSpeed=speed; universalLimit=intent.getIntExtra("road_limit_kmh",0); currentLatForSave=lat; currentLonForSave=lon;
+            String uu=intent.getStringExtra("upcoming_text"); if(uu!=null)universalUpcoming=uu;
+            String us=intent.getStringExtra("source"); if(us!=null)universalSource=us;
+            String uc=intent.getStringExtra("hazard_confidence"); if(uc!=null)universalConfidence=uc;
+            if(hazard!=null&&!hazard.trim().isEmpty()) universalHazard=hazard.trim();
+            updateUniversalDriveWidgets(intent);
             SafetyAlertOverlay.show(RoadMapActivity.this, root, intent);
             RoadThoughtOverlay.show(RoadMapActivity.this, root, intent);
 
@@ -225,6 +237,7 @@ public final class RoadMapActivity extends ComponentActivity {
         } else {
             buildLandscapeUi(width, height);
         }
+        installUniversalDriveWidgets(width,height);
     }
 
     private void buildLandscapeUi(int width, int height) {
@@ -662,6 +675,8 @@ public final class RoadMapActivity extends ComponentActivity {
                     loadedHazardCount = mapStore.hazardCount();
                 }
                 List<RoadHazard> nearby = mapStore.nearby(lat, lon, 5200);
+                if(roadQualityStore==null) roadQualityStore=new RoadQualityStore(getApplicationContext());
+                final java.util.ArrayList<RoadQualityStore.Point> quality=roadQualityStore.around(lat,lon,6500);
                 if (offlineRoadStore == null) offlineRoadStore = new OfflineRoadStore(getApplicationContext());
                 long revision = offlineRoadStore.revision();
                 String roads = null;
@@ -673,6 +688,7 @@ public final class RoadMapActivity extends ComponentActivity {
                 ui.post(() -> {
                     if (roadMap != null) {
                         roadMap.setHazards(nearby);
+                        roadMap.setRoadQualityPoints(quality);
                         if (finalRoads != null) roadMap.setOfflineRoadGeoJson(finalRoads);
                     }
                     updateMapStatus();
@@ -704,6 +720,7 @@ public final class RoadMapActivity extends ComponentActivity {
                 lastRouteLon = lon;
                 ui.post(() -> {
                     if (roadMap != null) roadMap.setRouteGeoJson(route.geoJson);
+                    if(universalRouteText!=null) universalRouteText.setText("ROTA · "+route.summary());
                     if (destinationText != null) {
                         String detail = route.summary();
                         if (!route.nextInstruction.isEmpty()) detail += "\n" + route.nextInstruction;
@@ -719,6 +736,20 @@ public final class RoadMapActivity extends ComponentActivity {
             }
         });
     }
+
+    private void installUniversalDriveWidgets(int width,int height){
+        if(!"universal".equals(BuildConfig.FIXED_LAYOUT)||root==null)return;
+        boolean portrait=height>=width; LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(10),dp(8),dp(10),dp(8));box.setBackground(panel(5,Color.argb(238,18,8,11),Color.rgb(118,38,48)));if(Build.VERSION.SDK_INT>=21)box.setElevation(dp(88));
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);universalNowText=label("VIAGEM AGORA · aguardando GPS",12,TEXT,true);row.addView(universalNowText,new LinearLayout.LayoutParams(0,dp(40),1));Button save=action("SALVAR",true);Button plan=action("PLANO",false);row.addView(save,new LinearLayout.LayoutParams(dp(76),dp(40)));LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(dp(76),dp(40));pp.setMargins(dp(6),0,0,0);row.addView(plan,pp);box.addView(row);universalAheadText=label(universalUpcoming.isEmpty()?"À FRENTE · lendo base local":"À FRENTE · "+universalUpcoming,10,Color.rgb(226,185,76),true);universalAheadText.setMaxLines(1);box.addView(universalAheadText);universalMetaText=label("BASE LOCAL · qualidade da via preparando",9,MUTED,false);box.addView(universalMetaText);universalRouteText=label(activeRoute==null?(DriveSettings.onlyRoadMode(this)?"MODO SÓ ESTRADA":"SEM ROTA"):"ROTA · "+activeRoute.summary(),9,MUTED,true);box.addView(universalRouteText);
+        save.setOnClickListener(v->saveCurrentEvent());plan.setOnClickListener(v->startActivity(new Intent(this,TripPlannerActivity.class)));
+        int bw=portrait?Math.max(dp(250),width-dp(34)):Math.min(dp(620),Math.max(dp(390),(int)(width*.56f)));FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(bw,-2,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);lp.setMargins(0,0,0,portrait?dp(48):dp(12));root.addView(box,lp);box.bringToFront();updateUniversalDriveWidgets(null);
+    }
+
+    private void updateUniversalDriveWidgets(Intent state){
+        if(universalNowText==null)return;int delta=universalLimit>0?(int)Math.round(universalSpeed-universalLimit):0;String now="VIAGEM AGORA · "+Math.round(Math.max(0,universalSpeed))+" km/h"+(universalLimit>0?" · LIM "+universalLimit:"");if(delta>=2)now+=" · REDUZA "+delta;universalNowText.setText(now);if(universalAheadText!=null)universalAheadText.setText(universalUpcoming.isEmpty()?"À FRENTE · nenhum perigo próximo":"À FRENTE · "+universalUpcoming);VehicleProfileStore.Profile v=VehicleProfileStore.active(this);int q=roadQualityStore==null||!Double.isFinite(currentLatForSave)?100:roadQualityStore.scoreNear(currentLatForSave,currentLonForSave);String meta=(universalConfidence.isEmpty()?"BASE LOCAL":universalConfidence)+(universalSource.isEmpty()?"":" · "+universalSource)+" · VIA "+q+"/100 · AUTONOMIA ~"+Math.round(v.autonomyKm())+" km";if(state!=null&&state.getBooleanExtra("rain_mode",false))meta+=" · CHUVA";if(state!=null&&state.getBooleanExtra("offline_test_mode",false))meta+=" · TESTE OFFLINE";if(universalMetaText!=null)universalMetaText.setText(meta);
+    }
+
+    private void saveCurrentEvent(){IncidentStore.save(this,currentLatForSave,currentLonForSave,universalSpeed,universalHazard,universalUpcoming,"Salvo pelo painel");try{JSONObject a=TripRecorder.activeSnapshot(this);if(a.length()>0){/* metadata is already preserved in IncidentStore */}}catch(Throwable ignored){}Toast.makeText(this,"Acontecimento salvo · GPS + velocidade + contexto",Toast.LENGTH_SHORT).show();}
 
     private String shortDestination(String value) {
         String v = value == null ? "Destino" : value.trim();

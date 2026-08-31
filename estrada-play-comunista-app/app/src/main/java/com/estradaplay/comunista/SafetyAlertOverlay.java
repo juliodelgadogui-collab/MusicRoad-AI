@@ -67,7 +67,9 @@ final class SafetyAlertOverlay {
         TextView info=text(context,detail.toString(),13,muted,false);info.setGravity(Gravity.CENTER);LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(-1,-2);ip.setMargins(0,dp(context,12),0,0);card.addView(info,ip);
 
         String source=safe(intent.getStringExtra("source"));if(!source.isEmpty()){
-            TextView src=text(context,"FONTE · "+source.toUpperCase(Locale.ROOT),9,muted,true);src.setGravity(Gravity.CENTER);card.addView(src);
+            String confidence=safe(intent.getStringExtra("hazard_confidence"));
+            String value="FONTE · "+source.toUpperCase(Locale.ROOT)+(confidence.isEmpty()?"":" · "+confidence);
+            TextView src=text(context,value,9,muted,true);src.setGravity(Gravity.CENTER);card.addView(src);
         }
         String next=safe(intent.getStringExtra("next_hazard_label"));double nd=intent.getDoubleExtra("next_distance_m",0);
         if(!next.isEmpty()&&nd>0){TextView n=text(context,"DEPOIS · "+next.toUpperCase(Locale.ROOT)+" · "+distanceText(nd),10,ink,true);n.setGravity(Gravity.CENTER);n.setBackground(round(Color.rgb(42,18,22),8,Color.rgb(82,39,45),1));n.setPadding(dp(context,10),dp(context,7),dp(context,10),dp(context,7));LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,-2);np.setMargins(0,dp(context,10),0,0);card.addView(n,np);}

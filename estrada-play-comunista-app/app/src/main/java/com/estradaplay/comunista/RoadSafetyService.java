@@ -61,6 +61,8 @@ public final class RoadSafetyService extends Service {
     private TripRecorder tripRecorder;
     private CollectiveRoadStore collectiveStore;
     private RoadSurfaceMonitor surfaceMonitor;
+    private RoadQualityStore roadQualityStore;
+    private long lastWeatherCheckAt;
     private boolean ttsReady;
     private AudioManager audioManager;
     private AudioFocusRequest alertFocusRequest;
@@ -118,6 +120,7 @@ public final class RoadSafetyService extends Service {
         tripRecorder = new TripRecorder(this);
         collectiveStore = new CollectiveRoadStore(this);
         surfaceMonitor = new RoadSurfaceMonitor(this, this::handleRoadImpact);
+        roadQualityStore = new RoadQualityStore(this);
         surfaceMonitor.start();
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
         audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
@@ -253,6 +256,9 @@ public final class RoadSafetyService extends Service {
         if (tripRecorder != null) tripRecorder.onLocation(loc, speedKmh);
         if (surfaceMonitor != null) surfaceMonitor.updateDriveState(loc, speedKmh);
         updateRestClock(loc, speedKmh);
+        if (DriveSettings.autoRain(this) && !DriveSettings.offlineTestMode(this) && nowWall-lastWeatherCheckAt>=30L*60L*1000L) {
+            lastWeatherCheckAt=nowWall; final double wa=loc.getLatitude(), wo=loc.getLongitude(); io.execute(() -> RoadWeatherMonitor.refresh(this,wa,wo));
+        }
 
         maybeResolveRoadLimit(loc.getLatitude(), loc.getLongitude(), heading);
         evaluateRoadLimit(speedKmh);
@@ -392,6 +398,7 @@ public final class RoadSafetyService extends Service {
         lastCoverageCheckAt = now;
         boolean alertNeeds = packs.needsPreparation(lat, lon, heading);
         boolean mapNeeds = mapRoads.needsPreparation(lat, lon, heading);
+        if (DriveSettings.offlineTestMode(this)) return;
         if ((!alertNeeds && !mapNeeds) || fetching.get()) return;
         if (!fetching.compareAndSet(false, true)) return;
         updateNotification("Preparando viagem offline", "Alertas + mapa livre para até 250 km à frente", false);
@@ -471,6 +478,7 @@ public final class RoadSafetyService extends Service {
                 minSpeed = 10;
                 break;
         }
+        if (DriveSettings.rainNow(this)) maxDistance *= 1.18;
         if (speedKmh < minSpeed || forward > maxDistance || lateral > maxLateral || distance > maxDistance * 1.18) return Match.no();
         if (Double.isFinite(h.heading) && angleDiff(heading, h.heading) > 75.0) return Match.no();
         return new Match(true, forward, lateral, distance);
@@ -780,6 +788,7 @@ public final class RoadSafetyService extends Service {
             i.putExtra("hazard_label", h.label());
             i.putExtra("road", h.road);
             i.putExtra("source", h.source);
+            i.putExtra("hazard_confidence", h.confidenceLabel());
             i.putExtra("distance_m", distance);
             i.putExtra("limit_kmh", h.speed);
             i.putExtra("radar_limit_kmh", h.speed);
@@ -816,6 +825,9 @@ public final class RoadSafetyService extends Service {
         i.putExtra("core_state_count", packs.coreStatePackCount());
         i.putExtra("core_states_status", packs.coreStatesStatus());
         i.putExtra("thermal_status", thermalStatus());
+        i.putExtra("rain_mode", DriveSettings.rainNow(this));
+        i.putExtra("night_mode", DriveSettings.nightNow(this));
+        i.putExtra("offline_test_mode", DriveSettings.offlineTestMode(this));
         i.putExtra("reserve_km", 250);
         i.putExtra("hazard_count", packs.hazardCount());
         i.putExtra("map_pack_count", mapRoads.packCount());
@@ -828,6 +840,7 @@ public final class RoadSafetyService extends Service {
     private void handleRoadImpact(RoadSurfaceMonitor.Impact impact) {
         if(impact==null)return;
         if(tripRecorder!=null)tripRecorder.onRoadImpact(impact);
+        if(roadQualityStore!=null)roadQualityStore.record(impact);
         if(collectiveStore!=null){collectiveStore.recordImpact(impact);io.execute(()->{try{ensureApiSession(false);collectiveStore.flush(api);}catch(Throwable ignored){}});}
         Intent i=baseBroadcast(impact.lat,impact.lon,impact.speedKmh,"Irregularidade detectada pela suspensão/sensor");
         i.putExtra("road_surface_event",true);i.putExtra("road_surface_force",impact.force);sendBroadcast(i);
