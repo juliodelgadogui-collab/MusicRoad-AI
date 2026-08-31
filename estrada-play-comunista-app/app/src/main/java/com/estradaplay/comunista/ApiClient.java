@@ -25,9 +25,8 @@ final class ApiClient {
     ApiClient(Context context) {
         app = context.getApplicationContext();
         prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        String b = BuildConfig.SERVER_URL == null ? "" : BuildConfig.SERVER_URL.trim();
-        if (!b.endsWith("/")) b += "/";
-        base = b;
+        String fallback = BuildConfig.SERVER_URL == null ? "" : BuildConfig.SERVER_URL.trim();
+        base = ServerEndpointStore.base(app, fallback);
     }
 
     String base() { return base; }

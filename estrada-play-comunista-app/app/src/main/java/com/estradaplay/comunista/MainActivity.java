@@ -327,6 +327,9 @@ ui.post(() -> { showHome(); syncCatalogInBackground(); });
         Button toggle = textButton(register ? "Já tenho uma conta" : "Ainda não tenho conta");
         form.addView(toggle, lp(-1, 48)); margins(toggle, 0, 6, 0, 0);
         toggle.setOnClickListener(v -> showAuth(!register, null));
+        Button server = textButton("TROCAR SERVIDOR");
+        form.addView(server, lp(-1, 44));
+        server.setOnClickListener(v -> startActivity(new Intent(this, ServerSettingsActivity.class)));
 
         submit.setOnClickListener(v -> {
             String user = login.getText().toString().trim();

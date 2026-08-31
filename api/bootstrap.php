@@ -1,7 +1,21 @@
 <?php
 declare(strict_types=1);
 
-$config = require __DIR__ . '/../config/config.php';
+// ESTRADAPLAY_SETUP_REQUIRED_V6: clean-host packages contain no credentials.
+$configFile = __DIR__ . '/../config/config.php';
+if (!is_file($configFile)) {
+    if (PHP_SAPI !== 'cli') {
+        $accept = strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? ''));
+        $uri = (string)($_SERVER['REQUEST_URI'] ?? '');
+        if (str_contains($accept, 'application/json') || str_contains($uri, '/api/')) {
+            http_response_code(503); header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok'=>false,'setup_required'=>true,'error'=>'Servidor ainda não instalado.'], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); exit;
+        }
+        header('Location: install.php'); exit;
+    }
+    throw new RuntimeException('Servidor ainda não instalado: execute install.php');
+}
+$config = require $configFile;
 
 $logsDir = __DIR__ . '/../logs';
 if (!is_dir($logsDir)) {

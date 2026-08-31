@@ -85,6 +85,7 @@
         <activity android:name=".TripReplayActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadFavoritesActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadRadioActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".ServerSettingsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
 
         <activity
             android:name=".TripHistoryActivity"
