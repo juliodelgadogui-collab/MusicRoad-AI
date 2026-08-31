@@ -41,6 +41,7 @@ public final class RoadSafetyService extends Service {
     private static final int NOTIFICATION_ID = 4110;
     private static final long ALERT_COOLDOWN_MS = 8L * 60L * 1000L;
     static final String ACTION_PREFETCH_CORE = "com.estradaplay.comunista.PREFETCH_CORE";
+    static final String ACTION_SAFETY_AUDIO = "com.estradaplay.comunista.SAFETY_AUDIO";
 
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final ExecutorService limitIo = Executors.newSingleThreadExecutor();
@@ -629,6 +630,7 @@ public final class RoadSafetyService extends Service {
 
     private void beginVoiceDucking(int token) {
         if (token <= 0 || token != activeVoiceToken) return;
+        sendSafetyAudioState(true);
         duckOwnPlayer(true);
         voiceBusyUntil = System.currentTimeMillis() + 15_000L;
         if (voiceRestoreWatchdog != null) main.removeCallbacks(voiceRestoreWatchdog);
@@ -651,6 +653,7 @@ public final class RoadSafetyService extends Service {
     }
 
     private void forceRestoreAudio() {
+        sendSafetyAudioState(false);
         duckOwnPlayer(false);
         if (audioManager == null) return;
         try {
@@ -742,6 +745,14 @@ public final class RoadSafetyService extends Service {
         try {
             Intent i = new Intent(this, PlayerService.class).setAction(duck ? PlayerService.ACTION_DUCK : PlayerService.ACTION_UNDUCK);
             startService(i);
+        } catch (Throwable ignored) {}
+    }
+
+    private void sendSafetyAudioState(boolean active) {
+        try {
+            Intent i = new Intent(ACTION_SAFETY_AUDIO).setPackage(getPackageName());
+            i.putExtra("active", active);
+            sendBroadcast(i);
         } catch (Throwable ignored) {}
     }
 

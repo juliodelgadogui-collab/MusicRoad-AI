@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
 
-const ESTRADAPLAY_SERVER_INTELLIGENT_VERSION = '500MB-v4';
+const ESTRADAPLAY_SERVER_INTELLIGENT_VERSION = '500MB-v5';
 
 function intelligent_server_ensure_schema(): void
 {
@@ -170,6 +170,9 @@ function intelligent_server_capabilities(): array
         'quota_guard'=>true,
         'log_rotation'=>true,
         'offline_state_packs'=>['RJ','MG','ES'],
+        'road_radio'=>true,
+        'radio_audio_stored'=>false,
+        'radio_room_max'=>8,
     ];
 }
 

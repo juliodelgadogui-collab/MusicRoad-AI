@@ -13,6 +13,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <application
         android:allowBackup="false"
@@ -83,6 +84,7 @@
         <activity android:name=".TripPlannerActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".TripReplayActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadFavoritesActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".RoadRadioActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
 
         <activity
             android:name=".TripHistoryActivity"
@@ -139,5 +141,11 @@
             android:exported="false"
             android:stopWithTask="true"
             android:foregroundServiceType="location" />
+
+        <service
+            android:name=".RoadRadioService"
+            android:exported="false"
+            android:stopWithTask="true"
+            android:foregroundServiceType="microphone" />
     </application>
 </manifest>
