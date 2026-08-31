@@ -1,0 +1,134 @@
+name: Estrada Play Comunista 1.6.0 Universal Total
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'tools/patch_estrada_play_comunista_universal_v160.py'
+      - 'tools/fix_estrada_play_comunista_universal_v160_migration.py'
+      - '.github/workflows/build-estrada-play-comunista-v160-universal.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Apply 1.6.0 Universal Total
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/patch_estrada_play_comunista_universal_v160.py tools/fix_estrada_play_comunista_universal_v160_migration.py
+          python3 tools/patch_estrada_play_comunista_universal_v160.py
+          python3 tools/fix_estrada_play_comunista_universal_v160_migration.py
+
+      - name: Verify 1.6.0 architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          G=estrada-play-comunista-app/app/build.gradle
+          J=estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista
+          M=estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q "versionName '1.6.0'" "$G"
+          grep -q 'versionCode 160' "$G"
+          grep -q "applicationIdSuffix '.universal'" "$G"
+          grep -q "appOrientation: 'fullSensor'" "$G"
+          grep -q 'UNIVERSAL_DASH_V160' "$J/RoadMapActivity.java"
+          grep -q 'installUniversalDriveWidgets' "$J/RoadMapActivity.java"
+          grep -q 'hazard_confidence' "$J/RoadSafetyService.java"
+          grep -q 'confidenceLabel' "$J/RoadHazard.java"
+          grep -q 'offlineTestMode' "$J/DriveSettings.java"
+          grep -q 'epc_drive_settings_v140' "$J/DriveSettings.java"
+          grep -q 'class RoadQualityStore' "$J/RoadQualityStore.java"
+          grep -q 'setRoadQualityPoints' "$J/RoadMapView.java"
+          grep -q 'class TripPlannerActivity' "$J/TripPlannerActivity.java"
+          grep -q 'class TripReplayActivity' "$J/TripReplayActivity.java"
+          grep -q 'class VehicleProfileStore' "$J/VehicleProfileStore.java"
+          grep -q 'class FuelingStore' "$J/FuelingStore.java"
+          grep -q 'class FavoriteRoadStore' "$J/FavoriteRoadStore.java"
+          grep -q 'class RoadFavoritesActivity' "$J/RoadFavoritesActivity.java"
+          grep -q 'class IncidentStore' "$J/IncidentStore.java"
+          grep -q 'CENTRAL OFFLINE 2.0' "$J/OfflineCenterActivity.java"
+          grep -q 'COPILOTO · COMANDO CURTO' "$J/VoiceCommandActivity.java"
+          grep -q 'TripPlannerActivity' "$M"
+          grep -q 'TripReplayActivity' "$M"
+          grep -q 'RoadFavoritesActivity' "$M"
+          grep -q 'return START_NOT_STICKY;' "$J/RoadSafetyService.java"
+          test "$(grep -c 'android:stopWithTask="true"' "$M")" -ge 3
+          if grep -R -q 'android.webkit.WebView\|new WebView' "$J"; then exit 1; fi
+
+      - name: Commit generated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estrada-play-comunista-app
+          git commit -m "Generate Comunista Universal 1.6.0 total [skip ci]" || true
+          git push origin HEAD:agent/estrada-play-comunista
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Prepare signer
+        run: base64 -d estrada-play-comunista-app/signing/estradaplay-dev.keystore.b64 > estrada-play-comunista-app/signing/estradaplay-dev.keystore
+
+      - name: Generate and validate embedded safety voice bank
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          rm -rf /tmp/epc-voice && mkdir -p /tmp/epc-voice
+          tar -xjf "$MODEL" -C /tmp/epc-voice
+          python3 estrada-play-comunista-app/tools/generate_voice_bank.py --model-root /tmp/epc-voice --output estrada-play-comunista-app/app/src/main/res/raw --metadata-output estrada-play-comunista-app/app/src/main/assets/estradaplay_voice
+          COUNT=$(find estrada-play-comunista-app/app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)
+          test "$COUNT" -ge 77
+
+      - name: Build Universal APK
+        working-directory: estrada-play-comunista-app
+        run: gradle --no-daemon clean assembleUniversalDebug
+
+      - name: Verify Universal identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          U=estrada-play-comunista-app/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+          test -f "$U"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/v160.txt
+          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='160' versionName='1.6.0'" /tmp/v160.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U" >/tmp/v160-cert.txt
+          cp "$U" Estrada-Play-Comunista-Universal-1.6.0.apk
+          sha256sum Estrada-Play-Comunista-Universal-1.6.0.apk | tee /tmp/v160-sha.txt
+
+      - name: Publish 1.6.0 Universal release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-1.6.0-universal-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" --title "Estrada Play Comunista 1.6.0 - Universal Total" --notes "Evolução exclusiva do APK Universal. Adiciona painel Viagem Agora com velocidade/limite/excesso/autonomia, faixa permanente de perigos à frente, procedência e confiança do radar, Central Offline 2.0 com teste offline interno, qualidade local da via no mapa, planejador de viagem, perfis de veículo, abastecimento/consumo real, favoritos rodoviários, salvar acontecimento, replay de viagens, copiloto ampliado, chuva manual/automática opcional e Modo Só Estrada. Mantém a estabilização: RoadSafetyService não sticky, serviços encerram com a tarefa, voz embarcada de segurança única por padrão, I/O pesado fora da UI, radares offline RJ/MG/ES, câmera/dashcam e sem WebView." Estrada-Play-Comunista-Universal-1.6.0.apk
+
+      - name: Temporary artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-Universal-1.6.0
+          path: Estrada-Play-Comunista-Universal-1.6.0.apk
+          retention-days: 1
+          compression-level: 0
