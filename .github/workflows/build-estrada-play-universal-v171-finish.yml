@@ -1,0 +1,94 @@
+name: Estrada Play Universal 1.7.1 Finishing Pass
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - '.github/workflows/build-estrada-play-universal-v171-finish.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Verify 1.7.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          G=estrada-play-comunista-app/app/build.gradle
+          J=estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista
+          grep -q "versionName '1.7.1'" "$G"
+          grep -q 'versionCode 171' "$G"
+          grep -q 'Veículo e combustível' "$J/VehicleCostActivity.java"
+          grep -q 'O QUE VOCÊ ENCONTROU' "$J/RoadReportActivity.java"
+          grep -q 'HUD DE PARA-BRISA' "$J/HudActivity.java"
+          grep -q 'projection.setScaleX' "$J/HudActivity.java"
+          ! grep -q 'root.setScaleX' "$J/HudActivity.java"
+          if grep -R -q 'android.webkit.WebView\|new WebView' "$J"; then exit 1; fi
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Prepare signer
+        run: base64 -d estrada-play-comunista-app/signing/estradaplay-dev.keystore.b64 > estrada-play-comunista-app/signing/estradaplay-dev.keystore
+
+      - name: Generate embedded safety voice bank
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          rm -rf /tmp/epc-voice && mkdir -p /tmp/epc-voice
+          tar -xjf "$MODEL" -C /tmp/epc-voice
+          python3 estrada-play-comunista-app/tools/generate_voice_bank.py --model-root /tmp/epc-voice --output estrada-play-comunista-app/app/src/main/res/raw --metadata-output estrada-play-comunista-app/app/src/main/assets/estradaplay_voice
+          test "$(find estrada-play-comunista-app/app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
+
+      - name: Build Universal APK
+        working-directory: estrada-play-comunista-app
+        run: gradle --no-daemon clean assembleUniversalDebug
+
+      - name: Verify APK identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          A=estrada-play-comunista-app/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+          test -f "$A"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$A" | tee /tmp/v171.txt
+          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='171' versionName='1.7.1'" /tmp/v171.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$A" >/tmp/v171-cert.txt
+          cp "$A" Estrada-Play-Comunista-Universal-1.7.1-Acabamento.apk
+          sha256sum Estrada-Play-Comunista-Universal-1.7.1-Acabamento.apk | tee /tmp/v171-sha.txt
+
+      - name: Publish Universal 1.7.1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-1.7.1-finish-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" --title "Estrada Play Comunista Universal 1.7.1 - Acabamento" --notes "Passo de acabamento visual da Universal. Redesenha Veículo/Abastecimento e Reportar Ponto sem controles Android crus; HUD passa a separar controles da área de projeção e espelha somente o conteúdo destinado ao para-brisa. Mantém player dedicado, Central de Bordo, servidor portátil, rádio PTT, proteção offline e voz. Sem WebView e sem imagens geradas." Estrada-Play-Comunista-Universal-1.7.1-Acabamento.apk
+
+      - name: Temporary artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Universal-1.7.1-Acabamento
+          path: Estrada-Play-Comunista-Universal-1.7.1-Acabamento.apk
+          retention-days: 1
+          compression-level: 0
