@@ -322,7 +322,7 @@ public final class RoadMapActivity extends ComponentActivity {
         controls.setBackground(panel(4, Color.argb(238, 12, 7, 9), BORDER));
         Button recenter = action("CENTRO", false);
         Button destinationButton = action(destination == null ? "ROTA" : "MUDAR", false);
-        Button music = action("SOM", true);
+        Button music = action("MÚSICA", true);
         Button centralButton = action("CENTRAL", false);
         controls.addView(recenter, new LinearLayout.LayoutParams(-1, dp(48)));
         LinearLayout.LayoutParams dpp = new LinearLayout.LayoutParams(-1, dp(48)); dpp.setMargins(0, dp(6), 0, 0); controls.addView(destinationButton, dpp);
@@ -331,7 +331,7 @@ public final class RoadMapActivity extends ComponentActivity {
         recenter.setOnClickListener(v -> { if (roadMap != null) roadMap.recenter(); });
         destinationButton.setOnClickListener(v -> startActivity(new Intent(this, DestinationActivity.class)));
         music.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
-        centralButton.setOnClickListener(v -> openMain("home"));
+        centralButton.setOnClickListener(v -> startActivity(new Intent(this, DriveToolsActivity.class)));
         FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(dp(94), -2, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         cp.setMargins(0, 0, outer + dp(9), 0); root.addView(controls, cp);
         if (Build.VERSION.SDK_INT >= 21) controls.setElevation(dp(70));
@@ -365,42 +365,29 @@ public final class RoadMapActivity extends ComponentActivity {
         rail.setGravity(Gravity.CENTER_HORIZONTAL);
         int pad = clamp(Math.round(height * 0.018f), dp(7), dp(14));
         rail.setPadding(pad, pad, pad, pad);
-        rail.setBackground(panel(24, SURFACE, BORDER));
+        rail.setBackground(panel(22, SURFACE, BORDER));
 
-        TextView logo = label("EC", compact ? 18 : 21, TEXT, true);
-        logo.setGravity(Gravity.CENTER);
-        logo.setBackground(panel(18, ACCENT, 0));
-        int logoSize = clamp(Math.round(height * 0.105f), dp(48), dp(68));
-        rail.addView(logo, new LinearLayout.LayoutParams(-1, logoSize));
+        TextView brand = label("EPC", compact ? 17 : 21, Color.WHITE, true);
+        brand.setGravity(Gravity.CENTER);
+        brand.setBackground(panel(16, ACCENT, 0));
+        rail.addView(brand, new LinearLayout.LayoutParams(-1, clamp(Math.round(height * 0.105f), dp(52), dp(68))));
+        TextView drive = label("DRIVE", 8, GREEN, true); drive.setGravity(Gravity.CENTER); drive.setLetterSpacing(0.12f);
+        rail.addView(drive, new LinearLayout.LayoutParams(-1, dp(30)));
 
-        TextView mode = label("DRIVE", 8, GREEN, true);
-        mode.setGravity(Gravity.CENTER);
-        mode.setLetterSpacing(0.15f);
-        LinearLayout.LayoutParams modeP = new LinearLayout.LayoutParams(-1, -2);
-        modeP.setMargins(0, dp(8), 0, dp(10));
-        rail.addView(mode, modeP);
-
-        int buttonH = clamp(Math.round(height * (compact ? 0.135f : 0.128f)), dp(50), dp(76));
-        rail.addView(nav("MAPA", true, buttonH));
-        LinearLayout.LayoutParams musicP = new LinearLayout.LayoutParams(-1, buttonH);
-        musicP.setMargins(0, dp(8), 0, 0);
-        Button music = nav("MÚSICA", false, buttonH);
-        rail.addView(music, musicP);
+        Button estrada = nav("ESTRADA", true, height);
+        Button music = nav("MÚSICA", false, height);
+        Button radio = nav("RÁDIO", false, height);
+        Button trip = nav("VIAGEM", false, height);
+        Button central = nav("CENTRAL", false, height);
+        for (Button b : new Button[]{estrada,music,radio,trip,central}) {
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, 0, 1f); p.setMargins(0, dp(3), 0, dp(3)); rail.addView(b, p);
+        }
+        estrada.setOnClickListener(v -> { if (roadMap != null) roadMap.recenter(); });
         music.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
-
-        LinearLayout.LayoutParams homeP = new LinearLayout.LayoutParams(-1, buttonH);
-        homeP.setMargins(0, dp(8), 0, 0);
-        Button home = nav("INÍCIO", false, buttonH);
-        rail.addView(home, homeP);
-        home.setOnClickListener(v -> openMain("home"));
-
-        View spacer = new View(this);
-        rail.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1f));
-
-        TextView online = label("●  ONLINE", 8, GREEN, true);
-        online.setGravity(Gravity.CENTER);
-        online.setPadding(dp(4), dp(8), dp(4), dp(8));
-        rail.addView(online, new LinearLayout.LayoutParams(-1, -2));
+        radio.setOnClickListener(v -> startActivity(new Intent(this, RoadRadioActivity.class)));
+        trip.setOnClickListener(v -> startActivity(new Intent(this, TripPlannerActivity.class)));
+        central.setOnClickListener(v -> startActivity(new Intent(this, DriveToolsActivity.class)));
+        TextView version = label("v" + BuildConfig.VERSION_NAME, 8, MUTED, true); version.setGravity(Gravity.CENTER); rail.addView(version, new LinearLayout.LayoutParams(-1, dp(28)));
         return rail;
     }
 

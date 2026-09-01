@@ -55,7 +55,7 @@ public final class DestinationActivity extends ComponentActivity {
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(dp(22), dp(26), dp(22), dp(28));
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
-        setContentView(scroll);
+        setContentView(UnifiedAppShell.wrap(this,"trip",scroll));
 
         TextView over = label("ESTRADA PLAY COMUNISTA", 11, RED, true);
         over.setLetterSpacing(0.12f);

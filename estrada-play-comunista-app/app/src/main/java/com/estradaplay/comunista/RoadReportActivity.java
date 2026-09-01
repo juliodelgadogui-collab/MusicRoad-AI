@@ -39,7 +39,7 @@ public final class RoadReportActivity extends ComponentActivity {
 
     private void build(){
         ScrollView sv=new ScrollView(this);sv.setFillViewport(true);sv.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        LinearLayout page=col();page.setPadding(dp(18),dp(14),dp(18),dp(26));page.setBackgroundColor(BG);sv.addView(page,new ScrollView.LayoutParams(-1,-2));setContentView(sv);
+        LinearLayout page=col();page.setPadding(dp(18),dp(14),dp(18),dp(26));page.setBackgroundColor(BG);sv.addView(page,new ScrollView.LayoutParams(-1,-2));setContentView(UnifiedAppShell.wrap(this,"central",sv));
 
         LinearLayout head=row();head.setGravity(Gravity.CENTER_VERTICAL);Button back=button("‹ CENTRAL",false);head.addView(back,new LinearLayout.LayoutParams(dp(100),dp(46)));back.setOnClickListener(v->finish());
         LinearLayout titles=col();titles.addView(over("CONTRIBUIÇÃO DA ESTRADA",RED));titles.addView(text("Reportar ponto",27,TEXT,true));head.addView(titles,new LinearLayout.LayoutParams(0,-2,1));page.addView(head);

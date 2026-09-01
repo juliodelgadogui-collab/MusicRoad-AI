@@ -18,7 +18,7 @@ public final class ServerSettingsActivity extends ComponentActivity {
     private EditText url; private TextView state; private Button save;
     @Override protected void onCreate(Bundle b){super.onCreate(b);build();}
     private void build(){
-        ScrollView sv=new ScrollView(this);LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setPadding(dp(22),dp(24),dp(22),dp(30));p.setBackgroundColor(BG);sv.addView(p);setContentView(sv);
+        ScrollView sv=new ScrollView(this);LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setPadding(dp(22),dp(24),dp(22),dp(30));p.setBackgroundColor(BG);sv.addView(p);setContentView(UnifiedAppShell.wrap(this,"central",sv));
         p.addView(t("ESTRADA PLAY · RECUPERAÇÃO",11,RED,true));p.addView(t("Servidor",30,TEXT,true));p.addView(t("Use esta tela apenas quando a hospedagem mudar. O endereço fica salvo neste aparelho e não aparece durante a condução.",13,MUTED,false));
         url=new EditText(this);url.setSingleLine(true);url.setTextColor(TEXT);url.setHintTextColor(MUTED);url.setHint("https://seu-dominio.com/");url.setText(ServerEndpointStore.custom(this));url.setPadding(dp(14),0,dp(14),0);url.setBackground(box(Color.rgb(29,14,18),10,Color.rgb(77,38,44)));LinearLayout.LayoutParams ep=new LinearLayout.LayoutParams(-1,dp(58));ep.setMargins(0,dp(18),0,dp(10));p.addView(url,ep);
         Button test=button("TESTAR SERVIDOR",Color.rgb(55,28,32));p.addView(test,new LinearLayout.LayoutParams(-1,dp(52)));test.setOnClickListener(v->test(false));

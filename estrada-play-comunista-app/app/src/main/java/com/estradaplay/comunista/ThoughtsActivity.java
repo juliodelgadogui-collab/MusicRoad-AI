@@ -23,7 +23,7 @@ public final class ThoughtsActivity extends ComponentActivity {
     private void build() {
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(BG);
         page = new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL); page.setPadding(dp(20),dp(22),dp(20),dp(28));
-        scroll.addView(page,new ScrollView.LayoutParams(-1,-2)); setContentView(scroll);
+        scroll.addView(page,new ScrollView.LayoutParams(-1,-2)); setContentView(UnifiedAppShell.wrap(this,"central",scroll));
 
         TextView over=text("EPC / COPILOTO",9,GOLD,true); over.setLetterSpacing(.12f); page.addView(over);
         page.addView(text("PENSAMENTOS DA ESTRADA",26,TEXT,true));

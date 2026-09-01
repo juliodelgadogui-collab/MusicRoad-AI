@@ -23,7 +23,7 @@ public final class RoadRadioActivity extends ComponentActivity {
 
     @Override protected void onCreate(Bundle b){super.onCreate(b);build();}
     private void build(){
-        ScrollView sv=new ScrollView(this); LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setPadding(dp(18),dp(18),dp(18),dp(30));p.setBackgroundColor(BG);sv.addView(p);setContentView(sv);
+        ScrollView sv=new ScrollView(this); LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setPadding(dp(18),dp(18),dp(18),dp(30));p.setBackgroundColor(BG);sv.addView(p);setContentView(UnifiedAppShell.wrap(this,"radio",sv));
         TextView k=t("ESTRADA PLAY · COMUNICAÇÃO",10,GOLD,true);k.setLetterSpacing(.13f);p.addView(k);p.addView(t("RÁDIO DA RODOVIA",29,TEXT,true));p.addView(t("Sala automática pela rodovia, sentido e trecho aproximado. Áudio WebRTC vai direto entre os aparelhos e não fica gravado no servidor.",12,MUTED,false));
         room=t("IDENTIFICANDO RODOVIA…",18,TEXT,true);room.setPadding(dp(14),dp(14),dp(14),dp(14));room.setBackground(box(Color.rgb(25,10,14),12,RED));p.addView(room,new LinearLayout.LayoutParams(-1,-2));
         people=t("0 motoristas no trecho",13,GREEN,true);p.addView(people);status=t("Rádio desligado",12,MUTED,false);p.addView(status);

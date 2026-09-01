@@ -30,7 +30,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
     @Override protected void onDestroy(){if(registered)try{unregisterReceiver(playerState);}catch(Throwable ignored){}io.shutdownNow();super.onDestroy();}
 
     private void build(){
-        FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(BG);setContentView(frame);
+        FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(BG);setContentView(UnifiedAppShell.wrap(this,"music",frame));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);frame.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(14),dp(18),dp(24));scroll.addView(root,new ScrollView.LayoutParams(-1,-2));
         LinearLayout head=row();head.setGravity(Gravity.CENTER_VERTICAL);Button back=small("‹ MAPA");head.addView(back,new LinearLayout.LayoutParams(dp(92),dp(46)));back.setOnClickListener(v->finish());

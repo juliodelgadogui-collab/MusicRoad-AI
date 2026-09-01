@@ -28,7 +28,7 @@ public final class VehicleCostActivity extends ComponentActivity {
 
     private void build(){
         ScrollView sv=new ScrollView(this);sv.setFillViewport(true);sv.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        page=col();page.setPadding(dp(18),dp(14),dp(18),dp(28));page.setBackgroundColor(BG);sv.addView(page,new ScrollView.LayoutParams(-1,-2));setContentView(sv);
+        page=col();page.setPadding(dp(18),dp(14),dp(18),dp(28));page.setBackgroundColor(BG);sv.addView(page,new ScrollView.LayoutParams(-1,-2));setContentView(UnifiedAppShell.wrap(this,"trip",sv));
         VehicleProfileStore.Profile active=VehicleProfileStore.active(this);
         ArrayList<VehicleProfileStore.Profile> profiles=VehicleProfileStore.list(this);
 

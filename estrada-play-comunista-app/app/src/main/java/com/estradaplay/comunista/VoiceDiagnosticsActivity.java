@@ -36,7 +36,7 @@ public final class VoiceDiagnosticsActivity extends ComponentActivity {
 
     private void build() {
         ScrollView sv=new ScrollView(this); LinearLayout page=new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(20),dp(20),dp(20),dp(30)); page.setBackgroundColor(BG); sv.addView(page); setContentView(sv);
+        page.setPadding(dp(20),dp(20),dp(20),dp(30)); page.setBackgroundColor(BG); sv.addView(page); setContentView(UnifiedAppShell.wrap(this,"central",sv));
         page.addView(text("DIAGNÓSTICO DE VOZ",27,TEXT,true));
         page.addView(text("Teste no próprio aparelho antes de dirigir. Alertas reais continuam tendo prioridade sobre música e pensamentos.",12,MUTED,false));
         mode=text("MODO ATUAL · "+VoiceSettings.label(this),13,GREEN,true); page.addView(mode);

@@ -60,7 +60,7 @@ public final class VideoLibraryActivity extends ComponentActivity {
     private void build() {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(BG);
-        setContentView(root);
+        setContentView(UnifiedAppShell.wrap(this,"central",root));
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = new LinearLayout(this);
