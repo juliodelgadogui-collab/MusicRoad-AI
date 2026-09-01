@@ -4,9 +4,20 @@ import android.content.SharedPreferences;
 import java.util.Calendar;
 final class DriveSettings {
     private static final String P="epc_drive_settings_v140";
+    private static final String HUD_NORMAL_MIGRATION="hud_normal_default_v171";
     static SharedPreferences p(Context c){return c.getSharedPreferences(P,Context.MODE_PRIVATE);}
     static boolean autoNight(Context c){return p(c).getBoolean("auto_night",true);}
-    static boolean hudMirror(Context c){return p(c).getBoolean("hud_mirror",true);}
+    static boolean hudMirror(Context c){
+        SharedPreferences s=p(c);
+        if(!s.getBoolean(HUD_NORMAL_MIGRATION,false)){
+            // 1.7.1: older builds defaulted HUD mirroring to ON, which made the normal
+            // on-screen HUD unreadable. Migrate once to normal display; users can explicitly
+            // enable windshield reflection again from the HUD screen.
+            s.edit().putBoolean("hud_mirror",false).putBoolean(HUD_NORMAL_MIGRATION,true).apply();
+            return false;
+        }
+        return s.getBoolean("hud_mirror",false);
+    }
     static boolean collectiveEnabled(Context c){return p(c).getBoolean("collective_enabled",true);}
     static boolean protectImpactVideo(Context c){return p(c).getBoolean("protect_impact_video",true);}
     static boolean offlineTestMode(Context c){return p(c).getBoolean("offline_test_mode",false);}
