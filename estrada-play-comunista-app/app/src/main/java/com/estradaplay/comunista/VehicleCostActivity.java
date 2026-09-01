@@ -7,7 +7,6 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -42,8 +41,8 @@ public final class VehicleCostActivity extends ComponentActivity {
         if(profiles.size()>1){Button next=secondary("TROCAR");profileLine.addView(next,new LinearLayout.LayoutParams(dp(92),dp(46)));next.setOnClickListener(v->{int at=0;for(int i=0;i<profiles.size();i++)if(profiles.get(i).id.equals(active.id)){at=i;break;}VehicleProfileStore.setActive(this,profiles.get((at+1)%profiles.size()).id);build();});}
         profileCard.addView(profileLine);add(page,profileCard,0,0,0,12,-1,-2);
 
-        LinearLayout stats=row();TextView autonomy=metric("AUTONOMIA",String.format(Locale.getDefault(),"%.0f km",active.autonomyKm()),GREEN);stats.addView(autonomy,new LinearLayout.LayoutParams(0,dp(82),1));
-        double real=FuelingStore.actualKml(this,active.id);TextView consumption=metric("CONSUMO REAL",real>0?String.format(Locale.getDefault(),"%.1f km/l",real):"—",GOLD);LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(0,dp(82),1);mp.setMargins(dp(8),0,0,0);stats.addView(consumption,mp);add(page,stats,0,0,0,16,-1,-2);
+        LinearLayout stats=row();stats.addView(metric("AUTONOMIA",String.format(Locale.getDefault(),"%.0f km",active.autonomyKm()),GREEN),new LinearLayout.LayoutParams(0,dp(82),1));
+        double real=FuelingStore.actualKml(this,active.id);LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(0,dp(82),1);mp.setMargins(dp(8),0,0,0);stats.addView(metric("CONSUMO REAL",real>0?String.format(Locale.getDefault(),"%.1f km/l",real):"—",GOLD),mp);add(page,stats,0,0,0,16,-1,-2);
 
         page.addView(section("DADOS DO VEÍCULO","Usados somente neste aparelho."));
         LinearLayout form=card();
@@ -68,10 +67,9 @@ public final class VehicleCostActivity extends ComponentActivity {
         add(page,fuelCard,0,8,0,0,-1,-2);
     }
 
-    private TextView section(String title,String sub){LinearLayout x=col();x.addView(over(title,MUTED));TextView s=text(sub,11,MUTED,false);x.addView(s);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,0,0,8);x.setLayoutParams(p);return x;}
+    private View section(String title,String sub){LinearLayout x=col();x.addView(over(title,MUTED));x.addView(text(sub,11,MUTED,false));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,0,0,8);x.setLayoutParams(p);return x;}
     private EditText field(LinearLayout parent,String label,String hint,String value,boolean number){TextView l=over(label,MUTED);add(parent,l,2,number?12:0,0,5,-1,-2);EditText e=new EditText(this);e.setText(value);e.setHint(hint);e.setSingleLine(true);e.setTextColor(TEXT);e.setHintTextColor(Color.rgb(121,100,98));e.setTextSize(15);e.setPadding(dp(14),0,dp(14),0);e.setBackground(panel(SURFACE2,13,BORDER));if(number)e.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);add(parent,e,0,0,0,0,-1,dp(52));return e;}
-    private TextView metric(String label,String value,int accent){LinearLayout box=col();box.setGravity(Gravity.CENTER);box.setBackground(panel(SURFACE2,16,BORDER));TextView v=text(value,20,accent,true);v.setGravity(Gravity.CENTER);box.addView(v);TextView l=over(label,MUTED);l.setGravity(Gravity.CENTER);box.addView(l);TextView holder=new TextView(this);holder.setTag(box);return new MetricProxy(this,box);}
-    private static final class MetricProxy extends TextView{final View box;MetricProxy(android.content.Context c,View b){super(c);box=b;}@Override public void setLayoutParams(ViewGroup.LayoutParams p){box.setLayoutParams(p);}@Override public ViewGroup.LayoutParams getLayoutParams(){return box.getLayoutParams();}}
+    private View metric(String label,String value,int accent){LinearLayout box=col();box.setGravity(Gravity.CENTER);box.setBackground(panel(SURFACE2,16,BORDER));TextView v=text(value,20,accent,true);v.setGravity(Gravity.CENTER);box.addView(v);TextView l=over(label,MUTED);l.setGravity(Gravity.CENTER);box.addView(l);return box;}
 
     private LinearLayout card(){LinearLayout c=col();c.setPadding(dp(16),dp(15),dp(16),dp(15));c.setBackground(panel(SURFACE,18,BORDER));return c;}
     private LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);return l;}private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}
