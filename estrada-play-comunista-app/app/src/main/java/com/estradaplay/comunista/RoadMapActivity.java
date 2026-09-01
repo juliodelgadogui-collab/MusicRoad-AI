@@ -237,7 +237,6 @@ public final class RoadMapActivity extends ComponentActivity {
         } else {
             buildLandscapeUi(width, height);
         }
-        installUniversalDriveWidgets(width,height);
     }
 
     private void buildLandscapeUi(int width, int height) {
@@ -331,7 +330,7 @@ public final class RoadMapActivity extends ComponentActivity {
         LinearLayout.LayoutParams cpp = new LinearLayout.LayoutParams(-1, dp(48)); cpp.setMargins(0, dp(6), 0, 0); controls.addView(centralButton, cpp);
         recenter.setOnClickListener(v -> { if (roadMap != null) roadMap.recenter(); });
         destinationButton.setOnClickListener(v -> startActivity(new Intent(this, DestinationActivity.class)));
-        music.setOnClickListener(v -> openMain("music"));
+        music.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
         centralButton.setOnClickListener(v -> openMain("home"));
         FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(dp(94), -2, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         cp.setMargins(0, 0, outer + dp(9), 0); root.addView(controls, cp);
@@ -387,7 +386,7 @@ public final class RoadMapActivity extends ComponentActivity {
         musicP.setMargins(0, dp(8), 0, 0);
         Button music = nav("MÚSICA", false, buttonH);
         rail.addView(music, musicP);
-        music.setOnClickListener(v -> openMain("music"));
+        music.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
 
         LinearLayout.LayoutParams homeP = new LinearLayout.LayoutParams(-1, buttonH);
         homeP.setMargins(0, dp(8), 0, 0);
@@ -530,14 +529,14 @@ public final class RoadMapActivity extends ComponentActivity {
         TextView mediaOver = label("ÁUDIO", 8, MUTED, true);
         mediaOver.setLetterSpacing(0.12f);
         mediaCard.addView(mediaOver);
-        TextView mediaTitle = label("Sua música continua com você", compact ? 14 : 17, TEXT, true);
+        TextView mediaTitle = label("Player de bordo", compact ? 14 : 17, TEXT, true);
         mediaCard.addView(mediaTitle);
-        TextView mediaBody = label("Os alertas reduzem o áudio e falam por cima sem encerrar a reprodução.", compact ? 9 : 10, MUTED, false);
+        TextView mediaBody = label("Controle a música sem sair do cockpit. Alertas de segurança continuam com prioridade.", compact ? 9 : 10, MUTED, false);
         mediaCard.addView(mediaBody, new LinearLayout.LayoutParams(-1, 0, 1f));
         Button music = action(ultrawide ? "ABRIR BIBLIOTECA DE MÚSICA" : "ABRIR MÚSICA", true);
         int actionH = clamp(Math.round(height * 0.078f), dp(42), dp(56));
         mediaCard.addView(music, new LinearLayout.LayoutParams(-1, actionH));
-        music.setOnClickListener(v -> openMain("music"));
+        music.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
         return right;
     }
 

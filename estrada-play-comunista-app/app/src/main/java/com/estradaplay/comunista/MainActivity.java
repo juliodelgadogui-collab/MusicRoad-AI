@@ -209,7 +209,7 @@ private void boot() {
 private void openConfiguredTarget() {
         String target = getIntent() == null ? "" : getIntent().getStringExtra("open");
         target = target == null ? "" : target.trim().toLowerCase(Locale.ROOT);
-        if ("music".equals(target)) showMusic();
+        if ("music".equals(target)) { startActivity(new Intent(this, MusicPlayerActivity.class)); finish(); }
         else if ("library".equals(target)) {
             if (online()) loadCatalogAndOpenChooser(false); else showMusic();
         }
@@ -597,7 +597,7 @@ private void refreshLibraryAndOpenChooser() {
         if (!initial) {
             Button close = compactButton("VOLTAR");
             header.addView(close, lp(84, 44));
-            close.setOnClickListener(v -> showMusic());
+            close.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
         }
         page.addView(header);
 
@@ -907,11 +907,8 @@ private void refreshLibraryAndOpenChooser() {
         mediaInfo.addView(text("Música offline", 17, TEXT, true));
         mediaInfo.addView(text(hasDownloaded ? "Biblioteca preparada neste aparelho" : "Escolha o que levar para a viagem", 10, MUTED, false));
         media.addView(mediaInfo, new LinearLayout.LayoutParams(0, -2, 1));
-        Button music = compactButton(hasDownloaded ? "ABRIR" : "PREPARAR"); media.addView(music, lp(96, 48));
-        music.setOnClickListener(v -> {
-            if (!hasDownloaded) { if (online()) loadCatalogAndOpenChooser(false); else toast("Conecte-se para escolher músicas."); }
-            else showMusic();
-        });
+        Button music = compactButton("ABRIR PLAYER"); media.addView(music, lp(112, 48));
+        music.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
         page.addView(media); margins(media, 0, 9, 0, 0);
 
         LinearLayout tools = row();

@@ -86,6 +86,7 @@
         <activity android:name=".RoadFavoritesActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadRadioActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".ServerSettingsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".MusicPlayerActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
 
         <activity
             android:name=".TripHistoryActivity"

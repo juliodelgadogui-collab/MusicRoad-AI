@@ -27,6 +27,7 @@ public final class PlayerService extends Service {
     static final String ACTION_DUCK = "com.estradaplay.comunista.PLAYER_DUCK";
     static final String ACTION_UNDUCK = "com.estradaplay.comunista.PLAYER_UNDUCK";
     static final String ACTION_STATE = "com.estradaplay.comunista.PLAYER_STATE";
+    static final String ACTION_QUERY_STATE = "com.estradaplay.comunista.PLAYER_QUERY_STATE";
     static final String EXTRA_KEY = "track_key";
     static final String EXTRA_FOLDER = "folder";
     private static final String CHANNEL = "estradaplay_player";
@@ -71,6 +72,7 @@ public final class PlayerService extends Service {
         else if (ACTION_PREVIOUS.equals(action)) previous();
         else if (ACTION_DUCK.equals(action)) { alertDuck = 0.22f; applyVolume(); }
         else if (ACTION_UNDUCK.equals(action)) { alertDuck = 1f; applyVolume(); }
+        else if (ACTION_QUERY_STATE.equals(action)) broadcastCurrent();
         return START_NOT_STICKY;
     }
 
@@ -160,6 +162,13 @@ public final class PlayerService extends Service {
         if (am != null) am.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
     }
 
+    private void broadcastCurrent() {
+        Track t = current();
+        boolean playing = false;
+        try { playing = player != null && prepared && player.isPlaying(); } catch (Throwable ignored) {}
+        broadcast(t == null ? "" : t.title, playing, t == null ? "PRONTO" : (playing ? "OFFLINE" : "PAUSADO"));
+    }
+
     private void broadcast(String title, boolean playing, String state) {
         Track t = current();
         Intent i = new Intent(ACTION_STATE).setPackage(getPackageName());
@@ -167,6 +176,7 @@ public final class PlayerService extends Service {
         i.putExtra("artist", t == null ? "" : t.artist);
         i.putExtra("playing", playing);
         i.putExtra("state", state == null ? "" : state);
+        i.putExtra("track_key", t == null ? "" : t.key());
         sendBroadcast(i);
     }
 
