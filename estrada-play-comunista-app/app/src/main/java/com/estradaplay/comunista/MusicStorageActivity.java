@@ -84,7 +84,7 @@ public final class MusicStorageActivity extends ComponentActivity {
         Button all=button("APAGAR TODAS AS MÚSICAS OFFLINE",false);all.setTextColor(Color.rgb(255,121,133));addTo(clean,all,dp(10));all.setOnClickListener(v->confirm("Apagar todas as músicas offline?","Isso remove as cópias baixadas deste app. As músicas originais continuam no servidor/Drive.",()->io.execute(()->{LibraryStore.DeleteResult r=library.removeAllOffline();runOnUiThread(()->{Toast.makeText(this,"Liberado: "+LibraryStore.humanBytes(r.bytes),Toast.LENGTH_LONG).show();refresh();});})));add(clean,dp(12));
 
         LinearLayout old=card();old.addView(over("ARMAZENAMENTO ANTIGO",RED));old.addView(text("Cópias de versões antigas",20,TEXT,true));
-        if(!hasAudioPermission()){old.addView(text("Para localizar músicas antigas em pastas compartilhadas, permita acesso aos arquivos de áudio. O EPC só procura caminhos identificados como EstradaPlay.",12,MUTED,false));Button p=button("PERMITIR E PROCURAR MÚSICAS ANTIGAS",false);addTo(old,p,dp(14));p.setOnClickListener(v->requestAudioPermission());}
+        if(!hasAudioPermission()){old.addView(text("Permita acesso aos arquivos de áudio para procurar cópias antigas. A busca compara nomes e IDs com o catálogo do EPC, mesmo que a pasta tenha outro nome.",12,MUTED,false));Button p=button("PROCURAR MÚSICAS NO CELULAR",false);addTo(old,p,dp(14));p.setOnClickListener(v->requestAudioPermission());}
         else{long legacyBytes=0;for(LegacyItem x:legacy)legacyBytes+=x.size;old.addView(text(legacy.size()+" arquivo(s) antigo(s) encontrado(s) · "+LibraryStore.humanBytes(legacyBytes),14,legacy.isEmpty()?MUTED:GOLD,true));old.addView(text("Recuperar copia os arquivos reconhecidos para o espaço atual sem apagar o original. Depois de conferir o player, você pode remover as cópias antigas.",12,MUTED,false));Button recover=button("RECUPERAR MÚSICAS ANTIGAS",true);addTo(old,recover,dp(14));recover.setEnabled(!legacy.isEmpty());recover.setOnClickListener(v->migrateLegacy());Button del=button("REMOVER CÓPIAS ANTIGAS",false);del.setTextColor(Color.rgb(255,121,133));addTo(old,del,dp(10));del.setEnabled(!legacy.isEmpty());del.setOnClickListener(v->confirm("Remover cópias antigas?","Use esta opção depois de recuperar e conferir as músicas. O Android pode abrir uma confirmação do sistema.",this::requestDeleteLegacy));}add(old,dp(12));
 
         LinearLayout info=card();info.addView(over("IMPORTANTE",GREEN));info.addView(text("Por que isso acontecia?",18,TEXT,true));info.addView(text("A lista offline dependia do índice salvo. Se o índice fosse perdido, os arquivos continuavam ocupando espaço, mas o player mostrava 0 músicas. A versão 2.0.2 passa a reconciliar índice + arquivos automaticamente.",12,MUTED,false));add(info,dp(12));
@@ -94,7 +94,27 @@ public final class MusicStorageActivity extends ComponentActivity {
 
     private Track matchLegacy(LegacyItem item,List<Track> catalog){String name=LibraryStore.normalizeFileToken(stripExt(item.name)),path=LibraryStore.normalizeFileToken(item.path);Track best=null;int bestScore=0;for(Track t:catalog){String title=LibraryStore.normalizeFileToken(t.title);if(title.length()<2)continue;int score=0;if(name.equals(title))score+=100;else if(name.endsWith(title)||name.contains(title))score+=70;String id=t.id==null?"":t.id.replaceAll("[^A-Za-z0-9_-]+","").toLowerCase(Locale.ROOT);if(!id.isEmpty()&&item.name.toLowerCase(Locale.ROOT).contains(id))score+=120;String folder=LibraryStore.normalizeFileToken(t.folderPath);if(!folder.isEmpty()&&path.contains(folder))score+=30;if(score>bestScore){best=t;bestScore=score;}}return bestScore>=70?best:null;}
 
-    private List<LegacyItem> scanLegacy(){ArrayList<LegacyItem> out=new ArrayList<>();ContentResolver cr=getContentResolver();Uri base=MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;ArrayList<String> cols=new ArrayList<>();cols.add(MediaStore.Audio.Media._ID);cols.add(MediaStore.Audio.Media.DISPLAY_NAME);cols.add(MediaStore.Audio.Media.SIZE);if(Build.VERSION.SDK_INT>=29)cols.add(MediaStore.Audio.Media.RELATIVE_PATH);else cols.add(MediaStore.Audio.Media.DATA);try(Cursor c=cr.query(base,cols.toArray(new String[0]),null,null,MediaStore.Audio.Media.DATE_ADDED+" DESC")){if(c==null)return out;int id=c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID),name=c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME),size=c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE),path=c.getColumnIndex(Build.VERSION.SDK_INT>=29?MediaStore.Audio.Media.RELATIVE_PATH:MediaStore.Audio.Media.DATA);while(c.moveToNext()){String n=c.getString(name),p=path>=0?c.getString(path):"";String probe=((p==null?"":p)+"/"+(n==null?"":n)).toLowerCase(Locale.ROOT).replace(" ","");if(!probe.contains("estradaplay"))continue;out.add(new LegacyItem(ContentUris.withAppendedId(base,c.getLong(id)),n==null?"Música":n,p==null?"":p,Math.max(0,c.getLong(size))));if(out.size()>=5000)break;}}catch(Throwable ignored){}return out;}
+    // PUBLIC_DISCOVERY_V203: public/legacy music may live in a folder that is not named EstradaPlay.
+    private List<LegacyItem> scanLegacy(){
+        ArrayList<LegacyItem> out=new ArrayList<>();
+        List<Track> catalog=library.catalog();
+        ContentResolver cr=getContentResolver();Uri base=MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        ArrayList<String> cols=new ArrayList<>();cols.add(MediaStore.Audio.Media._ID);cols.add(MediaStore.Audio.Media.DISPLAY_NAME);cols.add(MediaStore.Audio.Media.SIZE);
+        if(Build.VERSION.SDK_INT>=29)cols.add(MediaStore.Audio.Media.RELATIVE_PATH);else cols.add(MediaStore.Audio.Media.DATA);
+        try(Cursor c=cr.query(base,cols.toArray(new String[0]),null,null,MediaStore.Audio.Media.DATE_ADDED+" DESC")){
+            if(c==null)return out;
+            int id=c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID),name=c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME),size=c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE),path=c.getColumnIndex(Build.VERSION.SDK_INT>=29?MediaStore.Audio.Media.RELATIVE_PATH:MediaStore.Audio.Media.DATA);
+            while(c.moveToNext()){
+                String n=c.getString(name),p=path>=0?c.getString(path):"";
+                LegacyItem item=new LegacyItem(ContentUris.withAppendedId(base,c.getLong(id)),n==null?"Música":n,p==null?"":p,Math.max(0,c.getLong(size)));
+                String probe=((p==null?"":p)+"/"+(n==null?"":n)).toLowerCase(Locale.ROOT).replace(" ","");
+                boolean branded=probe.contains("estradaplay")||probe.contains("musicroad")||probe.contains("estradaplaycomunista");
+                if(!branded && matchLegacy(item,catalog)==null)continue;
+                out.add(item);if(out.size()>=5000)break;
+            }
+        }catch(Throwable ignored){}
+        return out;
+    }
 
     private void requestDeleteLegacy(){List<LegacyItem> items=new ArrayList<>(legacyItems);if(items.isEmpty())return;ArrayList<Uri> uris=new ArrayList<>();for(LegacyItem x:items)uris.add(x.uri);if(Build.VERSION.SDK_INT>=30){try{PendingIntent pi=MediaStore.createDeleteRequest(getContentResolver(),uris);startIntentSenderForResult(pi.getIntentSender(),REQ_DELETE_LEGACY,null,0,0,0);}catch(Throwable e){Toast.makeText(this,"Não consegui abrir a autorização de limpeza.",Toast.LENGTH_LONG).show();}}else{io.execute(()->{int n=0;for(Uri u:uris)try{n+=getContentResolver().delete(u,null,null);}catch(Throwable ignored){}int done=n;runOnUiThread(()->{Toast.makeText(this,"Removidos: "+done,Toast.LENGTH_LONG).show();refresh();});});}}
 

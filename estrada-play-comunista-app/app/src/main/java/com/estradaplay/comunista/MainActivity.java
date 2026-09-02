@@ -623,6 +623,11 @@ private void refreshLibraryAndOpenChooser() {
         refresh.setEnabled(online());
         refresh.setOnClickListener(v -> refreshLibraryAndOpenChooser());
 
+        // LIBRARY_REPAIR_ENTRY_V203: recovery must be visible from Gerenciar downloads.
+        Button repair = compactButton("PROCURAR / LIMPAR MÚSICAS DO CELULAR");
+        page.addView(repair, lp(-1, 46)); margins(repair, 0, 0, 0, 10);
+        repair.setOnClickListener(v -> startActivity(new Intent(this, MusicStorageActivity.class)));
+
         FolderDownloadAdapter adapter = new FolderDownloadAdapter(stats, storage, initial);
         ListView list = new ListView(this);
         list.setDivider(null);
