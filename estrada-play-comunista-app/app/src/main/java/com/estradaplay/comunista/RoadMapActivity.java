@@ -74,6 +74,8 @@ public final class RoadMapActivity extends ComponentActivity {
     private double universalSpeed, currentLatForSave=Double.NaN, currentLonForSave=Double.NaN;
     private int universalLimit; private String universalHazard="", universalUpcoming="", universalSource="", universalConfidence="";
     private RoadQualityStore roadQualityStore;
+    // ESTRADA_VIVA_MAP_V180
+    private EstradaVivaStore estradaVivaStore;
 
     private RoadPackStore mapStore;
     private OfflineRoadStore offlineRoadStore;
@@ -663,6 +665,9 @@ public final class RoadMapActivity extends ComponentActivity {
                 List<RoadHazard> nearby = mapStore.nearby(lat, lon, 5200);
                 if(roadQualityStore==null) roadQualityStore=new RoadQualityStore(getApplicationContext());
                 final java.util.ArrayList<RoadQualityStore.Point> quality=roadQualityStore.around(lat,lon,6500);
+                if(estradaVivaStore==null) estradaVivaStore=new EstradaVivaStore(getApplicationContext());
+                estradaVivaStore.kickRefresh(lat,lon);
+                final java.util.ArrayList<EstradaVivaStore.Event> liveEvents=estradaVivaStore.cachedNearby(lat,lon,12000);
                 if (offlineRoadStore == null) offlineRoadStore = new OfflineRoadStore(getApplicationContext());
                 long revision = offlineRoadStore.revision();
                 String roads = null;
@@ -675,6 +680,7 @@ public final class RoadMapActivity extends ComponentActivity {
                     if (roadMap != null) {
                         roadMap.setHazards(nearby);
                         roadMap.setRoadQualityPoints(quality);
+                        roadMap.setLiveEvents(liveEvents);
                         if (finalRoads != null) roadMap.setOfflineRoadGeoJson(finalRoads);
                     }
                     updateMapStatus();

@@ -41,6 +41,9 @@ final class RoadMapView extends FrameLayout {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ArrayList<RoadHazard> hazards = new ArrayList<>();
+    // ESTRADA_VIVA_MAP_V180
+    private final ArrayList<EstradaVivaStore.Event> liveEvents = new ArrayList<>();
+    private final ArrayList<ConvoyStore.Member> convoyMembers = new ArrayList<>();
     private final ArrayList<RoadQualityStore.Point> qualityPoints = new ArrayList<>();
     private final HazardOverlay overlay;
     private final TextView fallback;
@@ -220,6 +223,9 @@ final class RoadMapView extends FrameLayout {
         overlay.invalidate();
     }
 
+    void setLiveEvents(List<EstradaVivaStore.Event> value) { liveEvents.clear(); if(value!=null)liveEvents.addAll(value); overlay.invalidate(); }
+    void setConvoyMembers(List<ConvoyStore.Member> value) { convoyMembers.clear(); if(value!=null)convoyMembers.addAll(value); overlay.invalidate(); }
+
     String status() { return status; }
 
     boolean isOfflineStyle() { return offlineStyle; }
@@ -326,6 +332,26 @@ final class RoadMapView extends FrameLayout {
                         float w = label.measureText(speed);
                         c.drawText(speed, x - w / 2f, y - dp(13), label);
                     }
+                }
+                // ESTRADA_VIVA_MAP_V180: community reports stay visually distinct from fixed hazards.
+                for (EstradaVivaStore.Event e : liveEvents) {
+                    PointF ep = screen(e.lat, e.lon); if (ep == null) continue;
+                    if (ep.x < -40 || ep.y < -40 || ep.x > getWidth()+40 || ep.y > getHeight()+40) continue;
+                    int color = Color.rgb(226,185,76);
+                    if ("accident".equals(e.type)) color=Color.rgb(235,55,65);
+                    else if ("flooding".equals(e.type)) color=Color.rgb(75,165,255);
+                    else if ("animal".equals(e.type)) color=Color.rgb(236,175,65);
+                    else if ("construction".equals(e.type)) color=Color.rgb(255,132,55);
+                    else if ("traffic".equals(e.type)) color=Color.rgb(190,100,240);
+                    else if ("object".equals(e.type)) color=Color.rgb(225,232,239);
+                    Paint lp=circlePaint(color);c.drawCircle(ep.x,ep.y,dp(6.4f),lp);c.drawCircle(ep.x,ep.y,dp(9.0f),ring);
+                    String tag=e.shortLabel();float tw=label.measureText(tag);c.drawText(tag,ep.x-tw/2f,ep.y-dp(13),label);
+                }
+                // CONVOY_MAP_V180: live members are blue, self location keeps the regular arrow.
+                for (ConvoyStore.Member m : convoyMembers) {
+                    if(m.self||!Double.isFinite(m.lat)||!Double.isFinite(m.lon))continue;PointF cp=screen(m.lat,m.lon);if(cp==null)continue;
+                    Paint mp=circlePaint(Color.rgb(55,190,225));c.drawCircle(cp.x,cp.y,dp(7.2f),mp);c.drawCircle(cp.x,cp.y,dp(10.0f),ring);
+                    String tag=m.shortName();float tw=label.measureText(tag);c.drawText(tag,cp.x-tw/2f,cp.y-dp(14),label);
                 }
                 if (Double.isFinite(userLat) && Double.isFinite(userLon)) {
                     PointF s = screen(userLat, userLon);

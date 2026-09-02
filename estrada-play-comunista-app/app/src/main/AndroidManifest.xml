@@ -80,6 +80,8 @@
 
         <activity android:name=".OfflineCenterActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CollectiveRoadActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".EstradaVivaActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".ConvoyActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
         <activity android:name=".VehicleCostActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".TripPlannerActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".TripReplayActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
