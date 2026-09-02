@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Locale;
 
 final class RouteEngine {
@@ -40,14 +41,14 @@ final class RouteEngine {
 
     static Route fetch(double fromLat, double fromLon, double toLat, double toLon) throws Exception {
         String url = String.format(Locale.US,
-                "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true&alternatives=false",
+                "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true&alternatives=true&continue_straight=true&radiuses=500;500",
                 fromLon, fromLat, toLon, toLat);
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(10000);
         c.setReadTimeout(25000);
         c.setInstanceFollowRedirects(true);
         c.setRequestProperty("Accept", "application/json");
-        c.setRequestProperty("User-Agent", "EstradaPlayComunista/1.0 Android route-test");
+        c.setRequestProperty("User-Agent", "EstradaPlayComunista/1.7.3 Android");
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) {
             c.disconnect();
@@ -69,8 +70,8 @@ final class RouteEngine {
         JSONObject root = new JSONObject(raw);
         JSONArray routes = root.optJSONArray("routes");
         if (routes == null || routes.length() == 0) throw new Exception("Rota não encontrada");
-        JSONObject r = routes.optJSONObject(0);
-        if (r == null) throw new Exception("Rota inválida");
+        JSONObject r = chooseRoute(routes, fromLat, fromLon, toLat, toLon);
+        if (r == null) throw new Exception("Rota incoerente para este destino");
         JSONObject geometry = r.optJSONObject("geometry");
         if (geometry == null) throw new Exception("Geometria ausente");
 
@@ -86,6 +87,56 @@ final class RouteEngine {
 
         String instruction = firstInstruction(r);
         return new Route(collection.toString(), r.optDouble("distance", 0), r.optDouble("duration", 0), instruction);
+    }
+
+    private static JSONObject chooseRoute(JSONArray routes, double fromLat, double fromLon, double toLat, double toLon) {
+        ArrayList<JSONObject> valid = new ArrayList<>();
+        double fastest = Double.POSITIVE_INFINITY;
+        double straight = distanceM(fromLat, fromLon, toLat, toLon);
+        for (int i = 0; i < routes.length(); i++) {
+            JSONObject r = routes.optJSONObject(i);
+            if (r == null) continue;
+            double dist = r.optDouble("distance", 0), dur = r.optDouble("duration", 0);
+            JSONObject g = r.optJSONObject("geometry");
+            if (dist <= 0 || dur <= 0 || g == null) continue;
+            JSONArray coords = g.optJSONArray("coordinates");
+            if (coords == null || coords.length() < 2) continue;
+            JSONArray first = coords.optJSONArray(0), last = coords.optJSONArray(coords.length() - 1);
+            if (first == null || last == null || first.length() < 2 || last.length() < 2) continue;
+            double startGap = distanceM(fromLat, fromLon, first.optDouble(1), first.optDouble(0));
+            double endGap = distanceM(toLat, toLon, last.optDouble(1), last.optDouble(0));
+            if (startGap > 1200 || endGap > 1200) continue;
+            valid.add(r);
+            fastest = Math.min(fastest, dur);
+        }
+        if (valid.isEmpty()) return null;
+
+        JSONObject best = null;
+        double bestScore = Double.POSITIVE_INFINITY;
+        for (JSONObject r : valid) {
+            double dist = r.optDouble("distance", 0), dur = r.optDouble("duration", 0);
+            // Prefer the shorter sensible route, but do not trade several minutes for a tiny shortcut.
+            double score = dist + Math.max(0, dur - fastest) * 8.0;
+            if (score < bestScore) { bestScore = score; best = r; }
+        }
+        if (best == null) return null;
+
+        double chosen = best.optDouble("distance", 0);
+        // For nearby destinations, a massive detour usually means a bad snap/route. Better show
+        // routing unavailable than draw a clearly nonsensical line through another region.
+        if (straight >= 1200 && straight <= 15000) {
+            double maxSane = Math.max(straight * 3.2, straight + 12000);
+            if (chosen > maxSane) return null;
+        }
+        return best;
+    }
+
+    private static double distanceM(double lat1, double lon1, double lat2, double lon2) {
+        if (!Double.isFinite(lat1) || !Double.isFinite(lon1) || !Double.isFinite(lat2) || !Double.isFinite(lon2)) return Double.POSITIVE_INFINITY;
+        double p1 = Math.toRadians(lat1), p2 = Math.toRadians(lat2);
+        double dLat = p2 - p1, dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 6371000.0 * 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
     }
 
     private static String firstInstruction(JSONObject route) {

@@ -3,20 +3,17 @@ package com.estradaplay.comunista;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-/** Resolves the current named highway using only the locally cached road geometry. */
+/** Resolves the current named highway using locally cached road geometry, with a manual known-road fallback. */
 final class RoadIdentityResolver {
-    private static final Pattern ROAD = Pattern.compile("(?i)\\b(BR|RJ|MG|ES|SP)[-\\s]?(\\d{1,4})\\b");
-
     static final class Identity {
         final String road, uf, direction, segment, roomKey, label;
-        Identity(String road, String uf, String direction, String segment) {
+        Identity(String road, String uf, String direction, String segment, String segmentLabel) {
             this.road=road; this.uf=uf; this.direction=direction; this.segment=segment;
-            String dirKey = direction.length() > 0 ? direction.substring(0,1) : "G";
-            roomKey = (road.replace("-","")+"|"+uf+"|"+dirKey+"|"+segment).toUpperCase(Locale.ROOT);
-            label = road+" · "+uf+" · "+direction;
+            // LOCAL_RADIO_V173: direction and state are display metadata, not room scope.
+            // The room is the road plus a local geographic segment, so BR-101/Campos and BR-101/Vitória never meet.
+            roomKey = (road.replace("-","")+"|"+segment).toUpperCase(Locale.ROOT);
+            label = road+" · "+segmentLabel+(uf==null||uf.isEmpty()?"":" · "+uf);
         }
     }
 
@@ -34,8 +31,8 @@ final class RoadIdentityResolver {
             for (int i=0;i<max;i++) {
                 JSONObject f=features.optJSONObject(i); if(f==null)continue;
                 JSONObject props=f.optJSONObject("properties"); if(props==null)props=new JSONObject();
-                String road=canonical(props.optString("ref",""));
-                if(road.isEmpty()) road=canonical(props.optString("name",""));
+                String road=KnownRoadCatalog.canonical(props.optString("ref",""));
+                if(road.isEmpty()) road=KnownRoadCatalog.canonical(props.optString("name",""));
                 if(road.isEmpty()) continue;
                 JSONObject g=f.optJSONObject("geometry"); if(g==null||!"LineString".equalsIgnoreCase(g.optString("type","")))continue;
                 JSONArray c=g.optJSONArray("coordinates"); if(c==null||c.length()<2)continue;
@@ -45,33 +42,25 @@ final class RoadIdentityResolver {
                     if(d<best){best=d;bestRoad=road;}
                 }
             }
-            if(bestRoad.isEmpty()||best>95.0)return null;
-            String uf=uf(lat,lon,bestRoad);
-            String direction=direction(heading);
-            String segment=segment(lat,lon);
-            return new Identity(bestRoad,uf,direction,segment);
+            if(bestRoad.isEmpty()||best>110.0)return null;
+            return create(bestRoad, lat, lon, heading);
         } catch(Throwable ignored){ return null; }
     }
 
-    private static String canonical(String raw){
-        if(raw==null)return""; Matcher m=ROAD.matcher(raw.toUpperCase(Locale.ROOT));
-        if(!m.find())return""; return m.group(1).toUpperCase(Locale.ROOT)+"-"+m.group(2);
+    static Identity fromKnownRoad(String road, double lat, double lon, float heading) {
+        String c = KnownRoadCatalog.canonical(road);
+        if (c.isEmpty() || !Double.isFinite(lat) || !Double.isFinite(lon)) return null;
+        return create(c, lat, lon, heading);
     }
+
+    private static Identity create(String road, double lat, double lon, float heading) {
+        return new Identity(road, KnownRoadCatalog.uf(lat,lon,road), direction(heading),
+                KnownRoadCatalog.segmentKey(lat,lon), KnownRoadCatalog.segmentLabel(lat,lon));
+    }
+
     private static String direction(float h){
         if(!Float.isFinite(h))return"GERAL"; float v=((h%360)+360)%360;
         if(v<45||v>=315)return"NORTE"; if(v<135)return"LESTE"; if(v<225)return"SUL"; return"OESTE";
-    }
-    private static String uf(double lat,double lon,String road){
-        if(lat>=-23.40&&lat<=-20.75&&lon>=-44.95&&lon<=-40.70)return"RJ";
-        if(lat>=-22.95&&lat<=-14.00&&lon>=-51.10&&lon<=-39.80)return"MG";
-        if(lat>=-21.35&&lat<=-17.85&&lon>=-41.95&&lon<=-39.55)return"ES";
-        if(lat>=-25.40&&lat<=-19.70&&lon>=-53.20&&lon<=-44.00)return"SP";
-        if(road.startsWith("RJ-"))return"RJ"; if(road.startsWith("MG-"))return"MG"; if(road.startsWith("ES-"))return"ES"; if(road.startsWith("SP-"))return"SP";
-        return"BR";
-    }
-    private static String segment(double lat,double lon){
-        int a=(int)Math.floor((lat+35.0)*5.0), b=(int)Math.floor((lon+75.0)*5.0);
-        return a+"-"+b;
     }
     private static double segmentDistance(double lat,double lon,double lat1,double lon1,double lat2,double lon2){
         if(!Double.isFinite(lat1)||!Double.isFinite(lon1)||!Double.isFinite(lat2)||!Double.isFinite(lon2))return Double.MAX_VALUE;

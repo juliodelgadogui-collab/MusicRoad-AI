@@ -18,14 +18,15 @@ import java.util.*;
 public final class RoadRadioActivity extends ComponentActivity {
     private static final int REQ_MIC=6101;
     private final int BG=Color.rgb(8,5,7),TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(174,151,146),RED=Color.rgb(190,18,38),GOLD=Color.rgb(226,185,76),GREEN=Color.rgb(72,212,134);
-    private TextView room,status,people,alerts; private Button join,ptt,mute; private boolean joined,muted,registered;
+    private TextView room,status,people,alerts; private Button join,ptt,mute,chooseRoad; private boolean joined,muted,registered;
     private BroadcastReceiver rx;
 
     @Override protected void onCreate(Bundle b){super.onCreate(b);build();}
     private void build(){
         ScrollView sv=new ScrollView(this); LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setPadding(dp(18),dp(18),dp(18),dp(30));p.setBackgroundColor(BG);sv.addView(p);setContentView(UnifiedAppShell.wrap(this,"radio",sv));
-        TextView k=t("ESTRADA PLAY · COMUNICAÇÃO",10,GOLD,true);k.setLetterSpacing(.13f);p.addView(k);p.addView(t("RÁDIO DA RODOVIA",29,TEXT,true));p.addView(t("Sala automática pela rodovia, sentido e trecho aproximado. Áudio WebRTC vai direto entre os aparelhos e não fica gravado no servidor.",12,MUTED,false));
+        TextView k=t("ESTRADA PLAY · COMUNICAÇÃO",10,GOLD,true);k.setLetterSpacing(.13f);p.addView(k);p.addView(t("RÁDIO DA RODOVIA",29,TEXT,true));p.addView(t("Sala automática pela rodovia e pelo trecho local. Motoristas distantes na mesma BR ficam em salas diferentes. Áudio WebRTC vai direto entre os aparelhos e não fica gravado no servidor.",12,MUTED,false));
         room=t("IDENTIFICANDO RODOVIA…",18,TEXT,true);room.setPadding(dp(14),dp(14),dp(14),dp(14));room.setBackground(box(Color.rgb(25,10,14),12,RED));p.addView(room,new LinearLayout.LayoutParams(-1,-2));
+        chooseRoad=button("ESCOLHER RODOVIA · SE NÃO IDENTIFICAR",Color.rgb(42,22,25));p.addView(chooseRoad,new LinearLayout.LayoutParams(-1,dp(48)));chooseRoad.setOnClickListener(v->showRoadPicker());
         people=t("0 motoristas no trecho",13,GREEN,true);p.addView(people);status=t("Rádio desligado",12,MUTED,false);p.addView(status);
         join=button("ENTRAR NO RÁDIO",RED);p.addView(join,new LinearLayout.LayoutParams(-1,dp(58)));join.setOnClickListener(v->{if(joined)send(RoadRadioService.ACTION_LEAVE);else enter();});
         ptt=button("SEGURE PARA FALAR",Color.rgb(78,18,28));p.addView(ptt,new LinearLayout.LayoutParams(-1,dp(92)));ptt.setEnabled(false);ptt.setOnTouchListener((v,e)->{if(!joined)return false;int a=e.getActionMasked();if(a==MotionEvent.ACTION_DOWN){send(RoadRadioService.ACTION_PTT_ON);ptt.setText("FALANDO… SOLTE PARA OUVIR");return true;}if(a==MotionEvent.ACTION_UP||a==MotionEvent.ACTION_CANCEL){send(RoadRadioService.ACTION_PTT_OFF);ptt.setText("SEGURE PARA FALAR");return true;}return true;});
@@ -35,6 +36,15 @@ public final class RoadRadioActivity extends ComponentActivity {
         alerts=t("Nenhum alerta recente recebido nesta sala.",12,MUTED,false);alerts.setPadding(dp(12),dp(12),dp(12),dp(12));alerts.setBackground(box(Color.rgb(18,9,12),10,Color.rgb(76,38,43)));p.addView(alerts,new LinearLayout.LayoutParams(-1,-2));
         p.addView(t("SEGURANÇA · alertas de radar, limite e quebra-molas silenciam o rádio automaticamente. Fechar o app encerra o rádio. O microfone não permanece aberto fora do PTT.",10,MUTED,false));
     }
+    private void showRoadPicker(){
+        final String[] roads=KnownRoadCatalog.PRESET_ROADS;
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Rodovia de apoio")
+                .setMessage("Use somente se a identificação automática falhar. O GPS ainda separa o rádio por trecho local.")
+                .setItems(roads,(d,which)->{if(which<0||which>=roads.length)return;Intent i=new Intent(this,RoadRadioService.class).setAction(RoadRadioService.ACTION_SET_ROAD);i.putExtra("road",roads[which]);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);room.setText(roads[which]+" · CONFIRMANDO TRECHO…");})
+                .setNegativeButton("CANCELAR",null).show();
+    }
+
     private void enter(){if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);return;}try{Intent s=new Intent(this,RoadSafetyService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(s);else startService(s);}catch(Throwable ignored){}Intent i=new Intent(this,RoadRadioService.class).setAction(RoadRadioService.ACTION_JOIN);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);status.setText("Identificando a estrada e entrando na sala…");}
     @Override public void onRequestPermissionsResult(int r,String[] p,int[] g){super.onRequestPermissionsResult(r,p,g);if(r==REQ_MIC&&g.length>0&&g[0]==PackageManager.PERMISSION_GRANTED)enter();}
     private void quick(LinearLayout row,String label,String type){Button b=button(label,Color.rgb(45,18,23));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(50),1);lp.setMargins(dp(3),dp(3),dp(3),dp(3));row.addView(b,lp);b.setOnClickListener(v->{if(!joined){Toast.makeText(this,"Entre no rádio primeiro.",Toast.LENGTH_SHORT).show();return;}Intent i=new Intent(this,RoadRadioService.class).setAction(RoadRadioService.ACTION_ALERT);i.putExtra("alert_type",type);startService(i);Toast.makeText(this,"Alerta enviado ao trecho.",Toast.LENGTH_SHORT).show();});}
