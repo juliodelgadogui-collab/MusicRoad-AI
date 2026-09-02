@@ -13,6 +13,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,7 +34,6 @@ final class LibraryStore {
     private final SharedPreferences prefs;
     private final SharedPreferences flags;
     private final File catalogFile;
-    // ANR_LIBRARY_INDEX_V210: large catalog/download indexes are cached in memory.
     private volatile List<Track> catalogCache;
     private volatile List<Track> downloadedCache;
     private volatile String downloadedCacheRaw;
@@ -45,7 +46,6 @@ final class LibraryStore {
         catalogFile = new File(dir, "catalog.json");
     }
 
-    // CATALOG_FILE_V208: large catalogs are stored atomically as a file, not in SharedPreferences.
     synchronized void saveCatalog(List<Track> tracks) {
         JSONArray arr = new JSONArray();
         if (tracks != null) for (Track t : tracks) if (t != null) arr.put(t.toStored());
@@ -55,16 +55,14 @@ final class LibraryStore {
         if (dir != null && !dir.exists() && !dir.mkdirs()) return;
         File tmp = new File(catalogFile.getAbsolutePath() + ".tmp");
         try (FileOutputStream out = new FileOutputStream(tmp)) {
-            out.write(bytes);
-            out.flush();
-        } catch (Exception e) {
-            tmp.delete();
-            return;
-        }
+            out.write(bytes); out.flush();
+        } catch (Exception e) { tmp.delete(); return; }
         if (catalogFile.exists() && !catalogFile.delete()) { tmp.delete(); return; }
         if (!tmp.renameTo(catalogFile)) { tmp.delete(); return; }
         catalogCache = tracks == null ? new ArrayList<>() : new ArrayList<>(tracks);
         prefs.edit().remove(KEY_CATALOG).apply();
+        // BIBLIOTECA_SEGURA_V202: a catalog refresh can reveal files whose index was lost.
+        downloadedCache = null; downloadedCacheRaw = null;
     }
 
     synchronized List<Track> catalog() {
@@ -100,83 +98,110 @@ final class LibraryStore {
     private String readCatalogFile() {
         if (!catalogFile.isFile() || catalogFile.length() <= 0 || catalogFile.length() > MAX_CATALOG_BYTES) return null;
         try (FileInputStream in = new FileInputStream(catalogFile); ByteArrayOutputStream out = new ByteArrayOutputStream((int)Math.min(catalogFile.length(), 1024 * 1024))) {
-            byte[] buf = new byte[32768];
-            int n;
-            int total = 0;
+            byte[] buf = new byte[32768]; int n; int total = 0;
             while ((n = in.read(buf)) > 0) {
-                total += n;
-                if (total > MAX_CATALOG_BYTES) return null;
-                out.write(buf, 0, n);
+                total += n; if (total > MAX_CATALOG_BYTES) return null; out.write(buf, 0, n);
             }
             return out.toString(StandardCharsets.UTF_8.name());
-        } catch (Exception e) {
-            return null;
-        }
+        } catch (Exception e) { return null; }
     }
 
-    void saveDownloaded(Track track, File file) {
+    synchronized void saveDownloaded(Track track, File file) {
         if (track == null || file == null || !file.isFile() || file.length() <= 0) return;
         try {
             JSONObject all = downloadedObject();
             all.put(track.key(), track.withLocal(file.getAbsolutePath()).toStored());
-            String raw = all.toString();
-            prefs.edit().putString(KEY_DOWNLOADED, raw).apply();
-            flags.edit().putBoolean(KEY_DOWNLOADED_HINT, true).apply();
-            downloadedCache = null; downloadedCacheRaw = null;
+            persistDownloaded(all);
         } catch (Exception ignored) {}
     }
 
     Track localFor(Track track) {
         if (track == null) return null;
+        // Always give reconciliation a chance before declaring a catalog item missing.
+        reconcileOffline();
         try {
             JSONObject all = downloadedObject();
             JSONObject o = all.optJSONObject(track.key());
             if (o == null) return null;
             Track stored = Track.fromStored(o);
             File f = stored.localPath.isEmpty() ? null : new File(stored.localPath);
-            if (f != null && f.isFile() && f.length() > 0) return stored;
-            all.remove(track.key());
-            prefs.edit().putString(KEY_DOWNLOADED, all.toString()).apply();
-            downloadedCache = null; downloadedCacheRaw = null;
+            if (validAudioFile(f)) return stored;
+            all.remove(track.key()); persistDownloaded(all);
         } catch (Exception ignored) {}
         return null;
     }
 
-    List<Track> downloadedTracks() {
-        String raw = prefs.getString(KEY_DOWNLOADED, "{}");
-        if (raw == null) raw = "{}";
-        List<Track> cached = downloadedCache;
-        String cachedRaw = downloadedCacheRaw;
-        if (cached != null && raw.equals(cachedRaw)) return new ArrayList<>(cached);
-
-        ArrayList<Track> out = new ArrayList<>();
-        JSONObject all;
-        try { all = new JSONObject(raw); } catch (Exception e) { all = new JSONObject(); }
-        ArrayList<String> stale = new ArrayList<>();
+    /**
+     * Rebuilds the offline index from the real files on disk. This repairs cases where the APK was
+     * upgraded/restored and SharedPreferences no longer reflects files that are still present.
+     */
+    synchronized ReconcileResult reconcileOffline() {
+        JSONObject all = downloadedObject();
+        int before = all.length(); int stale = 0; int recovered = 0; boolean changed = false;
+        ArrayList<String> dead = new ArrayList<>();
         java.util.Iterator<String> it = all.keys();
         while (it.hasNext()) {
-            String key = it.next();
-            JSONObject o = all.optJSONObject(key);
-            if (o == null) continue;
-            Track t = Track.fromStored(o);
-            File f = t.localPath.isEmpty() ? null : new File(t.localPath);
-            if (f != null && f.isFile() && f.length() > 0) out.add(t); else stale.add(key);
+            String key = it.next(); JSONObject o = all.optJSONObject(key); if (o == null) { dead.add(key); continue; }
+            Track t = Track.fromStored(o); File f = t.localPath.isEmpty() ? null : new File(t.localPath);
+            if (!validAudioFile(f)) dead.add(key);
         }
-        if (!stale.isEmpty()) {
-            for (String key : stale) all.remove(key);
-            raw = all.toString();
-            prefs.edit().putString(KEY_DOWNLOADED, raw).apply();
+        for (String key : dead) { all.remove(key); stale++; changed = true; }
+
+        List<Track> catalog = catalog();
+        Map<String,File[]> dirCache = new HashMap<>();
+        for (Track t : catalog) {
+            if (t == null) continue;
+            JSONObject indexed = all.optJSONObject(t.key());
+            if (indexed != null) {
+                Track stored = Track.fromStored(indexed); File f = stored.localPath.isEmpty() ? null : new File(stored.localPath);
+                if (validAudioFile(f)) continue;
+            }
+            File found = findExistingFile(t, dirCache);
+            if (validAudioFile(found)) {
+                try { all.put(t.key(), t.withLocal(found.getAbsolutePath()).toStored()); recovered++; changed = true; }
+                catch (Exception ignored) {}
+            }
         }
-        downloadedCacheRaw = raw;
-        downloadedCache = new ArrayList<>(out);
-        flags.edit().putBoolean(KEY_DOWNLOADED_HINT, !out.isEmpty()).apply();
-        return out;
+        if (changed) persistDownloaded(all); else updateDownloadedHint(all.length() > 0);
+        return new ReconcileResult(before, all.length(), recovered, stale);
     }
 
-    // ANR_BOOT_FLAGS_V211: never read the potentially multi-megabyte download index on UI boot.
-    // Default true preserves existing installs; tapping Music will validate the real index on the IO executor.
-    boolean hasDownloadedHint() { return flags.getBoolean(KEY_DOWNLOADED_HINT, true); }
+    private File findExistingFile(Track track, Map<String,File[]> dirCache) {
+        File expected = targetFile(track);
+        if (validAudioFile(expected)) return expected;
+        File dir = expected.getParentFile(); if (dir == null || !dir.isDirectory()) return null;
+        String path = dir.getAbsolutePath(); File[] files = dirCache.get(path);
+        if (files == null) { files = dir.listFiles(); if (files == null) files = new File[0]; dirCache.put(path, files); }
+        String idToken = track.id == null ? "" : track.id.replaceAll("[^A-Za-z0-9_-]+", "").toLowerCase(Locale.ROOT);
+        String titleToken = normalizeFileToken(track.title);
+        File titleMatch = null;
+        for (File f : files) {
+            if (!validAudioFile(f)) continue;
+            String name = normalizeFileToken(stripExtension(f.getName()));
+            if (!idToken.isEmpty() && f.getName().toLowerCase(Locale.ROOT).contains(idToken)) return f;
+            if (!titleToken.isEmpty() && (name.equals(titleToken) || name.endsWith(titleToken) || name.contains(titleToken))) titleMatch = f;
+        }
+        return titleMatch;
+    }
 
+    List<Track> downloadedTracks() {
+        reconcileOffline();
+        String raw = prefs.getString(KEY_DOWNLOADED, "{}"); if (raw == null) raw = "{}";
+        List<Track> cached = downloadedCache; String cachedRaw = downloadedCacheRaw;
+        if (cached != null && raw.equals(cachedRaw)) return new ArrayList<>(cached);
+        ArrayList<Track> out = new ArrayList<>(); JSONObject all;
+        try { all = new JSONObject(raw); } catch (Exception e) { all = new JSONObject(); }
+        ArrayList<String> stale = new ArrayList<>(); java.util.Iterator<String> it = all.keys();
+        while (it.hasNext()) {
+            String key = it.next(); JSONObject o = all.optJSONObject(key); if (o == null) continue;
+            Track t = Track.fromStored(o); File f = t.localPath.isEmpty() ? null : new File(t.localPath);
+            if (validAudioFile(f)) out.add(t); else stale.add(key);
+        }
+        if (!stale.isEmpty()) { for (String key : stale) all.remove(key); raw = all.toString(); persistDownloaded(all); }
+        downloadedCacheRaw = raw; downloadedCache = new ArrayList<>(out); updateDownloadedHint(!out.isEmpty()); return out;
+    }
+
+    boolean hasDownloadedHint() { return flags.getBoolean(KEY_DOWNLOADED_HINT, true); }
     boolean hasSetupDone() { return flags.getBoolean(KEY_SETUP, false); }
     void setSetupDone(boolean done) { flags.edit().putBoolean(KEY_SETUP, done).apply(); }
 
@@ -187,42 +212,28 @@ final class LibraryStore {
     }
 
     Map<String, FolderStat> folderStats(List<Track> tracks) {
-        LinkedHashMap<String, FolderStat> out = new LinkedHashMap<>();
-        if (tracks == null) return out;
-        LinkedHashSet<String> offlineKeys = new LinkedHashSet<>();
-        for (Track local : downloadedTracks()) if (local != null) offlineKeys.add(local.key());
+        LinkedHashMap<String, FolderStat> out = new LinkedHashMap<>(); if (tracks == null) return out;
+        LinkedHashSet<String> offlineKeys = new LinkedHashSet<>(); for (Track local : downloadedTracks()) if (local != null) offlineKeys.add(local.key());
         for (Track t : tracks) {
-            if (t == null) continue;
-            String key = folderKey(t);
-            FolderStat stat = out.get(key);
+            if (t == null) continue; String key = folderKey(t); FolderStat stat = out.get(key);
             if (stat == null) { stat = new FolderStat(key); out.put(key, stat); }
-            stat.total++;
-            if (t.size > 0) stat.knownBytes += t.size;
-            if (offlineKeys.contains(t.key())) stat.downloaded++;
+            stat.total++; if (t.size > 0) stat.knownBytes += t.size; if (offlineKeys.contains(t.key())) stat.downloaded++;
         }
         return out;
     }
 
     List<Track> tracksForFolders(Set<String> folders) {
-        ArrayList<Track> out = new ArrayList<>();
-        if (folders == null || folders.isEmpty()) return out;
-        LinkedHashSet<String> offlineKeys = new LinkedHashSet<>();
-        for (Track local : downloadedTracks()) if (local != null) offlineKeys.add(local.key());
-        for (Track t : catalog()) {
-            if (t == null) continue;
-            if (folders.contains(folderKey(t)) && !offlineKeys.contains(t.key())) out.add(t);
-        }
+        ArrayList<Track> out = new ArrayList<>(); if (folders == null || folders.isEmpty()) return out;
+        LinkedHashSet<String> offlineKeys = new LinkedHashSet<>(); for (Track local : downloadedTracks()) if (local != null) offlineKeys.add(local.key());
+        for (Track t : catalog()) if (t != null && folders.contains(folderKey(t)) && !offlineKeys.contains(t.key())) out.add(t);
         return out;
     }
 
     File targetFile(Track track) {
-        File root = app.getExternalFilesDir(Environment.DIRECTORY_MUSIC);
-        if (root == null) root = app.getFilesDir();
-        File dir = new File(root, "EstradaPlay");
+        File dir = musicRoot();
         String path = track.folderPath.isEmpty() ? track.folder : track.folderPath;
         for (String part : path.replace(" / ", "/").replace('\\', '/').split("/+")) {
-            String safe = safeSegment(part);
-            if (!safe.isEmpty()) dir = new File(dir, safe);
+            String safe = safeSegment(part); if (!safe.isEmpty()) dir = new File(dir, safe);
         }
         String token = track.id.replaceAll("[^A-Za-z0-9_-]+", "");
         if (token.isEmpty()) token = Integer.toHexString(track.key().hashCode());
@@ -230,78 +241,101 @@ final class LibraryStore {
         return new File(dir, token + " - " + safeName(track.title) + extension(track));
     }
 
-    long freeBytes() {
+    File musicRoot() {
         File root = app.getExternalFilesDir(Environment.DIRECTORY_MUSIC);
-        if (root == null) root = app.getFilesDir();
-        return root.getUsableSpace();
+        if (root == null) root = new File(app.getFilesDir(), "Music");
+        return new File(root, "EstradaPlay");
+    }
+
+    long freeBytes() {
+        File root = app.getExternalFilesDir(Environment.DIRECTORY_MUSIC); if (root == null) root = app.getFilesDir(); return root.getUsableSpace();
+    }
+
+    synchronized StorageStats storageStats() {
+        reconcileOffline();
+        List<Track> indexed = rawDownloadedTracks(); Set<String> referenced = new HashSet<>(); long indexedBytes = 0;
+        for (Track t : indexed) { if (t.localPath.isEmpty()) continue; File f = new File(t.localPath); if (!validAudioFile(f)) continue; referenced.add(canonical(f)); indexedBytes += f.length(); }
+        MutableStats disk = new MutableStats(); scanFiles(musicRoot(), referenced, disk);
+        return new StorageStats(indexed.size(), indexedBytes, disk.files, disk.bytes, disk.orphans, disk.orphanBytes, freeBytes());
+    }
+
+    synchronized int removeOrphanFiles() {
+        reconcileOffline(); Set<String> referenced = new HashSet<>();
+        for (Track t : rawDownloadedTracks()) if (!t.localPath.isEmpty()) referenced.add(canonical(new File(t.localPath)));
+        int removed = removeOrphansRecursive(musicRoot(), referenced); cleanupEmptyDirs(musicRoot()); return removed;
+    }
+
+    synchronized DeleteResult removeAllOffline() {
+        JSONObject all = downloadedObject(); long bytes = 0; int files = 0;
+        for (Track t : rawDownloadedTracks()) {
+            if (t.localPath.isEmpty()) continue; File f = new File(t.localPath);
+            if (validAudioFile(f)) { bytes += f.length(); if (f.delete()) files++; }
+        }
+        long[] extra = deleteTreeContents(musicRoot()); files += (int)extra[0]; bytes += extra[1];
+        all = new JSONObject(); persistDownloaded(all); cleanupEmptyDirs(musicRoot()); return new DeleteResult(files, bytes);
     }
 
     int removeFolder(String folder) {
-        int removed = 0;
-        JSONObject all = downloadedObject();
-        ArrayList<String> keys = new ArrayList<>();
+        reconcileOffline(); int removed = 0; JSONObject all = downloadedObject(); ArrayList<String> keys = new ArrayList<>();
         java.util.Iterator<String> it = all.keys();
         while (it.hasNext()) {
-            String key = it.next();
-            JSONObject o = all.optJSONObject(key);
-            if (o == null) continue;
-            Track t = Track.fromStored(o);
-            if (!folder.equals(folderKey(t))) continue;
-            File f = t.localPath.isEmpty() ? null : new File(t.localPath);
-            if (f != null && f.isFile() && f.delete()) removed++;
-            keys.add(key);
+            String key = it.next(); JSONObject o = all.optJSONObject(key); if (o == null) continue; Track t = Track.fromStored(o);
+            if (!folder.equals(folderKey(t))) continue; File f = t.localPath.isEmpty() ? null : new File(t.localPath); if (validAudioFile(f) && f.delete()) removed++; keys.add(key);
         }
-        for (String key : keys) all.remove(key);
-        prefs.edit().putString(KEY_DOWNLOADED, all.toString()).apply();
-        flags.edit().putBoolean(KEY_DOWNLOADED_HINT, all.length() > 0).apply();
-        downloadedCache = null; downloadedCacheRaw = null;
-        return removed;
+        for (String key : keys) all.remove(key); persistDownloaded(all); cleanupEmptyDirs(musicRoot()); return removed;
     }
+
+    private List<Track> rawDownloadedTracks() {
+        ArrayList<Track> out = new ArrayList<>(); JSONObject all = downloadedObject(); java.util.Iterator<String> it = all.keys();
+        while (it.hasNext()) { JSONObject o = all.optJSONObject(it.next()); if (o != null) { Track t = Track.fromStored(o); if (!t.localPath.isEmpty() && validAudioFile(new File(t.localPath))) out.add(t); } }
+        return out;
+    }
+
+    private void persistDownloaded(JSONObject all) {
+        String raw = all.toString(); prefs.edit().putString(KEY_DOWNLOADED, raw).apply(); updateDownloadedHint(all.length() > 0); downloadedCache = null; downloadedCacheRaw = null;
+    }
+    private void updateDownloadedHint(boolean value) { flags.edit().putBoolean(KEY_DOWNLOADED_HINT, value).apply(); }
 
     static String folderKey(Track t) {
-        if (t == null) return "Sem pasta";
-        String p = t.folderPath == null ? "" : t.folderPath.trim();
-        if (p.isEmpty()) p = t.folder == null ? "" : t.folder.trim();
-        return p.isEmpty() ? "Sem pasta" : p;
+        if (t == null) return "Sem pasta"; String p = t.folderPath == null ? "" : t.folderPath.trim(); if (p.isEmpty()) p = t.folder == null ? "" : t.folder.trim(); return p.isEmpty() ? "Sem pasta" : p;
     }
 
-    private JSONObject downloadedObject() {
-        try { return new JSONObject(prefs.getString(KEY_DOWNLOADED, "{}")); }
-        catch (Exception e) { return new JSONObject(); }
+    private JSONObject downloadedObject() { try { return new JSONObject(prefs.getString(KEY_DOWNLOADED, "{}")); } catch (Exception e) { return new JSONObject(); } }
+
+    private static boolean validAudioFile(File f) { return f != null && f.isFile() && f.length() > 0 && isAudioName(f.getName()); }
+    private static boolean isAudioName(String name) { String n = name == null ? "" : name.toLowerCase(Locale.ROOT); for (String ext : new String[]{".mp3",".m4a",".aac",".flac",".wav",".opus",".ogg"}) if (n.endsWith(ext)) return true; return false; }
+    private static String stripExtension(String name) { int i = name == null ? -1 : name.lastIndexOf('.'); return i > 0 ? name.substring(0,i) : (name == null ? "" : name); }
+    static String normalizeFileToken(String value) { String s = value == null ? "" : value.toLowerCase(Locale.ROOT); s = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+", ""); return s.replaceAll("[^a-z0-9]+", " ").trim().replaceAll("\\s+", " "); }
+    private static String canonical(File f) { try { return f.getCanonicalPath(); } catch (Exception e) { return f.getAbsolutePath(); } }
+
+    private static void scanFiles(File dir, Set<String> referenced, MutableStats out) {
+        if (dir == null || !dir.isDirectory()) return; File[] children = dir.listFiles(); if (children == null) return;
+        for (File f : children) { if (f.isDirectory()) scanFiles(f,referenced,out); else if (validAudioFile(f)) { out.files++; out.bytes += f.length(); if (!referenced.contains(canonical(f))) { out.orphans++; out.orphanBytes += f.length(); } } }
     }
+    private static int removeOrphansRecursive(File dir, Set<String> referenced) {
+        if (dir == null || !dir.isDirectory()) return 0; int count = 0; File[] children = dir.listFiles(); if (children == null) return 0;
+        for (File f : children) { if (f.isDirectory()) count += removeOrphansRecursive(f,referenced); else if (validAudioFile(f) && !referenced.contains(canonical(f)) && f.delete()) count++; } return count;
+    }
+    private static long[] deleteTreeContents(File dir) {
+        long files=0,bytes=0; if (dir == null || !dir.isDirectory()) return new long[]{0,0}; File[] children=dir.listFiles(); if(children==null)return new long[]{0,0};
+        for(File f:children){if(f.isDirectory()){long[] r=deleteTreeContents(f);files+=r[0];bytes+=r[1];f.delete();}else if(validAudioFile(f)){long len=f.length();if(f.delete()){files++;bytes+=len;}}}return new long[]{files,bytes};
+    }
+    private static void cleanupEmptyDirs(File dir) { if (dir == null || !dir.isDirectory()) return; File[] children=dir.listFiles(); if(children==null)return; for(File f:children)if(f.isDirectory()){cleanupEmptyDirs(f);File[] rest=f.listFiles();if(rest!=null&&rest.length==0)f.delete();} }
 
     private static String extension(Track t) {
         String m = t.mime == null ? "" : t.mime.toLowerCase(Locale.ROOT);
-        if (m.contains("mpeg")) return ".mp3";
-        if (m.contains("mp4") || m.contains("m4a")) return ".m4a";
-        if (m.contains("aac")) return ".aac";
-        if (m.contains("flac")) return ".flac";
-        if (m.contains("wav")) return ".wav";
-        if (m.contains("opus")) return ".opus";
-        if (m.contains("ogg")) return ".ogg";
-        String s = t.remoteSource == null ? "" : t.remoteSource.toLowerCase(Locale.ROOT);
-        for (String ext : new String[]{".mp3", ".m4a", ".aac", ".flac", ".wav", ".opus", ".ogg"}) if (s.contains(ext)) return ext;
-        return ".mp3";
+        if (m.contains("mpeg")) return ".mp3"; if (m.contains("mp4") || m.contains("m4a")) return ".m4a"; if (m.contains("aac")) return ".aac"; if (m.contains("flac")) return ".flac"; if (m.contains("wav")) return ".wav"; if (m.contains("opus")) return ".opus"; if (m.contains("ogg")) return ".ogg";
+        String s = t.remoteSource == null ? "" : t.remoteSource.toLowerCase(Locale.ROOT); for (String ext : new String[]{".mp3", ".m4a", ".aac", ".flac", ".wav", ".opus", ".ogg"}) if (s.contains(ext)) return ext; return ".mp3";
     }
 
-    static String safeName(String value) {
-        String s = value == null ? "musica" : value;
-        s = s.replaceAll("[\\\\/:*?\"<>|]+", " ").replaceAll("\\s+", " ").trim();
-        if (s.isEmpty()) s = "musica";
-        return s.length() > 90 ? s.substring(0, 90) : s;
-    }
+    static String safeName(String value) { String s = value == null ? "musica" : value; s = s.replaceAll("[\\\\/:*?\"<>|]+", " ").replaceAll("\\s+", " ").trim(); if (s.isEmpty()) s = "musica"; return s.length() > 90 ? s.substring(0, 90) : s; }
+    private static String safeSegment(String value) { String s = safeName(value); return ".".equals(s) || "..".equals(s) ? "Pasta" : s; }
 
-    private static String safeSegment(String value) {
-        String s = safeName(value);
-        return ".".equals(s) || "..".equals(s) ? "Pasta" : s;
-    }
+    static String humanBytes(long bytes) { double b=Math.max(0,bytes); String[] u={"B","KB","MB","GB","TB"}; int i=0; while(b>=1024&&i<u.length-1){b/=1024;i++;} return String.format(Locale.getDefault(), i==0?"%.0f %s":"%.1f %s",b,u[i]); }
 
-    static final class FolderStat {
-        final String name;
-        int total;
-        int downloaded;
-        long knownBytes;
-        FolderStat(String name) { this.name = name; }
-        boolean complete() { return total > 0 && downloaded >= total; }
-    }
+    static final class ReconcileResult { final int before, after, recovered, staleRemoved; ReconcileResult(int before,int after,int recovered,int staleRemoved){this.before=before;this.after=after;this.recovered=recovered;this.staleRemoved=staleRemoved;} }
+    static final class StorageStats { final int indexedFiles; final long indexedBytes; final int diskFiles; final long diskBytes; final int orphanFiles; final long orphanBytes; final long freeBytes; StorageStats(int i,long ib,int d,long db,int o,long ob,long f){indexedFiles=i;indexedBytes=ib;diskFiles=d;diskBytes=db;orphanFiles=o;orphanBytes=ob;freeBytes=f;} }
+    static final class DeleteResult { final int files; final long bytes; DeleteResult(int f,long b){files=f;bytes=b;} }
+    private static final class MutableStats { int files,orphans; long bytes,orphanBytes; }
+    static final class FolderStat { final String name; int total; int downloaded; long knownBytes; FolderStat(String name) { this.name = name; } boolean complete() { return total > 0 && downloaded >= total; } }
 }
