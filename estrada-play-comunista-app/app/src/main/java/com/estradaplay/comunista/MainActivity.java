@@ -891,6 +891,7 @@ private void refreshLibraryAndOpenChooser() {
 
         TextView foot = overline("EPC 2.0  ·  CENTRAL AUTOMOTIVA", Color.rgb(118,84,77));
         foot.setGravity(Gravity.CENTER); page.addView(foot); margins(foot,0,18,0,0);
+        page.postDelayed(() -> EpcMotion.stagger(page), 55L);
     }
 
     private String shortWeather() {

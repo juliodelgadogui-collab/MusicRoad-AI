@@ -37,7 +37,7 @@ import static org.maplibre.android.style.layers.PropertyFactory.lineWidth;
 final class RoadMapView extends FrameLayout {
     private static final String OPEN_STYLE = "https://tiles.openfreemap.org/styles/liberty";
     private static final String EMPTY_GEOJSON = "{\"type\":\"FeatureCollection\",\"features\":[]}";
-    private static final String LOCAL_STYLE = "{\"version\":8,\"name\":\"EstradaPlay Offline\",\"sources\":{},\"layers\":[{\"id\":\"background\",\"type\":\"background\",\"paint\":{\"background-color\":\"#070a0f\"}}]}";
+    private static final String LOCAL_STYLE = "{\"version\":8,\"name\":\"EPC Night\",\"sources\":{},\"layers\":[{\"id\":\"background\",\"type\":\"background\",\"paint\":{\"background-color\":\"#080507\"}}]}";
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ArrayList<RoadHazard> hazards = new ArrayList<>();
@@ -47,6 +47,7 @@ final class RoadMapView extends FrameLayout {
     private final ArrayList<RoadQualityStore.Point> qualityPoints = new ArrayList<>();
     private final HazardOverlay overlay;
     private final TextView fallback;
+    private final View nightTint;
     private MapView mapView;
     private MapLibreMap map;
     private Style currentStyle;
@@ -73,6 +74,11 @@ final class RoadMapView extends FrameLayout {
         fallback.setBackgroundColor(Color.rgb(7, 7, 9));
         addView(fallback, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         initMapLibre();
+        nightTint = new View(context);
+        nightTint.setBackgroundColor(Color.argb(52, 10, 0, 5));
+        nightTint.setClickable(false);
+        nightTint.setFocusable(false);
+        addView(nightTint, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         overlay = new HazardOverlay(context);
         addView(overlay, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
     }
@@ -161,9 +167,9 @@ final class RoadMapView extends FrameLayout {
                 style.addSource(source);
                 offlineRoadSource = source;
                 LineLayer casing = new LineLayer("estradaplay-road-casing", "estradaplay-offline-roads")
-                        .withProperties(lineColor("#26313d"), lineWidth(5.2f), lineOpacity(0.96f));
+                        .withProperties(lineColor("#21171a"), lineWidth(5.8f), lineOpacity(0.98f));
                 LineLayer roads = new LineLayer("estradaplay-roads", "estradaplay-offline-roads")
-                        .withProperties(lineColor("#d7dde3"), lineWidth(2.5f), lineOpacity(0.92f));
+                        .withProperties(lineColor("#9d918d"), lineWidth(2.7f), lineOpacity(0.90f));
                 style.addLayer(casing);
                 style.addLayer(roads);
             } else {
@@ -185,9 +191,9 @@ final class RoadMapView extends FrameLayout {
                 style.addSource(source);
                 routeSource = source;
                 LineLayer casing = new LineLayer("epc-route-casing", "epc-route")
-                        .withProperties(lineColor("#2b080d"), lineWidth(8.5f), lineOpacity(0.92f));
+                        .withProperties(lineColor("#4d0713"), lineWidth(10.4f), lineOpacity(0.96f));
                 LineLayer route = new LineLayer("epc-route-line", "epc-route")
-                        .withProperties(lineColor("#e01e2f"), lineWidth(5.3f), lineOpacity(0.98f));
+                        .withProperties(lineColor("#ff3048"), lineWidth(6.2f), lineOpacity(1.0f));
                 style.addLayer(casing);
                 style.addLayer(route);
             } else {
@@ -203,7 +209,7 @@ final class RoadMapView extends FrameLayout {
 
     void recenter() {
         follow = true;
-        if (map != null && Double.isFinite(userLat) && Double.isFinite(userLon)) setCamera(userLat, userLon, offlineStyle ? 14.8 : 16.1, offlineStyle ? 38.0 : 50.0, bearing);
+        if (map != null && Double.isFinite(userLat) && Double.isFinite(userLon)) setCamera(userLat, userLon, offlineStyle ? 15.0 : 16.35, offlineStyle ? 42.0 : 56.0, bearing);
     }
 
     void setUserLocation(double lat, double lon, double heading) {
@@ -211,7 +217,7 @@ final class RoadMapView extends FrameLayout {
         userLat = lat;
         userLon = lon;
         if (Double.isFinite(heading) && heading >= 0) bearing = ((heading % 360.0) + 360.0) % 360.0;
-        if (follow && map != null && mapReady) setCamera(lat, lon, offlineStyle ? 14.8 : 16.1, offlineStyle ? 38.0 : 50.0, bearing);
+        if (follow && map != null && mapReady) setCamera(lat, lon, offlineStyle ? 15.0 : 16.35, offlineStyle ? 42.0 : 56.0, bearing);
         overlay.invalidate();
     }
 

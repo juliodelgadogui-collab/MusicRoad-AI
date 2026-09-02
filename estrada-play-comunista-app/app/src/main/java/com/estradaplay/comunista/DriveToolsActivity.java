@@ -69,6 +69,7 @@ public final class DriveToolsActivity extends ComponentActivity {
         toggle("BASE COLETIVA","Compartilha eventos leves da estrada","collective_enabled",DriveSettings.collectiveEnabled(this));
 
         LinearLayout maintenance=row();Button voice=btn("DIAGNÓSTICO DE VOZ",false);Button server=btn("SERVIDOR",false);maintenance.addView(voice,new LinearLayout.LayoutParams(0,dp(50),1));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(0,dp(50),1);sp.setMargins(dp(8),0,0,0);maintenance.addView(server,sp);voice.setOnClickListener(v->open(VoiceDiagnosticsActivity.class));server.setOnClickListener(v->open(ServerSettingsActivity.class));page.addView(maintenance);margins(maintenance,0,10,0,0);
+        page.postDelayed(() -> EpcMotion.stagger(page), 55L);
     }
 
     private void addStatusStrip(){LinearLayout strip=row();strip.setGravity(Gravity.CENTER_VERTICAL);strip.setPadding(dp(13),dp(11),dp(13),dp(11));strip.setBackground(panel(Color.argb(225,16,10,12),14,BORDER));TextView a=over("◈ PROTEÇÃO ATIVA",GREEN);strip.addView(a,new LinearLayout.LayoutParams(0,-2,1));TextView b=over(RoadWeatherMonitor.compactStatus(this),GOLD);b.setGravity(Gravity.RIGHT);b.setMaxLines(1);strip.addView(b,new LinearLayout.LayoutParams(0,-2,1));page.addView(strip);}
