@@ -7,6 +7,7 @@ on:
     paths:
       - 'tools/patch_estrada_play_v201_polish.py'
       - 'tools/patch_estrada_play_v201_fix.py'
+      - 'tools/patch_estrada_play_v201_idempotent.py'
       - 'tools/ci_build_epc_v201.sh'
       - '.github/workflows/build-estrada-play-universal-v201-acabamento.yml'
   workflow_dispatch:
@@ -26,9 +27,10 @@ jobs:
 
       - name: Generate 2.0.1 polish source
         run: |
-          python3 -m py_compile tools/patch_estrada_play_v201_polish.py tools/patch_estrada_play_v201_fix.py
+          python3 -m py_compile tools/patch_estrada_play_v201_polish.py tools/patch_estrada_play_v201_fix.py tools/patch_estrada_play_v201_idempotent.py
           python3 tools/patch_estrada_play_v201_polish.py
           python3 tools/patch_estrada_play_v201_fix.py
+          python3 tools/patch_estrada_play_v201_idempotent.py
 
       - name: Verify automotive polish architecture
         run: |
@@ -41,6 +43,9 @@ jobs:
           grep -q 'navDistanceText' "$J/RoadMapActivity.java"
           grep -q 'navEtaText' "$J/RoadMapActivity.java"
           grep -q 'mapPlayerToggle' "$J/RoadMapActivity.java"
+          test "$(grep -c 'private final BroadcastReceiver playerReceiver' "$J/RoadMapActivity.java")" -eq 1
+          test "$(grep -c 'NAV_POLISH_V201 helpers' "$J/RoadMapActivity.java")" -eq 1
+          test "$(grep -c 'private final View nightTint' "$J/RoadMapView.java")" -eq 1
           grep -q 'ALERT_CARD_V201' "$J/SafetyAlertOverlay.java"
           grep -q 'class EpcMotion' "$J/EpcMotion.java"
           grep -q '#ff3048' "$J/RoadMapView.java"
