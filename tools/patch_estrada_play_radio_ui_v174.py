@@ -4,7 +4,7 @@ import re
 ROOT = Path('estrada-play-comunista-app')
 JAVA = ROOT / 'app/src/main/java/com/estradaplay/comunista'
 
-# Version
+# Version: safe whether the branch is still 1.7.3 or was partially prepared.
 p = ROOT / 'app/build.gradle'
 s = p.read_text(encoding='utf-8')
 s = re.sub(r'versionCode\s+173\b', 'versionCode 174', s)
@@ -13,7 +13,8 @@ if "versionCode 174" not in s or "versionName '1.7.4'" not in s:
     raise SystemExit('version bump failed')
 p.write_text(s, encoding='utf-8')
 
-# Portrait shell: five sectors always visible, no horizontal scrolling.
+# Portrait shell: all five sectors visible at once. The direct source may already
+# carry PORTRAIT_NAV_FIT_V174, so never try to patch it twice.
 p = JAVA / 'UnifiedAppShell.java'
 s = p.read_text(encoding='utf-8')
 s = s.replace('import android.widget.HorizontalScrollView;\n', '')
@@ -24,40 +25,32 @@ s = s.replace('head.addView(mark,new LinearLayout.LayoutParams(dp(a,48),dp(a,42)
 s = s.replace('words.addView(text(a,title(active),16,TEXT,true));',
               'words.addView(text(a,title(active),15,TEXT,true));')
 
-pattern = re.compile(
-    r'        HorizontalScrollView hsv=.*?root\.addView\(hsv,new LinearLayout\.LayoutParams\(-1,dp\(a,52\)\)\);',
-    re.S,
-)
-new_nav = '''        LinearLayout row=new LinearLayout(a);row.setOrientation(LinearLayout.HORIZONTAL);row.setPadding(dp(a,4),dp(a,4),dp(a,4),dp(a,4));
-        addPortraitNav(a,row,"ESTRADA","road",active,RoadMapActivity.class);
-        addPortraitNav(a,row,"MÚSICA","music",active,MusicPlayerActivity.class);
-        addPortraitNav(a,row,"RÁDIO","radio",active,RoadRadioActivity.class);
-        addPortraitNav(a,row,"VIAGEM","trip",active,TripPlannerActivity.class);
-        addPortraitNav(a,row,"CENTRAL","central",active,DriveToolsActivity.class);
-        root.addView(row,new LinearLayout.LayoutParams(-1,dp(a,44)));'''
-s, n = pattern.subn(new_nav, s, count=1)
-if n != 1:
-    raise SystemExit(f'portrait nav replacement failed: {n}')
-
-anchor = '''    private static View navChip(Activity a,String label,String key,String active,Class<?> cls){
-        TextView v=navText(a,label,key.equals(active));v.setMinWidth(dp(a,92));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(a,40));p.setMargins(0,0,dp(a,7),0);v.setLayoutParams(p);v.setOnClickListener(x->go(a,key,active,cls));return v;
-    }'''
-helper = anchor + '''
-    private static void addPortraitNav(Activity a,LinearLayout row,String label,String key,String active,Class<?> cls){
-        TextView v=navText(a,label,key.equals(active));
-        v.setTextSize(7.4f);
-        v.setSingleLine(true);
-        v.setOnClickListener(x->go(a,key,active,cls));
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(a,36),1f);
-        p.setMargins(dp(a,2),0,dp(a,2),0);
-        row.addView(v,p);
-    }'''
-if anchor not in s:
-    raise SystemExit('navChip anchor not found')
-s = s.replace(anchor, helper, 1)
+if 'PORTRAIT_NAV_FIT_V174' not in s:
+    start = s.find('        HorizontalScrollView hsv=')
+    end_marker = 'root.addView(hsv,new LinearLayout.LayoutParams(-1,dp(a,52)));'
+    end = s.find(end_marker, start)
+    if start < 0 or end < 0:
+        raise SystemExit('portrait navigation source not found')
+    end += len(end_marker)
+    new_nav = '''        // PORTRAIT_NAV_FIT_V174: all five sectors remain visible at once.\n        LinearLayout row=new LinearLayout(a);row.setOrientation(LinearLayout.HORIZONTAL);row.setPadding(dp(a,5),dp(a,4),dp(a,5),dp(a,4));row.setBackgroundColor(BG);\n        addNavChipFit(a,row,"ESTRADA","road",active,RoadMapActivity.class);\n        addNavChipFit(a,row,"MÚSICA","music",active,MusicPlayerActivity.class);\n        addNavChipFit(a,row,"RÁDIO","radio",active,RoadRadioActivity.class);\n        addNavChipFit(a,row,"VIAGEM","trip",active,TripPlannerActivity.class);\n        addNavChipFit(a,row,"CENTRAL","central",active,DriveToolsActivity.class);\n        root.addView(row,new LinearLayout.LayoutParams(-1,dp(a,44)));'''
+    s = s[:start] + new_nav + s[end:]
+    anchor = '''    private static View navChip(Activity a,String label,String key,String active,Class<?> cls){\n        TextView v=navText(a,label,key.equals(active));v.setMinWidth(dp(a,92));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(a,40));p.setMargins(0,0,dp(a,7),0);v.setLayoutParams(p);v.setOnClickListener(x->go(a,key,active,cls));return v;\n    }'''
+    helper = anchor + '''\n    private static void addNavChipFit(Activity a,LinearLayout row,String label,String key,String active,Class<?> cls){\n        TextView v=navText(a,label,key.equals(active));v.setTextSize(7.6f);v.setMinWidth(0);v.setSingleLine(true);\n        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(a,36),1f);p.setMargins(dp(a,2),0,dp(a,2),0);row.addView(v,p);\n        v.setOnClickListener(x->go(a,key,active,cls));\n    }'''
+    if anchor not in s:
+        raise SystemExit('nav helper anchor not found')
+    s = s.replace(anchor, helper, 1)
+else:
+    s = s.replace('row.setPadding(dp(a,7),dp(a,6),dp(a,7),dp(a,6));',
+                  'row.setPadding(dp(a,5),dp(a,4),dp(a,5),dp(a,4));')
+    s = s.replace('v.setTextSize(8.2f);', 'v.setTextSize(7.6f);')
+    s = s.replace('new LinearLayout.LayoutParams(0,dp(a,40),1f)',
+                  'new LinearLayout.LayoutParams(0,dp(a,36),1f)')
+    s = s.replace('root.addView(row,new LinearLayout.LayoutParams(-1,dp(a,52)));',
+                  'root.addView(row,new LinearLayout.LayoutParams(-1,dp(a,44)));')
 p.write_text(s, encoding='utf-8')
 
-# Radio page: remove duplicate giant title and use a native custom in-app road picker.
+# Radio page: keep the custom picker already in source, compact the screen and
+# make the manual road choice persist explicitly.
 p = JAVA / 'RoadRadioActivity.java'
 s = p.read_text(encoding='utf-8')
 s = s.replace('p.setPadding(dp(18),dp(18),dp(18),dp(30));', 'p.setPadding(dp(14),dp(12),dp(14),dp(26));')
@@ -67,44 +60,21 @@ s = s.replace(
 )
 s = s.replace('chooseRoad=button("ESCOLHER RODOVIA · SE NÃO IDENTIFICAR",Color.rgb(42,22,25));p.addView(chooseRoad,new LinearLayout.LayoutParams(-1,dp(48)));',
               'chooseRoad=button("ESCOLHER RODOVIA MANUALMENTE",Color.rgb(42,22,25));p.addView(chooseRoad,new LinearLayout.LayoutParams(-1,dp(46)));')
+s = s.replace('join=button("ENTRAR NO RÁDIO",RED);p.addView(join,new LinearLayout.LayoutParams(-1,dp(58)));',
+              'join=button("ENTRAR NO RÁDIO",RED);p.addView(join,new LinearLayout.LayoutParams(-1,dp(54)));')
+s = s.replace('ptt=button("SEGURE PARA FALAR",Color.rgb(78,18,28));p.addView(ptt,new LinearLayout.LayoutParams(-1,dp(92)));',
+              'ptt=button("SEGURE PARA FALAR",Color.rgb(78,18,28));p.addView(ptt,new LinearLayout.LayoutParams(-1,dp(78)));')
 
-picker_pattern = re.compile(r'    private void showRoadPicker\(\)\{.*?\n    \}\n\n    private void enter\(\)', re.S)
-new_picker = '''    private void showRoadPicker(){
-        final String[] roads=KnownRoadCatalog.PRESET_ROADS;
-        if(roads==null||roads.length==0){Toast.makeText(this,"Catálogo de rodovias indisponível.",Toast.LENGTH_SHORT).show();return;}
+if 'ROAD_PICKER_PANEL_V174' in s:
+    target = 'option.setOnClickListener(v->{\n                Intent i=new Intent(this,RoadRadioService.class).setAction(RoadRadioService.ACTION_SET_ROAD);i.putExtra("road",road);'
+    repl = 'option.setOnClickListener(v->{\n                KnownRoadCatalog.select(this,road);\n                Intent i=new Intent(this,RoadRadioService.class).setAction(RoadRadioService.ACTION_SET_ROAD);i.putExtra("road",road);'
+    if target in s and 'KnownRoadCatalog.select(this,road);' not in s:
+        s = s.replace(target, repl, 1)
+else:
+    raise SystemExit('custom road picker source missing')
 
-        final android.app.Dialog dialog=new android.app.Dialog(this);
-        LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setPadding(dp(16),dp(14),dp(16),dp(12));shell.setBackground(box(Color.rgb(18,9,12),16,Color.rgb(104,48,56)));
-        TextView title=t("ESCOLHER RODOVIA",18,TEXT,true);shell.addView(title);
-        TextView hint=t("Use somente quando a identificação automática falhar. O GPS continua separando o rádio por trecho local.",11,MUTED,false);shell.addView(hint);
-
-        ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);
-        String current=KnownRoadCatalog.selected(this);
-        for(String road:roads){
-            final String selected=road;
-            TextView item=t(road,14,TEXT,true);item.setGravity(Gravity.CENTER_VERTICAL);item.setPadding(dp(14),0,dp(14),0);item.setClickable(true);item.setFocusable(true);
-            boolean active=road.equals(current);item.setBackground(box(active?Color.rgb(79,10,23):Color.rgb(31,15,19),10,active?RED:Color.rgb(76,38,43)));
-            LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(-1,dp(46));ip.setMargins(0,dp(3),0,dp(3));list.addView(item,ip);
-            item.setOnClickListener(v->{
-                KnownRoadCatalog.select(this,selected);
-                Intent i=new Intent(this,RoadRadioService.class).setAction(RoadRadioService.ACTION_SET_ROAD);i.putExtra("road",selected);
-                if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
-                room.setText(selected+" · CONFIRMANDO TRECHO…");
-                dialog.dismiss();
-            });
-        }
-        int maxList=Math.min(dp(330),Math.round(getResources().getDisplayMetrics().heightPixels*0.48f));
-        shell.addView(scroll,new LinearLayout.LayoutParams(-1,maxList));
-        Button cancel=button("CANCELAR",Color.rgb(42,22,25));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,dp(44));cp.setMargins(0,dp(8),0,0);shell.addView(cancel,cp);cancel.setOnClickListener(v->dialog.dismiss());
-
-        dialog.setContentView(shell);dialog.setCanceledOnTouchOutside(true);dialog.show();
-        android.view.Window w=dialog.getWindow();if(w!=null){w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));int width=Math.min(dp(520),Math.round(getResources().getDisplayMetrics().widthPixels*0.92f));w.setLayout(width,ViewGroup.LayoutParams.WRAP_CONTENT);}
-    }
-
-    private void enter()'''
-s, n = picker_pattern.subn(new_picker, s, count=1)
-if n != 1:
-    raise SystemExit(f'road picker replacement failed: {n}')
+if 'ROAD_PICKER_PANEL_V174' not in s or 'KnownRoadCatalog.select(this,road);' not in s:
+    raise SystemExit('custom road picker validation failed')
 p.write_text(s, encoding='utf-8')
 
-print('Universal 1.7.4 portrait navigation and radio picker fixes applied')
+print('Universal 1.7.4 UI fixes ready')
