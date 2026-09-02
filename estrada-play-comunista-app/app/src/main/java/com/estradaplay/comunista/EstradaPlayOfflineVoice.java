@@ -28,6 +28,11 @@ final class EstradaPlayOfflineVoice {
     private final AudioManager audioManager;
     private AudioFocusRequest focusRequest;
     private boolean focusHeld;
+    // VOICE_FULL_ALERT_V192: automotive ROMs can swallow the first short clip while
+    // audio focus/ducking is still changing. Prime focus before speech and leave a
+    // small gap between clips so the whole sentence is audible, not only distance.
+    private static final long FIRST_CLIP_PREROLL_MS = 240L;
+    private static final long BETWEEN_CLIPS_MS = 65L;
 
     EstradaPlayOfflineVoice(Context context) {
         app = context.getApplicationContext();
@@ -149,7 +154,15 @@ final class EstradaPlayOfflineVoice {
         started = onStarted;
         finished = onFinished;
         startNotified = false;
-        playNext(token);
+        // Acquire navigation focus and duck the app/player BEFORE the first word.
+        // Calling the service callback after playback starts made head units miss
+        // phrases such as 'Radar a frente' and only reproduce '500 metros'.
+        requestLocalFocus();
+        startNotified = true;
+        Runnable begin = started;
+        started = null;
+        if (begin != null) begin.run();
+        main.postDelayed(() -> playNext(token), FIRST_CLIP_PREROLL_MS);
     }
 
     private void playNext(int token) {
@@ -178,7 +191,7 @@ final class EstradaPlayOfflineVoice {
             mp.setOnCompletionListener(donePlayer -> {
                 safeRelease(donePlayer);
                 if (player == donePlayer) player = null;
-                playNext(token);
+                main.postDelayed(() -> playNext(token), BETWEEN_CLIPS_MS);
             });
             mp.setOnErrorListener((badPlayer, what, extra) -> {
                 safeRelease(badPlayer);
