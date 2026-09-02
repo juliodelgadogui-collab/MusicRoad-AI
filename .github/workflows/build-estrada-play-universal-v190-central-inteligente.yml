@@ -1,0 +1,63 @@
+name: Estrada Play Universal 1.9.0 Central Inteligente
+permissions:
+  contents: read
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'tools/patch_estrada_play_v190_central_inteligente.py'
+      - 'tools/ci_build_epc_v190.sh'
+      - '.github/workflows/build-estrada-play-universal-v190-central-inteligente.yml'
+      - 'api/fuel_live.php'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MaintenanceStore.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MaintenanceActivity.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/FuelCommunityStore.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/FuelCommunityActivity.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/EmergencyActivity.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/Obd2Activity.java'
+  workflow_dispatch:
+
+concurrency:
+  group: estrada-play-comunista-v190
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+      - name: Generate 1.9.0 source
+        run: |
+          python3 -m py_compile tools/patch_estrada_play_v190_central_inteligente.py
+          python3 tools/patch_estrada_play_v190_central_inteligente.py
+      - name: Verify source
+        run: |
+          grep -q "versionName '1.9.0'" estrada-play-comunista-app/app/build.gradle
+          grep -q 'versionCode 190' estrada-play-comunista-app/app/build.gradle
+          grep -q 'MaintenanceActivity' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q 'FuelCommunityActivity' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q 'EmergencyActivity' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q 'Obd2Activity' estrada-play-comunista-app/app/src/main/AndroidManifest.xml
+          grep -q 'HUD NOTURNO' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/HudActivity.java
+          php -l api/fuel_live.php
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build and validate APK
+        run: bash tools/ci_build_epc_v190.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-1.9.0-Central-Inteligente
+          path: |
+            Estrada-Play-Comunista-Universal-1.9.0-Central-Inteligente.apk
+            Estrada-Play-Comunista-1.9.0-SERVIDOR.zip
+          retention-days: 3
+          compression-level: 0
