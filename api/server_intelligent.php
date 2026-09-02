@@ -2,12 +2,14 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/server_context_v7.php';
 
-const ESTRADAPLAY_SERVER_INTELLIGENT_VERSION = '500MB-v6.1';
+const ESTRADAPLAY_SERVER_INTELLIGENT_VERSION = '500MB-v7.0';
 
 function intelligent_server_ensure_schema(): void
 {
     ensure_schema();
+    ep7_ensure_schema();
     $driver = (string)db()->getAttribute(PDO::ATTR_DRIVER_NAME);
     if ($driver === 'mysql') {
         db()->exec("CREATE TABLE IF NOT EXISTS road_reports (
@@ -145,12 +147,16 @@ function intelligent_server_housekeeping(bool $force = false): array
     $deleted = 0;
     try {
         $last=(int)app_setting('intelligent_housekeeping_ts','0');
-        if (!$force && $last > 0 && time()-$last < 21600) return ['skipped'=>true,'deleted'=>0];
+        if (!$force && $last > 0 && time()-$last < 21600) {
+            $context=ep7_housekeeping(false);
+            return ['skipped'=>true,'deleted'=>(int)($context['deleted']??0)];
+        }
         $resolvedCut=date('Y-m-d H:i:s',time()-180*86400);
         $pendingCut=date('Y-m-d H:i:s',time()-365*86400);
         $s=db()->prepare("DELETE FROM road_reports WHERE (status IN ('CONFIRMADO','REJEITADO') AND created_at < ?) OR (status='PENDENTE' AND created_at < ?)");
         $s->execute([$resolvedCut,$pendingCut]);
         $deleted += $s->rowCount();
+        $context=ep7_housekeeping(true);$deleted+=(int)($context['deleted']??0);
         set_app_setting('intelligent_housekeeping_ts',(string)time());
     } catch (Throwable $e) { error_log('INTELLIGENT housekeeping: '.$e->getMessage()); }
     return ['skipped'=>false,'deleted'=>$deleted];
@@ -165,11 +171,19 @@ function intelligent_server_capabilities(): array
         'stores_video'=>false,
         'road_reports'=>true,
         'report_review'=>true,
+        'road_live_confidence'=>true,
+        'road_live_negative_feedback'=>true,
+        'route_context'=>true,
+        'route_weather'=>true,
+        'collaborative_traffic'=>true,
+        'traffic_privacy'=>['opt_in'=>true,'device_hash_only'=>true,'retention_h'=>2],
+        'fuel_route_ranking'=>true,
+        'weather_cache_ttl_s'=>900,
         'drive_catalog_sync'=>true,
         'catalog_version'=>true,
         'quota_guard'=>true,
         'log_rotation'=>true,
-        'offline_state_packs'=>['RJ','MG','ES'],
+        'offline_state_packs'=>['SP','RJ','MG','ES'],
         'road_radio'=>true,
         'radio_audio_stored'=>false,
         'radio_room_max'=>8,
@@ -185,6 +199,7 @@ function intelligent_server_status_snapshot(): array
         'catalog_version'=>server_catalog_version(),
         'catalog_changed_at'=>app_setting('catalog_changed_at',''),
         'reports'=>intelligent_server_report_stats(),
+        'context'=>ep7_context_stats(),
         'quota'=>[
             'level'=>$health['quota_level'] ?? 'ok',
             'percent'=>$health['quota_percent'] ?? 0,
