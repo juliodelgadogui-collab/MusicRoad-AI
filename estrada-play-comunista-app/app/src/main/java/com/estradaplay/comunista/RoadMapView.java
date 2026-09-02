@@ -48,6 +48,7 @@ final class RoadMapView extends FrameLayout {
     private final HazardOverlay overlay;
     private final TextView fallback;
     private final View nightTint;
+    private final View nightTint;
     private MapView mapView;
     private MapLibreMap map;
     private Style currentStyle;
