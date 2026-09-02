@@ -9,7 +9,7 @@ import android.os.Looper;
 
 import java.lang.ref.WeakReference;
 
-/** Installs the dedicated native DriveOS shell only while MainActivity is landscape. */
+/** Installs the dedicated native DriveOS shell and native feature completion layer. */
 public final class MusicRoadApplication extends Application implements Application.ActivityLifecycleCallbacks {
     private final Handler main=new Handler(Looper.getMainLooper());
     private WeakReference<MainActivity> current=new WeakReference<>(null);
@@ -36,11 +36,19 @@ public final class MusicRoadApplication extends Application implements Applicati
         MainActivity a=current.get();if(a!=null){NativeAppGuard.start(a);schedule(a,140);}
     }
 
-    private void schedule(MainActivity activity,long delay){main.postDelayed(()->DriveOsShell.install(activity),delay);}
+    private void schedule(MainActivity activity,long delay){
+        main.postDelayed(()->{
+            DriveOsShell.install(activity);
+            NativeFeatureAugmenter.install(activity);
+        },delay);
+    }
 
     @Override public void onActivityCreated(Activity a,Bundle b){}
     @Override public void onActivityStarted(Activity a){}
     @Override public void onActivityStopped(Activity a){}
     @Override public void onActivitySaveInstanceState(Activity a,Bundle b){}
-    @Override public void onActivityDestroyed(Activity a){if(a instanceof MainActivity)NativeAppGuard.stop((MainActivity)a);if(a==current.get())current.clear();}
+    @Override public void onActivityDestroyed(Activity a){
+        if(a instanceof MainActivity){NativeAppGuard.stop((MainActivity)a);NativeFeatureAugmenter.detach((MainActivity)a);}
+        if(a==current.get())current.clear();
+    }
 }
