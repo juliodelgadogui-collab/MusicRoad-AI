@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
@@ -83,6 +86,10 @@
         <activity android:name=".EstradaVivaActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".ConvoyActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
         <activity android:name=".VehicleCostActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".MaintenanceActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".FuelCommunityActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".EmergencyActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".Obd2Activity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".TripPlannerActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".TripReplayActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadFavoritesActivity" android:exported="false" android:screenOrientation="${appOrientation}" />

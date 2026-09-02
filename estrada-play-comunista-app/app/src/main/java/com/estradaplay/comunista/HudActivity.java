@@ -22,19 +22,19 @@ import androidx.activity.ComponentActivity;
 public final class HudActivity extends ComponentActivity {
     private final int BG=Color.BLACK,TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(166,148,145),RED=Color.rgb(255,45,52),GREEN=Color.rgb(72,212,134),GOLD=Color.rgb(226,185,76),BORDER=Color.rgb(76,38,44),SURFACE=Color.rgb(17,10,12);
     private LinearLayout projection;
-    private TextView speed,limit,hazard,distance,mirrorState;
+    private TextView speed,limit,hazard,distance,mirrorState,roadName;
     private boolean registered;
 
     private final BroadcastReceiver rx=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){
         if(speed==null)return;
         speed.setText(String.valueOf(Math.max(0,Math.round(i.getDoubleExtra("speed_kmh",0)))));
         int l=i.getIntExtra("road_limit_kmh",0);limit.setText(l>0?String.valueOf(l):"--");
-        String h=i.getStringExtra("hazard_label");double d=i.getDoubleExtra("distance_m",0);
+        String h=i.getStringExtra("hazard_label");double d=i.getDoubleExtra("distance_m",0);String road=i.getStringExtra("road");if(roadName!=null)roadName.setText(road==null||road.trim().isEmpty()?"RODOVIA --":road.trim().toUpperCase());
         boolean has=h!=null&&!h.trim().isEmpty();hazard.setText(has?h.trim().toUpperCase():"ESTRADA LIVRE");hazard.setTextColor(has?GOLD:GREEN);
         distance.setText(has&&d>0?(d>=1000?String.format(java.util.Locale.getDefault(),"%.1f km",d/1000.0):Math.round(d)+" m"):"PROTEÇÃO ATIVA");
     }};
 
-    @Override protected void onCreate(Bundle b){super.onCreate(b);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);build();}
+    @Override protected void onCreate(Bundle b){super.onCreate(b);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);WindowManager.LayoutParams lp=getWindow().getAttributes();lp.screenBrightness=DriveSettings.nightNow(this)?.22f:.68f;getWindow().setAttributes(lp);build();}
 
     private void build(){
         FrameLayout root=new FrameLayout(this);root.setBackgroundColor(BG);setContentView(root);
@@ -42,7 +42,7 @@ public final class HudActivity extends ComponentActivity {
 
         LinearLayout controls=new LinearLayout(this);controls.setOrientation(LinearLayout.HORIZONTAL);controls.setGravity(Gravity.CENTER_VERTICAL);
         Button back=button("‹ VOLTAR",false);controls.addView(back,new LinearLayout.LayoutParams(dp(96),dp(44)));back.setOnClickListener(v->finish());
-        LinearLayout titleBox=new LinearLayout(this);titleBox.setOrientation(LinearLayout.VERTICAL);titleBox.setPadding(dp(10),0,0,0);TextView over=text("HUD DE PARA-BRISA",9,RED,true);over.setLetterSpacing(.12f);titleBox.addView(over);titleBox.addView(text("Projeção",18,TEXT,true));controls.addView(titleBox,new LinearLayout.LayoutParams(0,-2,1));
+        LinearLayout titleBox=new LinearLayout(this);titleBox.setOrientation(LinearLayout.VERTICAL);titleBox.setPadding(dp(10),0,0,0);TextView over=text(DriveSettings.nightNow(this)?"HUD NOTURNO · PARA-BRISA":"HUD DE PARA-BRISA",9,RED,true);over.setLetterSpacing(.12f);titleBox.addView(over);titleBox.addView(text("Projeção",18,TEXT,true));controls.addView(titleBox,new LinearLayout.LayoutParams(0,-2,1));
         Button mirror=button("ESPELHAR",false);controls.addView(mirror,new LinearLayout.LayoutParams(dp(106),dp(44)));mirror.setOnClickListener(v->{boolean next=!DriveSettings.hudMirror(this);DriveSettings.toggle(this,"hud_mirror",next);applyMirror();});page.addView(controls);
 
         LinearLayout stateRow=new LinearLayout(this);stateRow.setOrientation(LinearLayout.HORIZONTAL);stateRow.setGravity(Gravity.CENTER_VERTICAL);stateRow.setPadding(dp(12),dp(8),dp(12),dp(8));stateRow.setBackground(panel(SURFACE,14,BORDER));
@@ -52,7 +52,7 @@ public final class HudActivity extends ComponentActivity {
 
         TextView speedLabel=text("VELOCIDADE",10,MUTED,true);speedLabel.setLetterSpacing(.16f);speedLabel.setGravity(Gravity.CENTER);projection.addView(speedLabel);
         speed=text("0",useLandscape()?112:104,RED,true);speed.setGravity(Gravity.CENTER);projection.addView(speed,new LinearLayout.LayoutParams(-1,-2));
-        TextView kmh=text("KM/H",13,MUTED,true);kmh.setGravity(Gravity.CENTER);kmh.setLetterSpacing(.16f);projection.addView(kmh);
+        TextView kmh=text("KM/H",13,MUTED,true);kmh.setGravity(Gravity.CENTER);kmh.setLetterSpacing(.16f);projection.addView(kmh);roadName=text("RODOVIA --",12,GOLD,true);roadName.setGravity(Gravity.CENTER);roadName.setLetterSpacing(.10f);LinearLayout.LayoutParams rnp=new LinearLayout.LayoutParams(-1,-2);rnp.setMargins(0,dp(7),0,0);projection.addView(roadName,rnp);
 
         LinearLayout center=new LinearLayout(this);center.setOrientation(LinearLayout.HORIZONTAL);center.setGravity(Gravity.CENTER);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(0,dp(18),0,0);projection.addView(center,cp);
         LinearLayout limitBox=new LinearLayout(this);limitBox.setOrientation(LinearLayout.VERTICAL);limitBox.setGravity(Gravity.CENTER);limitBox.setBackground(panel(Color.rgb(18,9,12),18,Color.rgb(238,238,238)));limitBox.setPadding(dp(18),dp(10),dp(18),dp(10));TextView lt=text("LIMITE",10,MUTED,true);lt.setGravity(Gravity.CENTER);limitBox.addView(lt);limit=text("--",34,TEXT,true);limit.setGravity(Gravity.CENTER);limitBox.addView(limit);center.addView(limitBox,new LinearLayout.LayoutParams(dp(128),dp(100)));
