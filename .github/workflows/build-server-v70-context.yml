@@ -1,0 +1,106 @@
+name: EstradaPlay Server v7.0 Contexto Inteligente
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'api/server_context_v7.php'
+      - 'api/context_v7_core.php'
+      - 'api/context_v7_live.php'
+      - 'api/context_v7_weather.php'
+      - 'api/route_context.php'
+      - 'api/traffic_live.php'
+      - 'api/weather_route.php'
+      - 'api/road_live.php'
+      - 'api/server_intelligent.php'
+      - 'docs/SERVER-7.0-CONTEXTO.md'
+      - '.github/workflows/build-server-v70-context.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Validate Server 7.0 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l api/context_v7_core.php
+          php -l api/context_v7_live.php
+          php -l api/context_v7_weather.php
+          php -l api/server_context_v7.php
+          php -l api/route_context.php
+          php -l api/traffic_live.php
+          php -l api/weather_route.php
+          php -l api/road_live.php
+          php -l api/server_intelligent.php
+          grep -q "500MB-v7.0" api/server_intelligent.php
+          grep -q "route_context" api/server_intelligent.php
+          grep -q "collaborative_traffic" api/server_intelligent.php
+          grep -q "route_weather" api/server_intelligent.php
+          grep -q "'SP','RJ','MG','ES'" api/server_intelligent.php
+          grep -q "device_hash_only" api/server_intelligent.php
+          grep -q "traffic_opt_in" api/server_context_v7.php
+
+      - name: Build safe complete server ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST=/tmp/estradaplay-server-v70
+          rm -rf "$DEST" && mkdir -p "$DEST"
+          find . -maxdepth 1 -type f \( -name '*.php' -o -name '.htaccess' \) -print0 | xargs -0 -I{} cp '{}' "$DEST/"
+          for D in api assets database config docs; do cp -a "$D" "$DEST/$D"; done
+          rm -f "$DEST/config/config.php"
+          mkdir -p "$DEST/storage/db" "$DEST/storage/cache" "$DEST/logs"
+          printf 'Deny from all\n' > "$DEST/storage/.htaccess"
+          printf 'Deny from all\n' > "$DEST/logs/.htaccess"
+          cat > "$DEST/LEIA-PRIMEIRO.txt" <<'TXT'
+          ESTRADA PLAY - SERVER CENTRAL V7.0 CONTEXTO INTELIGENTE
+
+          ATUALIZAÇÃO DE SERVIDOR EXISTENTE:
+          1. Faça backup do config/config.php e do banco por precaução.
+          2. Extraia este ZIP por cima da instalação atual.
+          3. O ZIP NÃO contém config/config.php nem banco, portanto suas credenciais e dados não são substituídos.
+          4. As novas tabelas leves são criadas automaticamente no primeiro uso.
+
+          PRINCIPAIS NOVIDADES:
+          - /api/route_context.php: contexto unificado de rota.
+          - /api/weather_route.php: clima ao longo do caminho com cache de 15 minutos.
+          - /api/traffic_live.php: trânsito colaborativo opt-in com hash do dispositivo e retenção de 2 horas.
+          - /api/road_live.php: confirmação e descarte de alertas com índice de confiança.
+          - Ranking de combustível considerando preço, desvio e consumo.
+          - Pacotes offline declarados para SP/RJ/MG/ES.
+
+          PRIVACIDADE:
+          O trânsito colaborativo é desativado por padrão. O servidor não grava o ID bruto do aparelho nessa telemetria; usa hash com salt local e apaga amostras após 2 horas.
+
+          O pacote não contém credenciais, banco, áudio, vídeo, APK nem cache.
+          TXT
+          while IFS= read -r -d '' F; do php -l "$F" >/dev/null; done < <(find "$DEST" -type f -name '*.php' -print0)
+          test -f "$DEST/api/route_context.php"
+          test -f "$DEST/api/traffic_live.php"
+          test -f "$DEST/api/weather_route.php"
+          test ! -f "$DEST/config/config.php"
+          ! find "$DEST" -type f | grep -E '\.(apk|mp3|wav|mp4|m4a|ogg|sqlite|db|zip)$'
+          (cd "$DEST" && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-SERVIDOR-COMPLETO-v7.0-CONTEXTO.zip" .)
+          unzip -l EstradaPlay-SERVIDOR-COMPLETO-v7.0-CONTEXTO.zip | tee /tmp/v70-list.txt
+          ! grep -Eq 'config/config\.php|\.(apk|mp3|wav|mp4|m4a|ogg|sqlite|db)$' /tmp/v70-list.txt
+          sha256sum EstradaPlay-SERVIDOR-COMPLETO-v7.0-CONTEXTO.zip | tee /tmp/v70-sha.txt
+
+      - name: Publish Server 7.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estradaplay-server-v7.0-context-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$(git rev-parse HEAD)" \
+            --title "EstradaPlay Server Central v7.0 - Contexto Inteligente" \
+            --notes "Servidor metadata-only com contexto unificado de rota, clima em rota com cache, trânsito colaborativo opt-in e efêmero, confiança comunitária dos alertas, ranking de combustível e suporte offline declarado para SP/RJ/MG/ES. Pacote seguro para atualização: sem config.php, banco, mídia ou APK." \
+            EstradaPlay-SERVIDOR-COMPLETO-v7.0-CONTEXTO.zip
