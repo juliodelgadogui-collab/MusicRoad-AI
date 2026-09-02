@@ -10,7 +10,8 @@ final class KnownRoadCatalog {
             "BR-101", "BR-040", "BR-116", "BR-120", "BR-251", "BR-259", "BR-262", "BR-265", "BR-267", "BR-356", "BR-381", "BR-393", "BR-482", "BR-491",
             "RJ-106", "RJ-116", "RJ-124", "RJ-158", "RJ-186", "RJ-196", "RJ-230",
             "ES-010", "ES-060", "ES-080", "ES-164", "ES-248", "ES-261", "ES-482",
-            "MG-010", "MG-050", "MG-135", "MG-167", "MG-179", "MG-184", "MG-188", "MG-290", "MG-353", "MG-458"
+            "MG-010", "MG-050", "MG-135", "MG-167", "MG-179", "MG-184", "MG-188", "MG-290", "MG-353", "MG-458",
+            "SP-055", "SP-070", "SP-075", "SP-125", "SP-150", "SP-160", "SP-270", "SP-280", "SP-300", "SP-310", "SP-330", "SP-348", "SP-425"
     };
     private static final Pattern ROAD = Pattern.compile("(?i)\\b(BR|RJ|MG|ES|SP)[-\\s]?(\\d{1,4})\\b");
     private static final String PREF = "epc_radio_road_fallback_v173", KEY = "road";
@@ -53,6 +54,11 @@ final class KnownRoadCatalog {
 
     static String selected(Context c) {
         return c == null ? "" : canonical(c.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY, ""));
+    }
+
+    // ROAD_SELECTION_V177: explicit manual choice can also be returned to automatic mode.
+    static void clear(Context c) {
+        if (c != null) c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().remove(KEY).apply();
     }
 
     static Region region(double lat, double lon) {
