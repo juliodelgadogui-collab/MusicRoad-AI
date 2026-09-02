@@ -27,6 +27,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
 
     @Override protected void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);library=new LibraryStore(this);build();loadTracks();register();queryPlayer();}
     @Override public void onConfigurationChanged(android.content.res.Configuration c){super.onConfigurationChanged(c);build();loadTracks();queryPlayer();}
+    @Override protected void onResume(){super.onResume();if(library!=null)loadTracks();}
     @Override protected void onDestroy(){if(registered)try{unregisterReceiver(playerState);}catch(Throwable ignored){}io.shutdownNow();super.onDestroy();}
 
     private void build(){
@@ -42,8 +43,8 @@ public final class MusicPlayerActivity extends ComponentActivity {
         LinearLayout player=playerCard();LinearLayout.LayoutParams pp=landscape?new LinearLayout.LayoutParams(0,dp(350),.42f):new LinearLayout.LayoutParams(-1,-2);body.addView(player,pp);
         listBox=col();listBox.setPadding(dp(14),dp(14),dp(14),dp(14));listBox.setBackground(panel(SURFACE,18,BORDER));
         LinearLayout.LayoutParams lp=landscape?new LinearLayout.LayoutParams(0,dp(350),.58f):new LinearLayout.LayoutParams(-1,-2);if(landscape)lp.setMargins(dp(12),0,0,0);else lp.setMargins(0,dp(12),0,0);body.addView(listBox,lp);
-        LinearLayout lh=row();lh.setGravity(Gravity.CENTER_VERTICAL);LinearLayout lt=col();lt.addView(over("NO APARELHO",MUTED));count=text("Carregando…",17,TEXT,true);lt.addView(count);lh.addView(lt,new LinearLayout.LayoutParams(0,-2,1));listBox.addView(lh);
-        TextView wait=text("Lendo sua biblioteca offline sem bloquear a tela…",12,MUTED,false);LinearLayout.LayoutParams wp=new LinearLayout.LayoutParams(-1,-2);wp.setMargins(0,dp(14),0,0);listBox.addView(wait,wp);
+        LinearLayout lh=row();lh.setGravity(Gravity.CENTER_VERTICAL);LinearLayout lt=col();lt.addView(over("NO APARELHO",MUTED));count=text("Carregando…",17,TEXT,true);lt.addView(count);lh.addView(lt,new LinearLayout.LayoutParams(0,-2,1));Button cleanup=small("LIMPEZA");lh.addView(cleanup,new LinearLayout.LayoutParams(dp(86),dp(42)));cleanup.setOnClickListener(v->openStorage());listBox.addView(lh);
+        TextView wait=text("Lendo sua biblioteca offline e recuperando arquivos que perderam o índice…",12,MUTED,false);LinearLayout.LayoutParams wp=new LinearLayout.LayoutParams(-1,-2);wp.setMargins(0,dp(14),0,0);listBox.addView(wait,wp);
     }
 
     private LinearLayout playerCard(){
@@ -56,9 +57,9 @@ public final class MusicPlayerActivity extends ComponentActivity {
         TextView note=text("Alertas de segurança podem reduzir temporariamente a música, sem fechar o player.",10,MUTED,false);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,-2);np.setMargins(0,dp(13),0,0);p.addView(note,np);return p;
     }
 
-    private void loadTracks(){io.execute(()->{List<Track> tracks=library.downloadedTracks();runOnUiThread(()->renderTracks(tracks));});}
+    private void loadTracks(){if(io.isShutdown())return;io.execute(()->{LibraryStore.ReconcileResult rec=library.reconcileOffline();List<Track> tracks=library.downloadedTracks();runOnUiThread(()->{if(rec.recovered>0)Toast.makeText(this,rec.recovered+" música(s) offline recuperada(s).",Toast.LENGTH_LONG).show();renderTracks(tracks);});});}
     private void renderTracks(List<Track> tracks){if(listBox==null)return;while(listBox.getChildCount()>1)listBox.removeViewAt(1);int n=tracks==null?0:tracks.size();if(count!=null)count.setText(n+" "+(n==1?"música offline":"músicas offline"));
-        if(n==0){LinearLayout empty=col();empty.setPadding(0,dp(20),0,0);empty.addView(text("Nenhuma música baixada",19,TEXT,true));empty.addView(text("O player continua disponível. Adicione músicas quando quiser; ele não vai mais te mandar para downloads sozinho.",12,MUTED,false));Button add=primary("ADICIONAR MÚSICAS");LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(54));ap.setMargins(0,dp(18),0,0);empty.addView(add,ap);add.setOnClickListener(v->openLibrary());listBox.addView(empty);return;}
+        if(n==0){LinearLayout empty=col();empty.setPadding(0,dp(20),0,0);empty.addView(text("Nenhuma música reconhecida",19,TEXT,true));empty.addView(text("Se você já tinha músicas baixadas, toque em LIMPEZA para reindexar ou recuperar cópias de versões antigas.",12,MUTED,false));Button repair=primary("REINDEXAR / LIMPAR ARMAZENAMENTO");LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(54));rp.setMargins(0,dp(18),0,0);empty.addView(repair,rp);repair.setOnClickListener(v->openStorage());Button add=small("ADICIONAR MÚSICAS");LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(50));ap.setMargins(0,dp(10),0,0);empty.addView(add,ap);add.setOnClickListener(v->openLibrary());listBox.addView(empty);return;}
         ScrollView sv=new ScrollView(this);LinearLayout rows=col();sv.addView(rows,new ScrollView.LayoutParams(-1,-2));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(270));sp.setMargins(0,dp(10),0,0);listBox.addView(sv,sp);int limit=Math.min(n,120);for(int i=0;i<limit;i++){Track t=tracks.get(i);rows.addView(trackRow(t,i));if(i<limit-1){View d=new View(this);d.setBackgroundColor(BORDER);rows.addView(d,new LinearLayout.LayoutParams(-1,dp(1)));}}if(n>limit)rows.addView(text("Mostrando 120 de "+n+" faixas para manter a tela leve.",10,MUTED,false));}
     private View trackRow(Track t,int pos){LinearLayout r=row();r.setGravity(Gravity.CENTER_VERTICAL);r.setPadding(dp(8),dp(8),dp(6),dp(8));TextView idx=text(String.format(Locale.ROOT,"%02d",pos+1),10,GOLD,true);idx.setGravity(Gravity.CENTER);r.addView(idx,new LinearLayout.LayoutParams(dp(38),dp(44)));LinearLayout m=col();TextView tt=text(t.title,14,TEXT,true);tt.setMaxLines(1);m.addView(tt);TextView aa=text(t.artist,10,MUTED,false);aa.setMaxLines(1);m.addView(aa);r.addView(m,new LinearLayout.LayoutParams(0,-2,1));Button go=control("▶",true);r.addView(go,new LinearLayout.LayoutParams(dp(48),dp(44)));go.setOnClickListener(v->command(PlayerService.ACTION_PLAY_TRACK,t.key(),"__ALL__"));r.setOnClickListener(v->command(PlayerService.ACTION_PLAY_TRACK,t.key(),"__ALL__"));return r;}
 
@@ -66,6 +67,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
     private void queryPlayer(){try{startService(new Intent(this,PlayerService.class).setAction(PlayerService.ACTION_QUERY_STATE));}catch(Throwable ignored){}}
     private void command(String action,String key,String folder){try{Intent i=new Intent(this,PlayerService.class).setAction(action);if(key!=null)i.putExtra(PlayerService.EXTRA_KEY,key);if(folder!=null)i.putExtra(PlayerService.EXTRA_FOLDER,folder);if(Build.VERSION.SDK_INT>=26&&PlayerService.ACTION_PLAY_TRACK.equals(action))startForegroundService(i);else startService(i);}catch(Throwable e){Toast.makeText(this,"Não consegui iniciar o player agora.",Toast.LENGTH_SHORT).show();}}
     private void openLibrary(){Intent i=new Intent(this,MainActivity.class);i.putExtra("open","library");startActivity(i);}
+    private void openStorage(){startActivity(new Intent(this,MusicStorageActivity.class));}
 
     private LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);return l;}private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}
     private TextView text(String v,float s,int c,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);t.setGravity(Gravity.CENTER_VERTICAL);t.setLineSpacing(0,1.06f);if(b)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}private TextView over(String v,int c){TextView t=text(v,9,c,true);t.setLetterSpacing(.12f);return t;}
