@@ -64,6 +64,9 @@ public final class RoadSafetyService extends Service {
     private RoadSurfaceMonitor surfaceMonitor;
     private RoadQualityStore roadQualityStore;
     private long lastWeatherCheckAt;
+    // CLIMA_ROTA_V191: announce only meaningful changes, never every refresh.
+    private long lastWeatherVoiceAt;
+    private String lastWeatherVoiceKey="";
     private boolean ttsReady;
     private AudioManager audioManager;
     private AudioFocusRequest alertFocusRequest;
@@ -257,8 +260,8 @@ public final class RoadSafetyService extends Service {
         if (tripRecorder != null) tripRecorder.onLocation(loc, speedKmh);
         if (surfaceMonitor != null) surfaceMonitor.updateDriveState(loc, speedKmh);
         updateRestClock(loc, speedKmh);
-        if (DriveSettings.autoRain(this) && !DriveSettings.offlineTestMode(this) && nowWall-lastWeatherCheckAt>=30L*60L*1000L) {
-            lastWeatherCheckAt=nowWall; final double wa=loc.getLatitude(), wo=loc.getLongitude(); io.execute(() -> RoadWeatherMonitor.refresh(this,wa,wo));
+        if (DriveSettings.autoRain(this) && !DriveSettings.offlineTestMode(this) && nowWall-lastWeatherCheckAt>=15L*60L*1000L) {
+            lastWeatherCheckAt=nowWall; final double wa=loc.getLatitude(), wo=loc.getLongitude(); io.execute(() -> {RoadWeatherMonitor.refresh(this,wa,wo);main.post(this::maybeAnnounceWeatherForecast);});
         }
 
         maybeResolveRoadLimit(loc.getLatitude(), loc.getLongitude(), heading);
@@ -352,6 +355,24 @@ public final class RoadSafetyService extends Service {
 
     private void interruptThoughtForSafety() {
         lastSafetyVoiceAt = System.currentTimeMillis();
+    }
+
+    // CLIMA_ROTA_V191: voice warning for current/near-future/route rain. Safety alerts keep priority.
+    private void maybeAnnounceWeatherForecast() {
+        RoadWeatherMonitor.Snapshot wx=RoadWeatherMonitor.snapshot(this);
+        if(!wx.shouldAnnounce()||voiceBusy())return;
+        long now=System.currentTimeMillis();String key=wx.voiceKey();
+        if(key.isEmpty())return;
+        if(key.equals(lastWeatherVoiceKey)&&now-lastWeatherVoiceAt<90L*60L*1000L)return;
+        if(speakWeatherVoice(wx.spoken())){lastWeatherVoiceKey=key;lastWeatherVoiceAt=now;}
+    }
+
+    private boolean speakWeatherVoice(String text) {
+        if(!ttsReady||tts==null||voiceBusy()||text==null||text.trim().isEmpty())return false;
+        if(VoiceSettings.mode(this)==VoiceSettings.MODE_EMBEDDED)return false;
+        int token=openVoiceSession("weather",false);if(token<=0)return false;
+        if(speakWithToken(text,token))return true;
+        restoreAudioAfterVoice(token);return false;
     }
 
     private void maybeResolveRoadLimit(double lat, double lon, float heading) {
@@ -837,6 +858,8 @@ public final class RoadSafetyService extends Service {
         i.putExtra("core_states_status", packs.coreStatesStatus());
         i.putExtra("thermal_status", thermalStatus());
         i.putExtra("rain_mode", DriveSettings.rainNow(this));
+        i.putExtra("weather_status", RoadWeatherMonitor.compactStatus(this));
+        i.putExtra("weather_rain_ahead", RoadWeatherMonitor.snapshot(this).shouldAnnounce());
         i.putExtra("night_mode", DriveSettings.nightNow(this));
         i.putExtra("offline_test_mode", DriveSettings.offlineTestMode(this));
         i.putExtra("reserve_km", 250);

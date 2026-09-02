@@ -90,6 +90,7 @@
         <activity android:name=".FuelCommunityActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".EmergencyActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".Obd2Activity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".WeatherActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".TripPlannerActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".TripReplayActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadFavoritesActivity" android:exported="false" android:screenOrientation="${appOrientation}" />

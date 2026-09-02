@@ -770,6 +770,7 @@ public final class RoadMapActivity extends ComponentActivity {
         if (offlineRoadStore != null && Double.isFinite(lastLat) && Double.isFinite(lastLon)) {
             value += "\n" + offlineRoadStore.status(lastLat, lastLon);
         }
+        value += "\n" + RoadWeatherMonitor.compactStatus(this);
         mapStateText.setText(value);
     }
 
