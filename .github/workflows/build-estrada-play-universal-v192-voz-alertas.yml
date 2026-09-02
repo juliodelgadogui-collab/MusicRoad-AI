@@ -1,0 +1,81 @@
+name: Estrada Play Universal 1.9.2 Voz Alertas Completos
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'tools/patch_estrada_play_v192_voice_alerts.py'
+      - 'tools/ci_build_epc_v192.sh'
+      - '.github/workflows/build-estrada-play-universal-v192-voz-alertas.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estrada-play-comunista-v192
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Generate 1.9.2 source
+        run: |
+          python3 -m py_compile tools/patch_estrada_play_v192_voice_alerts.py
+          python3 tools/patch_estrada_play_v192_voice_alerts.py
+
+      - name: Verify full alert voice architecture
+        run: |
+          G=estrada-play-comunista-app/app/build.gradle
+          V=estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/EstradaPlayOfflineVoice.java
+          grep -q "versionName '1.9.2'" "$G"
+          grep -q 'versionCode 192' "$G"
+          grep -q 'VOICE_FULL_ALERT_V192' "$V"
+          grep -q 'FIRST_CLIP_PREROLL_MS = 240L' "$V"
+          grep -q 'BETWEEN_CLIPS_MS = 65L' "$V"
+          grep -q 'requestLocalFocus();' "$V"
+          grep -q 'main.postDelayed(() -> playNext(token), FIRST_CLIP_PREROLL_MS);' "$V"
+
+      - name: Persist generated 1.9.2 source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estrada-play-comunista-app/app/build.gradle \
+                  estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/EstradaPlayOfflineVoice.java
+          git commit -m "Generate Universal 1.9.2 full alert voice [skip ci]" || true
+          git push origin HEAD:agent/estrada-play-comunista
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build and validate APK
+        run: bash tools/ci_build_epc_v192.sh
+
+      - name: Publish 1.9.2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="estrada-play-comunista-1.9.2-voz-alertas-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" \
+            --title "Estrada Play Comunista Universal 1.9.2 - Voz de Alertas Completa" \
+            --notes "Corrige centrais Android que engoliam o primeiro trecho da voz embarcada. O foco e o ducking agora sao preparados antes da fala, com pequeno intervalo entre clipes, para reproduzir frases completas como Radar a frente, 500 metros. Mantem Clima da Rota 1.9.1 e todas as funcoes anteriores." \
+            Estrada-Play-Comunista-Universal-1.9.2-Voz-Alertas-Completos.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-1.9.2-Voz-Alertas-Completos
+          path: Estrada-Play-Comunista-Universal-1.9.2-Voz-Alertas-Completos.apk
+          retention-days: 3
+          compression-level: 0
