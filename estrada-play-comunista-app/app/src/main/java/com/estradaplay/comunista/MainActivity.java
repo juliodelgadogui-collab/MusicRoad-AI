@@ -771,154 +771,133 @@ private void refreshLibraryAndOpenChooser() {
         clearDownloadViews();
         roadLiveState = null;
         roadLiveDetail = null;
+        nowTitle = null;
+        nowArtist = null;
+        nowState = null;
         root.removeAllViews();
+
+        // AUTOMOTIVE_RED_GOLD_V200_HOME: visual hierarchy follows an in-dash system,
+        // not a generic Android dashboard. Decorative atmosphere is drawn natively.
+        EpcBackdropView backdrop = new EpcBackdropView(this);
+        root.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        scroll.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout page = column();
-        page.setPadding(dp(18), dp(12), dp(18), dp(30));
+        page.setPadding(dp(18), dp(12), dp(18), dp(28));
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
         root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-        page.addView(topBar("Central"));
 
-        // DESIGN_V120: a constructivist command surface, not the regular EstradaPlay card stack.
-        LinearLayout mast = row();
-        mast.setGravity(Gravity.CENTER_VERTICAL);
-        BrandMarkView mark = new BrandMarkView(this);
-        mast.addView(mark, lp(58, 58));
-        LinearLayout mastText = column();
-        TextView code = overline("CENTRAL 01  ·  SISTEMA DE BORDO", ACCENT); mastText.addView(code);
-        TextView name = text("Estrada Play Comunista", 22, TEXT, true); mastText.addView(name); margins(name, 0, 2, 0, 0);
-        mast.addView(mastText, new LinearLayout.LayoutParams(0, -2, 1)); margins(mastText, 13, 0, 8, 0);
-        TextView live = chip(hasLocationPermission() ? "● EM GUARDA" : "○ GPS", hasLocationPermission() ? GREEN : ACCENT,
+        LinearLayout system = row();
+        system.setGravity(Gravity.CENTER_VERTICAL);
+        Button menu = compactButton("☰");
+        menu.setTextSize(20);
+        system.addView(menu, lp(54, 48));
+        menu.setOnClickListener(v -> startActivity(new Intent(this, DriveToolsActivity.class)));
+        TextView clock = text(new java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(new java.util.Date()), 14, TEXT, true);
+        clock.setGravity(Gravity.CENTER);
+        system.addView(clock, new LinearLayout.LayoutParams(0, dp(48), 1));
+        TextView active = chip(hasLocationPermission() ? "● SISTEMA ATIVO" : "○ GPS PENDENTE",
+                hasLocationPermission() ? GREEN : ACCENT,
                 hasLocationPermission() ? GREEN_SOFT : ACCENT_SOFT);
-        mast.addView(live);
-        page.addView(mast); margins(mast, 0, 6, 0, 14);
+        system.addView(active);
+        page.addView(system);
 
-        LinearLayout manifesto = column();
-        manifesto.setPadding(dp(18), dp(18), dp(18), dp(18));
-        manifesto.setBackground(bg(ACCENT, 4, 0));
-        TextView mOver = overline("ORDEM DE MARCHA", Color.rgb(255, 216, 145)); manifesto.addView(mOver);
-        TextView mTitle = text("CENTRAL DE VIAGEM", 31, Color.WHITE, true); manifesto.addView(mTitle); margins(mTitle, 0, 5, 0, 2);
-        TextView mSub = text("ROTA  /  SOM  /  PROTEÇÃO  /  COPILOTO", 10, Color.rgb(255, 224, 196), true);
-        mSub.setLetterSpacing(0.08f); manifesto.addView(mSub);
-        page.addView(manifesto);
+        LinearLayout brand = column();
+        brand.setGravity(Gravity.CENTER_HORIZONTAL);
+        BrandMarkView mark = new BrandMarkView(this);
+        brand.addView(mark, lp(68, 68));
+        TextView epc = text("EPC", 38, Color.rgb(247, 235, 211), true);
+        epc.setGravity(Gravity.CENTER); epc.setLetterSpacing(.10f); brand.addView(epc);
+        TextView full = overline("ESTRADA PLAY COMUNISTA", ACCENT); full.setGravity(Gravity.CENTER); brand.addView(full);
+        page.addView(brand); margins(brand, 0, 12, 0, 0);
 
-        View thoughtCard = RoadThoughts.homeCard(this);
-        if (thoughtCard != null) {
-            page.addView(thoughtCard); margins(thoughtCard, 0, 10, 0, 0);
-            thoughtCard.setOnClickListener(v -> startActivity(new Intent(this, ThoughtsActivity.class)));
-        }
+        LinearLayout hero = column();
+        hero.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView heroTitle = text("CENTRAL\nde VIAGEM", 38, Color.rgb(250, 241, 224), true);
+        heroTitle.setGravity(Gravity.CENTER); heroTitle.setLineSpacing(0, .90f); hero.addView(heroTitle);
+        TextView heroSub = overline("ROTA  ·  SOM  ·  PROTEÇÃO  ·  COPILOTO", Color.rgb(226,185,76));
+        heroSub.setGravity(Gravity.CENTER); hero.addView(heroSub);
+        page.addView(hero); margins(hero, 0, 18, 0, 16);
 
-        LinearLayout stateLine = row();
-        stateLine.setGravity(Gravity.CENTER_VERTICAL);
-        stateLine.setPadding(dp(12), dp(9), dp(12), dp(9));
-        stateLine.setBackground(bg(Color.rgb(16, 9, 11), 2, BORDER));
-        TextView stateLeft = overline(hasLocationPermission() ? "PROTEÇÃO RODOVIÁRIA ATIVA" : "LOCALIZAÇÃO PENDENTE", hasLocationPermission() ? GREEN : ACCENT);
-        stateLine.addView(stateLeft, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView stateRight = overline(online() ? "REDE ATIVA" : "MODO OFFLINE", online() ? TEXT : GREEN);
-        stateRight.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL); stateLine.addView(stateRight);
-        page.addView(stateLine); margins(stateLine, 0, 8, 0, 18);
-
-        TextView startLabel = overline("ESCOLHA O MODO", MUTED); page.addView(startLabel); margins(startLabel, 2, 0, 0, 8);
         LinearLayout selector = row();
+        selector.setBackground(bg(Color.argb(185, 13, 7, 9), 22, Color.rgb(92, 39, 44)));
+        selector.setPadding(dp(2), dp(2), dp(2), dp(2));
 
         LinearLayout free = column();
-        free.setPadding(dp(15), dp(15), dp(15), dp(15));
-        free.setBackground(bg(Color.rgb(116, 13, 27), 4, ACCENT));
-        TextView fCode = overline("01  ·  LIVRE", Color.rgb(255, 203, 126)); free.addView(fCode);
-        TextView fTitle = text("RODAR\nLIVRE", 24, Color.WHITE, true); free.addView(fTitle); margins(fTitle, 0, 8, 0, 4);
-        TextView fBody = text("Sem destino. O sistema observa a estrada e mantém os alertas ativos.", 11, Color.rgb(230, 198, 193), false); free.addView(fBody);
-        View fSpace = new View(this); free.addView(fSpace, new LinearLayout.LayoutParams(1, 0, 1));
-        Button freeGo = button("INICIAR", true); free.addView(freeGo, lp(-1, 50));
+        free.setPadding(dp(16), dp(18), dp(16), dp(16));
+        free.setGravity(Gravity.CENTER_HORIZONTAL);
+        free.setBackground(bg(Color.rgb(112, 12, 27), 20, ACCENT));
+        TextView roadGlyph = text("╱╲", 25, Color.rgb(241, 213, 164), true); roadGlyph.setGravity(Gravity.CENTER); free.addView(roadGlyph);
+        TextView freeTitle = text("RODAR\nLIVRE", 22, Color.WHITE, true); freeTitle.setGravity(Gravity.CENTER); free.addView(freeTitle); margins(freeTitle,0,8,0,3);
+        TextView freeSub = text("Explore sem destino", 10, Color.rgb(220,185,184), false); freeSub.setGravity(Gravity.CENTER); free.addView(freeSub);
+        View fsp = new View(this); free.addView(fsp, new LinearLayout.LayoutParams(1,0,1));
+        Button freeGo = button("→", true); freeGo.setTextSize(20); free.addView(freeGo, lp(58,48));
         freeGo.setOnClickListener(v -> { DestinationStore.clear(this); openCockpit(); });
-        selector.addView(free, new LinearLayout.LayoutParams(0, dp(214), 1));
+        selector.addView(free, new LinearLayout.LayoutParams(0, dp(212), 1));
 
-        LinearLayout routed = column();
-        routed.setPadding(dp(15), dp(15), dp(15), dp(15));
-        routed.setBackground(bg(SURFACE, 4, Color.rgb(214, 186, 143)));
-        TextView rCode = overline("02  ·  ROTA", Color.rgb(214, 186, 143)); routed.addView(rCode);
-        TextView rTitle = text("IR\nPARA...", 24, TEXT, true); routed.addView(rTitle); margins(rTitle, 0, 8, 0, 4);
-        TextView rBody = text("Informe um endereço quando quiser orientação completa de percurso.", 11, MUTED, false); routed.addView(rBody);
-        View rSpace = new View(this); routed.addView(rSpace, new LinearLayout.LayoutParams(1, 0, 1));
-        Button routeGo = button("BUSCAR ENDEREÇO", false); routed.addView(routeGo, lp(-1, 50));
+        LinearLayout route = column();
+        route.setPadding(dp(16), dp(18), dp(16), dp(16));
+        route.setGravity(Gravity.CENTER_HORIZONTAL);
+        route.setBackground(bg(Color.argb(230, 14, 12, 13), 20, Color.rgb(91, 67, 58)));
+        TextView target = text("◎", 31, Color.rgb(226,185,76), true); target.setGravity(Gravity.CENTER); route.addView(target);
+        TextView routeTitle = text("DEFINIR\nDESTINO", 21, TEXT, true); routeTitle.setGravity(Gravity.CENTER); route.addView(routeTitle); margins(routeTitle,0,7,0,3);
+        TextView routeSub = text("Informe um endereço", 10, MUTED, false); routeSub.setGravity(Gravity.CENTER); route.addView(routeSub);
+        View rsp = new View(this); route.addView(rsp, new LinearLayout.LayoutParams(1,0,1));
+        Button routeGo = button("→", false); routeGo.setTextSize(20); route.addView(routeGo, lp(58,48));
         routeGo.setOnClickListener(v -> startActivity(new Intent(this, DestinationActivity.class)));
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(0, dp(214), 1); rp.setMargins(dp(9), 0, 0, 0); selector.addView(routed, rp);
+        LinearLayout.LayoutParams routeLp = new LinearLayout.LayoutParams(0, dp(212), 1); routeLp.setMargins(dp(3),0,0,0); selector.addView(route, routeLp);
         page.addView(selector);
 
-        LinearLayout copilot = row();
-        copilot.setGravity(Gravity.CENTER_VERTICAL);
-        copilot.setPadding(dp(15), dp(12), dp(15), dp(12));
-        copilot.setBackground(bg(Color.rgb(26, 13, 16), 2, BORDER));
-        TextView star = text("★", 24, Color.rgb(226, 185, 76), true); star.setGravity(Gravity.CENTER); copilot.addView(star, lp(42, 42));
-        LinearLayout voice = column();
-        voice.addView(overline("CENTRAL DE VOZ", Color.rgb(226, 185, 76)));
-        voice.addView(text("Copiloto contextual", 16, TEXT, true));
-        voice.addView(text("Fala menos, entende o momento e prioriza segurança.", 10, MUTED, false));
-        copilot.addView(voice, new LinearLayout.LayoutParams(0, -2, 1)); margins(voice, 10, 0, 0, 0);
-        page.addView(copilot); margins(copilot, 0, 14, 0, 0);
+        LinearLayout protection = row();
+        protection.setGravity(Gravity.CENTER_VERTICAL);
+        protection.setPadding(dp(14), dp(12), dp(14), dp(12));
+        protection.setBackground(bg(Color.argb(226, 14, 11, 12), 15, Color.rgb(54, 91, 65)));
+        TextView shield = text("◈", 25, GREEN, true); shield.setGravity(Gravity.CENTER); protection.addView(shield, lp(44,44));
+        LinearLayout protectText = column();
+        roadLiveState = overline(hasLocationPermission() ? "PROTEÇÃO RODOVIÁRIA ATIVA" : "LOCALIZAÇÃO PENDENTE", hasLocationPermission()?GREEN:ACCENT);
+        roadLiveDetail = text(RoadWeatherMonitor.compactStatus(this), 10, MUTED, false);
+        protectText.addView(roadLiveState); protectText.addView(roadLiveDetail);
+        protection.addView(protectText, new LinearLayout.LayoutParams(0,-2,1)); margins(protectText,10,0,4,0);
+        TextView goProtect = text("›", 26, TEXT, true); goProtect.setGravity(Gravity.CENTER); protection.addView(goProtect, lp(38,44));
+        protection.setClickable(true); protection.setOnClickListener(v -> openCockpit());
+        page.addView(protection); margins(protection,0,12,0,0);
 
-
-        // OPTIONAL_CAMERA_V130_HOME: camera remains opt-in and asks permission only inside CameraActivity.
-        boolean cameraEnabled = getSharedPreferences("epc_camera_v1", MODE_PRIVATE).getBoolean("enabled", false);
-        LinearLayout camera = row();
-        camera.setGravity(Gravity.CENTER_VERTICAL);
-        camera.setPadding(dp(15), dp(13), dp(13), dp(13));
-        camera.setBackground(bg(Color.rgb(17, 9, 11), 2, cameraEnabled ? Color.rgb(174, 38, 52) : BORDER));
-        LinearLayout cameraInfo = column();
-        cameraInfo.addView(overline("CÂMERA DE BORDO", cameraEnabled ? GREEN : ACCENT));
-        cameraInfo.addView(text(cameraEnabled ? "Visão da estrada ativada" : "Uso opcional da câmera", 17, TEXT, true));
-        cameraInfo.addView(text(cameraEnabled
-                ? "A câmera só abre quando você entra no modo de bordo."
-                : "Desligada por padrão. Nenhuma permissão é pedida até você ativar.", 10, MUTED, false));
-        camera.addView(cameraInfo, new LinearLayout.LayoutParams(0, -2, 1));
-        Button cameraButton = compactButton(cameraEnabled ? "ABRIR" : "CONFIGURAR");
-        camera.addView(cameraButton, lp(112, 48));
-        cameraButton.setOnClickListener(v -> startActivity(new Intent(this, CameraActivity.class)));
-        page.addView(camera); margins(camera, 0, 9, 0, 0);
-
-
-        // INTELLIGENT_CORE_V140_HOME
-        LinearLayout smart = column();
-        smart.setPadding(dp(15), dp(14), dp(15), dp(14));
-        smart.setBackground(bg(Color.rgb(26, 10, 15), 3, Color.rgb(118, 40, 49)));
-        smart.addView(overline("ESTRADA INTELIGENTE 1.4", Color.rgb(226, 185, 76)));
-        smart.addView(text("Proteção, histórico e instrumentos", 17, TEXT, true));
-        TextView smartSub = text("RJ + MG + ES offline em segundo plano · HUD · reportes · histórico local", 10, MUTED, false);
-        smart.addView(smartSub); margins(smartSub, 0, 3, 0, 9);
-        LinearLayout smartActions = row();
-        Button toolsButton = compactButton("FERRAMENTAS");
-        Button historyButton = compactButton("HISTÓRICO");
-        smartActions.addView(toolsButton, new LinearLayout.LayoutParams(0, dp(48), 1));
-        LinearLayout.LayoutParams shp = new LinearLayout.LayoutParams(0, dp(48), 1); shp.setMargins(dp(8),0,0,0); smartActions.addView(historyButton, shp);
-        smart.addView(smartActions);
-        toolsButton.setOnClickListener(v -> startActivity(new Intent(this, DriveToolsActivity.class)));
-        historyButton.setOnClickListener(v -> startActivity(new Intent(this, TripHistoryActivity.class)));
-        page.addView(smart); margins(smart, 0, 9, 0, 0);
-
-        boolean hasDownloaded = library.hasDownloadedHint();
         LinearLayout media = row();
         media.setGravity(Gravity.CENTER_VERTICAL);
-        media.setPadding(dp(15), dp(13), dp(13), dp(13));
-        media.setBackground(bg(Color.rgb(15, 9, 11), 2, BORDER));
-        LinearLayout mediaInfo = column();
-        mediaInfo.addView(overline("ARQUIVO SONORO", ACCENT));
-        mediaInfo.addView(text("Música offline", 17, TEXT, true));
-        mediaInfo.addView(text(hasDownloaded ? "Biblioteca preparada neste aparelho" : "Escolha o que levar para a viagem", 10, MUTED, false));
-        media.addView(mediaInfo, new LinearLayout.LayoutParams(0, -2, 1));
-        Button music = compactButton("ABRIR PLAYER"); media.addView(music, lp(112, 48));
-        music.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
-        page.addView(media); margins(media, 0, 9, 0, 0);
+        media.setPadding(dp(13), dp(12), dp(13), dp(12));
+        media.setBackground(bg(Color.argb(232, 17, 11, 13), 15, BORDER));
+        TextView cover = text("★", 24, Color.rgb(226,185,76), true); cover.setGravity(Gravity.CENTER); cover.setBackground(bg(Color.rgb(78,12,24),10,Color.rgb(130,31,45))); media.addView(cover, lp(54,54));
+        LinearLayout song = column();
+        nowState = overline("MÚSICA OFFLINE", ACCENT); song.addView(nowState);
+        nowTitle = text("Biblioteca local", 16, TEXT, true); nowTitle.setMaxLines(1); song.addView(nowTitle);
+        nowArtist = text("Toque para abrir o player", 10, MUTED, false); nowArtist.setMaxLines(1); song.addView(nowArtist);
+        media.addView(song, new LinearLayout.LayoutParams(0,-2,1)); margins(song,10,0,8,0);
+        Button player = button("▶", true); player.setTextSize(19); media.addView(player, lp(54,54));
+        player.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
+        media.setClickable(true); media.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
+        page.addView(media); margins(media,0,9,0,0);
 
-        LinearLayout tools = row();
-        Button libraryButton = compactButton("ARQUIVO");
-        Button accountButton = compactButton("IDENTIDADE");
-        tools.addView(libraryButton, new LinearLayout.LayoutParams(0, dp(48), 1));
-        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(0, dp(48), 1); ap.setMargins(dp(8), 0, 0, 0); tools.addView(accountButton, ap);
-        page.addView(tools); margins(tools, 0, 9, 0, 0);
-        libraryButton.setOnClickListener(v -> { if (online()) loadCatalogAndOpenChooser(false); else toast("Conecte-se para sincronizar pastas."); });
-        accountButton.setOnClickListener(v -> showAccount());
+        LinearLayout quick = row();
+        Button climate = compactButton("CLIMA  ·  " + shortWeather());
+        Button copilot = compactButton("COPILOTO  ·  FALAR");
+        quick.addView(climate, new LinearLayout.LayoutParams(0, dp(52), 1));
+        LinearLayout.LayoutParams qcp = new LinearLayout.LayoutParams(0, dp(52), 1); qcp.setMargins(dp(8),0,0,0); quick.addView(copilot, qcp);
+        climate.setOnClickListener(v -> startActivity(new Intent(this, WeatherActivity.class)));
+        copilot.setOnClickListener(v -> startActivity(new Intent(this, VoiceCommandActivity.class)));
+        page.addView(quick); margins(quick,0,9,0,0);
+
+        TextView foot = overline("EPC 2.0  ·  CENTRAL AUTOMOTIVA", Color.rgb(118,84,77));
+        foot.setGravity(Gravity.CENTER); page.addView(foot); margins(foot,0,18,0,0);
+    }
+
+    private String shortWeather() {
+        String s = RoadWeatherMonitor.compactStatus(this);
+        if (s == null || s.trim().isEmpty()) return "AGUARDANDO";
+        s = s.replace('\n',' ').trim();
+        return s.length() > 26 ? s.substring(0,26) + "…" : s;
     }
 
     private void showMusic() {
