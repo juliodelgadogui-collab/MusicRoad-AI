@@ -90,14 +90,15 @@ final class UnifiedAppShell {
         TextView state=over(a,"● SISTEMA ATIVO",GREEN);state.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);head.addView(state);
         root.addView(head,new LinearLayout.LayoutParams(-1,dp(a,62)));
 
-        HorizontalScrollView hsv=new HorizontalScrollView(a);hsv.setHorizontalScrollBarEnabled(false);hsv.setOverScrollMode(View.OVER_SCROLL_NEVER);hsv.setBackgroundColor(BG);
-        LinearLayout row=new LinearLayout(a);row.setOrientation(LinearLayout.HORIZONTAL);row.setPadding(dp(a,10),dp(a,6),dp(a,10),dp(a,6));
-        row.addView(navChip(a,"ESTRADA","road",active,RoadMapActivity.class));
-        row.addView(navChip(a,"MÚSICA","music",active,MusicPlayerActivity.class));
-        row.addView(navChip(a,"RÁDIO","radio",active,RoadRadioActivity.class));
-        row.addView(navChip(a,"VIAGEM","trip",active,TripPlannerActivity.class));
-        row.addView(navChip(a,"CENTRAL","central",active,DriveToolsActivity.class));
-        hsv.addView(row,new HorizontalScrollView.LayoutParams(-2,-1));root.addView(hsv,new LinearLayout.LayoutParams(-1,dp(a,52)));
+        // PORTRAIT_NAV_FIT_V174: all five sectors remain visible at once.
+        // A scrollable rail made CENTRAL disappear off-screen and looked like another app.
+        LinearLayout row=new LinearLayout(a);row.setOrientation(LinearLayout.HORIZONTAL);row.setPadding(dp(a,7),dp(a,6),dp(a,7),dp(a,6));row.setBackgroundColor(BG);
+        addNavChipFit(a,row,"ESTRADA","road",active,RoadMapActivity.class);
+        addNavChipFit(a,row,"MÚSICA","music",active,MusicPlayerActivity.class);
+        addNavChipFit(a,row,"RÁDIO","radio",active,RoadRadioActivity.class);
+        addNavChipFit(a,row,"VIAGEM","trip",active,TripPlannerActivity.class);
+        addNavChipFit(a,row,"CENTRAL","central",active,DriveToolsActivity.class);
+        root.addView(row,new LinearLayout.LayoutParams(-1,dp(a,52)));
 
         FrameLayout body=new FrameLayout(a);body.setBackgroundColor(BG);body.addView(content,new FrameLayout.LayoutParams(-1,-1));root.addView(body,new LinearLayout.LayoutParams(-1,0,1f));
         return root;
@@ -109,9 +110,14 @@ final class UnifiedAppShell {
     private static View navChip(Activity a,String label,String key,String active,Class<?> cls){
         TextView v=navText(a,label,key.equals(active));v.setMinWidth(dp(a,92));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(a,40));p.setMargins(0,0,dp(a,7),0);v.setLayoutParams(p);v.setOnClickListener(x->go(a,key,active,cls));return v;
     }
+    private static void addNavChipFit(Activity a,LinearLayout row,String label,String key,String active,Class<?> cls){
+        TextView v=navText(a,label,key.equals(active));v.setTextSize(8.2f);v.setMinWidth(0);v.setSingleLine(true);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(a,40),1f);p.setMargins(dp(a,2),0,dp(a,2),0);row.addView(v,p);
+        v.setOnClickListener(x->go(a,key,active,cls));
+    }
     private static TextView navText(Activity a,String label,boolean selected){TextView v=text(a,label,9,selected?Color.WHITE:MUTED,true);v.setGravity(Gravity.CENTER);v.setLetterSpacing(.07f);v.setBackground(box(selected?Color.rgb(79,10,23):SURFACE,13,selected?RED:BORDER));v.setClickable(true);v.setFocusable(true);return v;}
     private static void go(Activity a,String key,String active,Class<?> cls){if(key.equals(active))return;Intent i=new Intent(a,cls);i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT|Intent.FLAG_ACTIVITY_SINGLE_TOP);a.startActivity(i);}
-    private static String title(String s){if("road".equals(s))return "Estrada";if("music".equals(s))return "Música";if("radio".equals(s))return "Rádio da Rodovia";if("trip".equals(s))return "Viagem";return "Central de Bordo";}
+    private static String title(String s){if("road".equals(s))return "Estrada";if("music".equals(s))return "Música";if("radio".equals(s))return "Rádio";if("trip".equals(s))return "Viagem";return "Central";}
 
     // Gives legacy secondary controls the same material language without changing logic.
     private static void polish(View v){

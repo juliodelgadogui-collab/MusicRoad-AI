@@ -36,13 +36,40 @@ public final class RoadRadioActivity extends ComponentActivity {
         alerts=t("Nenhum alerta recente recebido nesta sala.",12,MUTED,false);alerts.setPadding(dp(12),dp(12),dp(12),dp(12));alerts.setBackground(box(Color.rgb(18,9,12),10,Color.rgb(76,38,43)));p.addView(alerts,new LinearLayout.LayoutParams(-1,-2));
         p.addView(t("SEGURANÇA · alertas de radar, limite e quebra-molas silenciam o rádio automaticamente. Fechar o app encerra o rádio. O microfone não permanece aberto fora do PTT.",10,MUTED,false));
     }
+    // ROAD_PICKER_PANEL_V174: custom Estrada Play panel. AlertDialog message+items hid
+    // the actual road list on some Android builds, leaving only CANCELAR visible.
     private void showRoadPicker(){
         final String[] roads=KnownRoadCatalog.PRESET_ROADS;
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("Rodovia de apoio")
-                .setMessage("Use somente se a identificação automática falhar. O GPS ainda separa o rádio por trecho local.")
-                .setItems(roads,(d,which)->{if(which<0||which>=roads.length)return;Intent i=new Intent(this,RoadRadioService.class).setAction(RoadRadioService.ACTION_SET_ROAD);i.putExtra("road",roads[which]);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);room.setText(roads[which]+" · CONFIRMANDO TRECHO…");})
-                .setNegativeButton("CANCELAR",null).show();
+        final android.app.Dialog dialog=new android.app.Dialog(this);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+
+        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(18),dp(16),dp(18),dp(16));panel.setBackground(box(Color.rgb(18,9,12),18,Color.rgb(92,43,50)));
+        TextView over=t("ESTRADA PLAY · RÁDIO",10,GOLD,true);over.setLetterSpacing(.12f);panel.addView(over);
+        panel.addView(t("RODOVIA DE APOIO",22,TEXT,true));
+        panel.addView(t("Use somente se a identificação automática falhar. O GPS continua separando o rádio por trecho local.",12,MUTED,false));
+
+        TextView hint=t("SELECIONE A RODOVIA",10,GOLD,true);hint.setPadding(0,dp(12),0,dp(7));panel.addView(hint);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);list.setPadding(0,0,0,dp(6));scroll.addView(list,new ScrollView.LayoutParams(-1,-2));
+        for(String road:roads){
+            Button option=button(road,Color.rgb(45,18,23));option.setTextSize(14);option.setAllCaps(false);
+            LinearLayout.LayoutParams op=new LinearLayout.LayoutParams(-1,dp(48));op.setMargins(0,0,0,dp(6));list.addView(option,op);
+            option.setOnClickListener(v->{
+                Intent i=new Intent(this,RoadRadioService.class).setAction(RoadRadioService.ACTION_SET_ROAD);i.putExtra("road",road);
+                if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+                room.setText(road+" · CONFIRMANDO TRECHO…");dialog.dismiss();
+            });
+        }
+        panel.addView(scroll,new LinearLayout.LayoutParams(-1,0,1f));
+        Button cancel=button("CANCELAR",Color.rgb(31,18,21));cancel.setAllCaps(false);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,dp(48));cp.setMargins(0,dp(6),0,0);panel.addView(cancel,cp);cancel.setOnClickListener(v->dialog.dismiss());
+
+        dialog.setContentView(panel);dialog.setCanceledOnTouchOutside(true);dialog.show();
+        android.view.Window w=dialog.getWindow();if(w!=null){
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            int sw=getResources().getDisplayMetrics().widthPixels,sh=getResources().getDisplayMetrics().heightPixels;
+            w.setLayout(Math.min(sw-dp(24),dp(520)),Math.min((int)(sh*.78f),dp(620)));
+            w.setGravity(Gravity.CENTER);
+        }
     }
 
     private void enter(){if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);return;}try{Intent s=new Intent(this,RoadSafetyService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(s);else startService(s);}catch(Throwable ignored){}Intent i=new Intent(this,RoadRadioService.class).setAction(RoadRadioService.ACTION_JOIN);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);status.setText("Identificando a estrada e entrando na sala…");}
