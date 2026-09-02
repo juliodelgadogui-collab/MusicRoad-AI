@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# EPC_V201_BUILD_TRIGGER: compile and validate the automotive polish source.
 APP=estrada-play-comunista-app
 OUT=Estrada-Play-Comunista-Universal-2.0.1-Acabamento-Automotivo.apk
 base64 -d "$APP/signing/estradaplay-dev.keystore.b64" > "$APP/signing/estradaplay-dev.keystore"
