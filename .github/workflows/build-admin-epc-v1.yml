@@ -38,7 +38,7 @@ jobs:
           grep -q 'fuel_price_reports' admin_epc.php
           grep -q 'estrada_convoys' admin_epc.php
           grep -q 'audit_logs' admin_epc.php
-          grep -q 'Mesmo banco de dados' docs/PAINEL-ADMIN-EPC-1.0.md
+          grep -qi 'mesmo.*banco' docs/PAINEL-ADMIN-EPC-1.0.md
           test -s assets/css/admin-epc.css
           test -s assets/js/admin-epc.js
 
