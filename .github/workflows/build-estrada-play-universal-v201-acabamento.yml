@@ -8,6 +8,7 @@ on:
       - 'tools/patch_estrada_play_v201_polish.py'
       - 'tools/patch_estrada_play_v201_fix.py'
       - 'tools/patch_estrada_play_v201_idempotent.py'
+      - 'tools/patch_estrada_play_v201_route_fix.py'
       - 'tools/ci_build_epc_v201.sh'
       - '.github/workflows/build-estrada-play-universal-v201-acabamento.yml'
   workflow_dispatch:
@@ -27,10 +28,11 @@ jobs:
 
       - name: Generate 2.0.1 polish source
         run: |
-          python3 -m py_compile tools/patch_estrada_play_v201_polish.py tools/patch_estrada_play_v201_fix.py tools/patch_estrada_play_v201_idempotent.py
+          python3 -m py_compile tools/patch_estrada_play_v201_polish.py tools/patch_estrada_play_v201_fix.py tools/patch_estrada_play_v201_idempotent.py tools/patch_estrada_play_v201_route_fix.py
           python3 tools/patch_estrada_play_v201_polish.py
           python3 tools/patch_estrada_play_v201_fix.py
           python3 tools/patch_estrada_play_v201_idempotent.py
+          python3 tools/patch_estrada_play_v201_route_fix.py
 
       - name: Verify automotive polish architecture
         run: |
@@ -40,6 +42,8 @@ jobs:
           grep -q 'versionCode 201' "$G"
           grep -q 'NAV_POLISH_V201' "$J/RouteEngine.java"
           grep -q 'nextDistanceM' "$J/RouteEngine.java"
+          grep -q 'new Maneuver(action,road,type,modifier,type.equals' "$J/RouteEngine.java"
+          if grep -q 'new Maneuver(action,road,type,modifier,before,type.equals' "$J/RouteEngine.java"; then exit 1; fi
           grep -q 'navDistanceText' "$J/RoadMapActivity.java"
           grep -q 'navEtaText' "$J/RoadMapActivity.java"
           grep -q 'mapPlayerToggle' "$J/RoadMapActivity.java"
