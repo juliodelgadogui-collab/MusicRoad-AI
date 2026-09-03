@@ -1,96 +1,265 @@
 <?php
 declare(strict_types=1);
+
 require __DIR__ . '/api/bootstrap.php';
+require_once __DIR__ . '/api/server_intelligent.php';
+require_once __DIR__ . '/api/road_hazard_db.php';
+require_once __DIR__ . '/api/native_auth.php';
+require_once __DIR__ . '/api/native_library_sync.php';
+require_once __DIR__ . '/api/official_data_policy.php';
+
 ensure_default_users();
 $admin = require_admin();
+try { intelligent_server_ensure_schema(); } catch (Throwable $e) {}
+try { road_hazard_ensure_tables(); } catch (Throwable $e) {}
+try { native_auth_ensure_schema(); } catch (Throwable $e) {}
 
-// ADMIN_ALL_FUNCTIONS_V239: expose every existing administrative function from one sidebar.
-$modules = [
-    'epc' => ['label'=>'Visão geral','group'=>'Principal','icon'=>'◈','file'=>'admin_epc.php#visao','desc'=>'Comando central, métricas e estado operacional'],
+// EPC_ADMIN_COMPLETE_V2310
+// Nova administração: sem iframe e sem âncoras para fingir módulos separados.
+// Cada item do menu carrega somente o módulo escolhido e suas consultas/ações.
 
-    'users' => ['label'=>'Usuários','group'=>'Contas e mídia','icon'=>'●','file'=>'admin_epc.php#usuarios','desc'=>'Usuários, status e redefinição de senha'],
-    'clients' => ['label'=>'Clientes / Drive / músicas','group'=>'Contas e mídia','icon'=>'♫','file'=>'admin.php','desc'=>'Contas, Google Drive, biblioteca e senha do ADM'],
-    'devices' => ['label'=>'Dispositivos','group'=>'Contas e mídia','icon'=>'▣','file'=>'admin_devices.php','desc'=>'Aparelhos registrados, acessos e credenciais'],
+function ac_e(mixed $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+function ac_rows(string $sql, array $params=[]): array {
+    try { $s=db()->prepare($sql); $s->execute($params); return $s->fetchAll() ?: []; }
+    catch (Throwable $e) { return []; }
+}
+function ac_scalar(string $sql, array $params=[], mixed $default=0): mixed {
+    try { $s=db()->prepare($sql); $s->execute($params); $v=$s->fetchColumn(); return $v===false ? $default : $v; }
+    catch (Throwable $e) { return $default; }
+}
+function ac_table(string $name): bool { try { return schema_columns($name) !== []; } catch (Throwable $e) { return false; } }
+function ac_map(float $lat,float $lon): string { return 'https://www.openstreetmap.org/?mlat='.rawurlencode((string)$lat).'&mlon='.rawurlencode((string)$lon).'#map=16/'.$lat.'/'.$lon; }
+function ac_mask(string $v): string { $v=trim($v); return $v===''?'—':substr($v,0,6).'…'.substr($v,-5); }
+function ac_online(?string $v,int $seconds=900): bool { if(!$v)return false;$t=strtotime($v);return $t!==false && time()-$t<=$seconds; }
+function ac_page(string $page): string { return 'admin_central.php?p='.rawurlencode($page); }
+function ac_flash(string $type,string $text,string $page): never {
+    $_SESSION['epc_admin_flash']=['type'=>$type,'text'=>$text];
+    header('Location: '.ac_page($page)); exit;
+}
+function ac_delete_user_refs(int $id): void {
+    foreach (['native_device_credentials','client_device_state','user_music_state'] as $table) {
+        if (!ac_table($table)) continue;
+        $column = $table==='native_device_credentials' ? 'user_id' : 'user_id';
+        try { $s=db()->prepare("DELETE FROM {$table} WHERE {$column}=?"); $s->execute([$id]); } catch (Throwable $e) {}
+    }
+}
 
-    'road_live' => ['label'=>'Estrada Viva','group'=>'Estrada','icon'=>'▲','file'=>'admin_epc.php#estrada-viva','desc'=>'Ocorrências LIVE e alertas comunitários'],
-    'reports' => ['label'=>'Relatos','group'=>'Estrada','icon'=>'✎','file'=>'admin_reports.php','desc'=>'Moderação e aprovação de relatos recebidos'],
-    'collective' => ['label'=>'Base comunitária','group'=>'Estrada','icon'=>'≋','file'=>'admin_collective.php','desc'=>'Dados colaborativos e ocorrências'],
-    'traffic_weather' => ['label'=>'Trânsito e clima','group'=>'Estrada','icon'=>'☁','file'=>'admin_epc.php#trafego-clima','desc'=>'Trânsito colaborativo, clima e cache'],
-    'fuel' => ['label'=>'Combustível','group'=>'Estrada','icon'=>'◆','file'=>'admin_epc.php#combustivel','desc'=>'Preços recebidos e moderação'],
-    'radars' => ['label'=>'Radares','group'=>'Estrada','icon'=>'◎','file'=>'admin_radares.php','desc'=>'Base, importação, fontes e sincronização'],
-    'convoys' => ['label'=>'Comboios','group'=>'Estrada','icon'=>'▶','file'=>'admin_epc.php#comboios','desc'=>'Comboios ativos, membros e encerramento'],
-    'radio' => ['label'=>'Rádio PTT','group'=>'Estrada','icon'=>'◉','file'=>'admin_radio.php','desc'=>'Estado e diagnóstico do rádio por rodovia'],
-
-    'official' => ['label'=>'Base oficial / limpeza','group'=>'Dados e manutenção','icon'=>'★','file'=>'admin_official_data_cleanup.php','desc'=>'Prévia e remoção segura da base não oficial'],
-    'server' => ['label'=>'Servidor','group'=>'Dados e manutenção','icon'=>'▤','file'=>'admin_server.php','desc'=>'Saúde, armazenamento, sincronização e rotinas'],
-    'operations' => ['label'=>'Operações / housekeeping','group'=>'Dados e manutenção','icon'=>'↻','file'=>'admin_epc.php#servidor','desc'=>'Manutenção, cache meteorológico e estado do host'],
-    'audit' => ['label'=>'Auditoria / logs','group'=>'Dados e manutenção','icon'=>'⌁','file'=>'admin_epc.php#auditoria','desc'=>'Ações administrativas e logs recentes'],
-
-    'auth' => ['label'=>'Autenticação','group'=>'Diagnóstico','icon'=>'🔐','file'=>'admin_auth_diagnostics.php','desc'=>'Sessão, credenciais e persistência'],
-    'diag209' => ['label'=>'Diagnóstico legado 2.0.9','group'=>'Diagnóstico','icon'=>'◇','file'=>'diagnostico_estradaplay_209.php','desc'=>'Verificações de compatibilidade antigas'],
+$menu = [
+ 'Principal'=>[
+   'dashboard'=>['◈','Visão geral','Resumo operacional'],
+ ],
+ 'Contas e mídia'=>[
+   'users'=>['●','Usuários','Criar, bloquear, senha e remover'],
+   'media'=>['♫','Drive e músicas','Pastas, catálogo e sincronização'],
+   'devices'=>['▣','Dispositivos','Aparelhos e credenciais'],
+ ],
+ 'Estrada'=>[
+   'live'=>['▲','Estrada Viva','Alertas LIVE e remoção'],
+   'reports'=>['✎','Relatos','Moderação dos relatos'],
+   'community'=>['≋','Base comunitária','Eventos colaborativos'],
+   'traffic'=>['☁','Trânsito e clima','Amostras e cache'],
+   'fuel'=>['◆','Combustível','Preços enviados'],
+   'radars'=>['◎','Radares e perigos','Base local e hazards'],
+   'convoys'=>['▶','Comboios','Grupos ativos'],
+   'radio'=>['◉','Rádio PTT','Servidor e salas'],
+ ],
+ 'Dados e manutenção'=>[
+   'official'=>['★','Base oficial / limpeza','Política e limpeza protegida'],
+   'server'=>['▤','Servidor','Saúde, sync e housekeeping'],
+   'audit'=>['⌁','Auditoria','Logs administrativos'],
+   'settings'=>['⚙','Configurações','Senha e estado do sistema'],
+ ],
+ 'Diagnóstico'=>[
+   'diagnostics'=>['◇','Diagnósticos','Autenticação e compatibilidade'],
+ ],
 ];
+$allowed=[]; foreach($menu as $items) foreach($items as $k=>$v) $allowed[$k]=true;
+$page=strtolower(trim((string)($_GET['p'] ?? 'dashboard'))); if(!isset($allowed[$page]))$page='dashboard';
 
-$requested = strtolower(trim((string)($_GET['mod'] ?? 'epc')));
-$active = array_key_exists($requested,$modules) ? $requested : 'epc';
-$activeModule = $modules[$active];
-$groups = [];
-foreach ($modules as $key=>$module) $groups[$module['group']][$key]=$module;
+if($_SERVER['REQUEST_METHOD']==='POST'){
+    require_csrf();
+    $action=(string)($_POST['action'] ?? '');
+    $returnPage=(string)($_POST['return_page'] ?? $page); if(!isset($allowed[$returnPage]))$returnPage='dashboard';
+    try {
+        switch($action){
+            case 'create_client':
+                $name=trim((string)($_POST['name']??''));$username=trim((string)($_POST['username']??''));$email=trim((string)($_POST['email']??''));$password=(string)($_POST['password']??'');
+                if($name===''||$username===''||strlen($password)<6)throw new RuntimeException('Informe nome, usuário e senha com pelo menos 6 caracteres.');
+                if($email==='')$email=$username.'@cliente.musicroad.local';
+                $s=db()->prepare("INSERT INTO users (name,email,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?, 'client','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)");
+                $s->execute([$name,$email,$username,password_hash($password,PASSWORD_DEFAULT)]);audit_log('admin.client_create',['client_id'=>(int)db()->lastInsertId(),'username'=>$username]);
+                ac_flash('ok','Cliente criado com sucesso.',$returnPage);
+            case 'toggle_client':
+                $id=(int)($_POST['client_id']??0);$s=db()->prepare("UPDATE users SET status=CASE WHEN status='active' THEN 'inactive' ELSE 'active' END,updated_at=CURRENT_TIMESTAMP WHERE id=? AND role='client'");$s->execute([$id]);audit_log('admin.client_toggle',['client_id'=>$id]);
+                ac_flash('ok','Status do cliente atualizado.',$returnPage);
+            case 'reset_client_password':
+                $id=(int)($_POST['client_id']??0);$password=(string)($_POST['new_password']??'');if(strlen($password)<6)throw new RuntimeException('A nova senha precisa ter pelo menos 6 caracteres.');
+                $s=db()->prepare("UPDATE users SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND role='client'");$s->execute([password_hash($password,PASSWORD_DEFAULT),$id]);audit_log('admin.client_password_reset',['client_id'=>$id]);
+                ac_flash('ok','Senha do cliente redefinida.',$returnPage);
+            case 'delete_client':
+                $id=(int)($_POST['client_id']??0);$u=ac_rows("SELECT username FROM users WHERE id=? AND role='client' LIMIT 1",[$id]);if(!$u)throw new RuntimeException('Cliente não encontrado.');if((string)$u[0]['username']==='cliente')throw new RuntimeException('A conta cliente padrão não pode ser removida.');
+                db()->beginTransaction();try{ac_delete_user_refs($id);$s=db()->prepare("DELETE FROM users WHERE id=? AND role='client'");$s->execute([$id]);db()->commit();}catch(Throwable $e){if(db()->inTransaction())db()->rollBack();throw $e;}audit_log('admin.client_delete',['client_id'=>$id]);
+                ac_flash('ok','Cliente removido.',$returnPage);
+            case 'add_drive_folder':
+                $name=trim((string)($_POST['folder_name']??''))?:'Google Drive';$link=trim((string)($_POST['folder_link']??''));$folderId=drive_folder_id_from_link($link);if(!$folderId)throw new RuntimeException('Link de pasta do Google Drive inválido.');
+                $s=db()->prepare('SELECT id FROM drive_folders WHERE folder_id=?');$s->execute([$folderId]);$id=$s->fetchColumn();
+                if($id){$s=db()->prepare('UPDATE drive_folders SET name=?,folder_link=?,active=1 WHERE id=?');$s->execute([$name,$link,$id]);}else{$s=db()->prepare('INSERT INTO drive_folders (name,folder_id,folder_link,active,created_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');$s->execute([$name,$folderId,$link]);}
+                audit_log('admin.drive_folder_save',['folder_id'=>$folderId]);ac_flash('ok','Pasta do Drive salva.',$returnPage);
+            case 'toggle_drive_folder':
+                $id=(int)($_POST['folder_id']??0);$s=db()->prepare('UPDATE drive_folders SET active=CASE WHEN active=1 THEN 0 ELSE 1 END WHERE id=?');$s->execute([$id]);ac_flash('ok','Status da pasta atualizado.',$returnPage);
+            case 'delete_drive_folder':
+                $id=(int)($_POST['folder_id']??0);$s=db()->prepare('DELETE FROM drive_folders WHERE id=?');$s->execute([$id]);ac_flash('ok','Pasta removida da configuração.',$returnPage);
+            case 'delete_track':
+                $id=(int)($_POST['track_id']??0);$s=db()->prepare('DELETE FROM music_library WHERE id=?');$s->execute([$id]);ac_flash('ok','Música removida do catálogo do servidor.',$returnPage);
+            case 'sync_all':
+                $r=server_sync_active_drive_folders(true,[],'admin-v2310');audit_log('admin.sync_all',['tracks'=>(int)($r['tracks']??0)]);ac_flash('ok','Sincronização concluída: '.(int)($r['tracks']??0).' faixas verificadas.',$returnPage);
+            case 'revoke_device':
+                $device=strtolower(trim((string)($_POST['device_id']??'')));if(!preg_match('/^[a-f0-9]{32,128}$/i',$device))throw new RuntimeException('Identificador inválido.');if(!native_revoke_device($device))throw new RuntimeException('O aparelho não possui credencial ativa.');audit_log('admin.device_revoke',['device'=>ac_mask($device)]);ac_flash('ok','Credencial do aparelho revogada.',$returnPage);
+            case 'delete_live_event':
+                $id=(int)($_POST['event_id']??0);db()->beginTransaction();try{if(ac_table('road_live_votes')){$s=db()->prepare('DELETE FROM road_live_votes WHERE event_id=?');$s->execute([$id]);}if(ac_table('road_live_confirmations')){$s=db()->prepare('DELETE FROM road_live_confirmations WHERE event_id=?');$s->execute([$id]);}$s=db()->prepare('DELETE FROM road_live_events WHERE id=?');$s->execute([$id]);db()->commit();}catch(Throwable $e){if(db()->inTransaction())db()->rollBack();throw $e;}audit_log('admin.live_delete',['event_id'=>$id]);ac_flash('ok','Alerta LIVE removido.',$returnPage);
+            case 'report_status':
+                $id=(int)($_POST['report_id']??0);$status=strtoupper((string)($_POST['status']??''));if(!intelligent_server_set_report_status($id,$status,(int)$admin['id']))throw new RuntimeException('Não foi possível atualizar o relato.');ac_flash('ok','Relato atualizado para '.$status.'.',$returnPage);
+            case 'delete_report':
+                $id=(int)($_POST['report_id']??0);$s=db()->prepare('DELETE FROM road_reports WHERE id=?');$s->execute([$id]);audit_log('admin.report_delete',['report_id'=>$id]);ac_flash('ok','Relato removido.',$returnPage);
+            case 'delete_collective':
+                $id=(int)($_POST['collective_id']??0);$s=db()->prepare('DELETE FROM road_collective_events WHERE id=?');$s->execute([$id]);audit_log('admin.collective_delete',['id'=>$id]);ac_flash('ok','Evento comunitário removido.',$returnPage);
+            case 'delete_traffic_cell':
+                $cell=trim((string)($_POST['cell_key']??''));if($cell==='')throw new RuntimeException('Célula inválida.');$s=db()->prepare('DELETE FROM road_traffic_samples WHERE cell_key=?');$s->execute([$cell]);audit_log('admin.traffic_cell_delete',['cell'=>$cell]);ac_flash('ok','Amostras dessa região removidas.',$returnPage);
+            case 'clear_traffic_expired':
+                $s=db()->prepare('DELETE FROM road_traffic_samples WHERE expires_at<=CURRENT_TIMESTAMP');$s->execute();ac_flash('ok','Amostras de trânsito expiradas removidas: '.$s->rowCount().'.',$returnPage);
+            case 'clear_weather':
+                $s=db()->prepare('DELETE FROM road_weather_cache');$s->execute();audit_log('admin.weather_clear',['count'=>$s->rowCount()]);ac_flash('ok','Cache meteorológico limpo.',$returnPage);
+            case 'delete_fuel':
+                $id=(int)($_POST['fuel_id']??0);$s=db()->prepare('DELETE FROM fuel_price_reports WHERE id=?');$s->execute([$id]);audit_log('admin.fuel_delete',['id'=>$id]);ac_flash('ok','Preço de combustível removido.',$returnPage);
+            case 'clear_fuel_old':
+                $cut=date('Y-m-d H:i:s',time()-36*3600);$s=db()->prepare('DELETE FROM fuel_price_reports WHERE created_at<?');$s->execute([$cut]);ac_flash('ok','Preços antigos removidos: '.$s->rowCount().'.',$returnPage);
+            case 'toggle_radar':
+                $id=(int)($_POST['radar_id']??0);$s=db()->prepare("UPDATE radars SET ativo=CASE WHEN ativo=1 THEN 0 ELSE 1 END WHERE id=?");$s->execute([$id]);audit_log('admin.radar_toggle',['id'=>$id]);ac_flash('ok','Estado do radar atualizado.',$returnPage);
+            case 'delete_radar':
+                $id=(int)($_POST['radar_id']??0);db()->beginTransaction();try{if(ac_table('radar_sources')){$s=db()->prepare('DELETE FROM radar_sources WHERE radar_id=?');$s->execute([$id]);}$s=db()->prepare('DELETE FROM radars WHERE id=?');$s->execute([$id]);db()->commit();}catch(Throwable $e){if(db()->inTransaction())db()->rollBack();throw $e;}audit_log('admin.radar_delete',['id'=>$id]);ac_flash('ok','Radar removido.',$returnPage);
+            case 'delete_hazard':
+                $id=(int)($_POST['hazard_id']??0);$s=db()->prepare('DELETE FROM road_hazards WHERE id=?');$s->execute([$id]);audit_log('admin.hazard_delete',['id'=>$id]);ac_flash('ok','Perigo rodoviário removido.',$returnPage);
+            case 'close_convoy':
+                $id=(int)($_POST['convoy_id']??0);db()->beginTransaction();try{$s=db()->prepare('DELETE FROM estrada_convoy_members WHERE convoy_id=?');$s->execute([$id]);$s=db()->prepare('DELETE FROM estrada_convoys WHERE id=?');$s->execute([$id]);db()->commit();}catch(Throwable $e){if(db()->inTransaction())db()->rollBack();throw $e;}audit_log('admin.convoy_close',['id'=>$id]);ac_flash('ok','Comboio encerrado e removido.',$returnPage);
+            case 'toggle_radio':
+                $enabled=(string)($_POST['enabled']??'0')==='1'?'1':'0';set_app_setting('radio_enabled',$enabled);audit_log('admin.radio_toggle',['enabled'=>$enabled]);ac_flash('ok',$enabled==='1'?'Rádio liberado pelo servidor.':'Rádio desativado pelo servidor.',$returnPage);
+            case 'delete_radio_alert':
+                $id=(int)($_POST['alert_id']??0);$s=db()->prepare('DELETE FROM radio_alerts WHERE id=?');$s->execute([$id]);ac_flash('ok','Alerta temporário do rádio removido.',$returnPage);
+            case 'housekeeping':
+                $r=intelligent_server_housekeeping(true);try{server_housekeeping(true);server_rotate_logs();}catch(Throwable $e){}audit_log('admin.housekeeping',['deleted'=>(int)($r['deleted']??0)]);ac_flash('ok','Housekeeping executado. Registros expirados: '.(int)($r['deleted']??0).'.',$returnPage);
+            case 'change_admin_password':
+                $password=(string)($_POST['new_password']??'');if(strlen($password)<8)throw new RuntimeException('Use uma senha de administrador com pelo menos 8 caracteres.');$s=db()->prepare('UPDATE users SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?');$s->execute([password_hash($password,PASSWORD_DEFAULT),(int)$admin['id']]);audit_log('admin.password_change',['admin_id'=>(int)$admin['id']]);ac_flash('ok','Senha do administrador alterada.',$returnPage);
+            default: throw new RuntimeException('Ação administrativa desconhecida.');
+        }
+    } catch(Throwable $e){ ac_flash('bad',$e->getMessage()?:'Não foi possível concluir a ação.',$returnPage); }
+}
 
-function ac_e(mixed $v): string { return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8'); }
-?>
-<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#080808">
-<title>Estrada Play · Administração Completa</title>
-<style>
-:root{color-scheme:dark;--bg:#080808;--side:#0d0d0e;--line:#29292b;--text:#f5f2e9;--muted:#aaa6a0;--red:#a6121d;--gold:#e2be67;--gold2:#f1d788}
-*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{overflow:hidden}.shell{height:100vh;display:grid;grid-template-columns:300px minmax(0,1fr)}.sidebar{background:linear-gradient(180deg,#111112 0,#090909 100%);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}.brand{padding:18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line)}.star{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--red);color:var(--gold2);font-size:24px}.brand strong{display:block;font-size:14px;letter-spacing:.08em}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:.12em;margin-top:3px}.menu{padding:10px 10px 18px;overflow:auto;flex:1}.group{margin:14px 8px 6px;color:#77736d;font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.nav{display:flex;align-items:center;gap:10px;padding:9px 10px;margin:2px 0;border:1px solid transparent;border-radius:10px;color:#d7d4ce;text-decoration:none;background:transparent}.nav:hover{background:#171718;border-color:#272729}.nav.active{background:linear-gradient(90deg,rgba(166,18,29,.30),rgba(226,190,103,.06));border-color:#54242a;color:#fff}.ico{width:24px;text-align:center;color:var(--gold);font-size:15px}.txt{min-width:0}.txt b{display:block;font-size:12.5px}.txt small{display:block;color:#85817d;font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}.bottom{padding:12px;border-top:1px solid var(--line)}.who{padding:9px 10px;background:#131314;border:1px solid #242426;border-radius:10px;margin-bottom:8px}.who small{display:block;color:#85817d}.who strong{display:block;font-size:12px;margin-top:3px;overflow:hidden;text-overflow:ellipsis}.logout{display:block;text-align:center;text-decoration:none;color:#ffb9bd;border:1px solid #54242a;border-radius:9px;padding:9px;font-size:12px}.content{min-width:0;display:grid;grid-template-rows:66px minmax(0,1fr)}.topbar{display:flex;align-items:center;gap:14px;padding:9px 16px;border-bottom:1px solid var(--line);background:#0a0a0a}.mobile-menu{display:none}.title{min-width:0;flex:1}.title small{display:block;color:var(--gold);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.title strong{display:block;font-size:17px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.badge{font-size:11px;color:#a7d8ad;border:1px solid #285b34;background:#102317;padding:7px 10px;border-radius:999px;white-space:nowrap}.open{color:#c8c3ba;text-decoration:none;border:1px solid #323235;border-radius:9px;padding:8px 10px;font-size:11px;white-space:nowrap}.frame-wrap{position:relative;min-height:0;background:#0b0b0c}.loader{position:absolute;inset:0;display:grid;place-items:center;color:#777;font-size:12px}.frame{position:relative;width:100%;height:100%;border:0;background:#0b0b0c}.menu-shade{display:none}
-@media(max-width:900px){body{overflow:auto}.shell{display:block;min-height:100vh}.sidebar{position:fixed;z-index:20;left:0;top:0;bottom:0;width:min(88vw,320px);transform:translateX(-105%);transition:.2s;box-shadow:20px 0 60px rgba(0,0,0,.45)}body.menu-open .sidebar{transform:none}.content{height:100vh;grid-template-rows:62px minmax(0,1fr)}.mobile-menu{display:inline-grid;place-items:center;width:38px;height:38px;border:1px solid #343437;border-radius:9px;background:#141415;color:#fff;font-size:18px}.badge{display:none}.topbar{padding:8px 10px}.open{padding:7px 8px}.menu-shade{position:fixed;z-index:19;inset:0;background:rgba(0,0,0,.62)}body.menu-open .menu-shade{display:block}}
-</style>
-</head>
-<body>
-<div class="menu-shade" data-close-menu></div>
-<div class="shell">
-<aside class="sidebar">
-  <div class="brand"><div class="star">★</div><div><strong>ESTRADA PLAY</strong><small>ADMIN · TODAS AS FUNÇÕES</small></div></div>
-  <nav class="menu">
-    <?php foreach($groups as $group=>$items): ?>
-      <div class="group"><?=ac_e($group)?></div>
-      <?php foreach($items as $key=>$module): ?>
-        <a class="nav <?=$key===$active?'active':''?>" href="?mod=<?=ac_e($key)?>" data-module="<?=ac_e($key)?>" data-file="<?=ac_e($module['file'])?>" data-label="<?=ac_e($module['label'])?>">
-          <span class="ico"><?=ac_e($module['icon'])?></span><span class="txt"><b><?=ac_e($module['label'])?></b><small><?=ac_e($module['desc'])?></small></span>
-        </a>
-      <?php endforeach; ?>
-    <?php endforeach; ?>
-  </nav>
-  <div class="bottom"><div class="who"><small>Administrador conectado</small><strong><?=ac_e($admin['name'] ?? $admin['username'] ?? 'admin')?></strong></div><a class="logout" href="logout.php" target="_top">Sair do painel</a></div>
-</aside>
-<main class="content">
-  <header class="topbar">
-    <button class="mobile-menu" type="button" data-menu>☰</button>
-    <div class="title"><small>Administração completa</small><strong id="moduleTitle"><?=ac_e($activeModule['label'])?></strong></div>
-    <span class="badge">● SERVIDOR CONECTADO</span>
-    <a class="open" id="openModule" href="<?=ac_e($activeModule['file'])?>" target="_blank" rel="noopener">Abrir isolado ↗</a>
-  </header>
-  <div class="frame-wrap"><div class="loader">Carregando módulo…</div><iframe class="frame" id="adminFrame" title="<?=ac_e($activeModule['label'])?>" src="<?=ac_e($activeModule['file'])?>"></iframe></div>
-</main>
-</div>
-<script>
-(()=>{
- const frame=document.getElementById('adminFrame'), title=document.getElementById('moduleTitle'), open=document.getElementById('openModule');
- document.querySelectorAll('[data-module]').forEach(link=>link.addEventListener('click',e=>{
-   e.preventDefault();
-   const mod=link.dataset.module,file=link.dataset.file,label=link.dataset.label;
-   document.querySelectorAll('[data-module]').forEach(x=>x.classList.remove('active'));link.classList.add('active');
-   frame.src=file;frame.title=label;title.textContent=label;open.href=file;
-   history.replaceState(null,'','?mod='+encodeURIComponent(mod));document.body.classList.remove('menu-open');
- }));
- document.querySelector('[data-menu]')?.addEventListener('click',()=>document.body.classList.toggle('menu-open'));
- document.querySelector('[data-close-menu]')?.addEventListener('click',()=>document.body.classList.remove('menu-open'));
-})();
-</script>
-</body>
-</html>
+$flash=$_SESSION['epc_admin_flash']??null; unset($_SESSION['epc_admin_flash']);
+$csrf=csrf_token();
+$health=server_health_snapshot(false);
+$roadMode=epc_official_data_only()?'OFFICIAL':'COMMUNITY';
+
+$labels=[]; foreach($menu as $items) foreach($items as $k=>$v)$labels[$k]=$v;
+$current=$labels[$page]??['◈','Visão geral','Resumo operacional'];
+
+?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#070707"><title><?=ac_e($current[1])?> · Estrada Play Admin</title><link rel="stylesheet" href="assets/css/admin-epc.css?v=2.3.10"><style>
+.epc-nav-group{margin:14px 10px 5px;color:#716a62;font-size:9px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}.admin-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.tool-card{display:block;padding:16px;border:1px solid var(--line);border-radius:13px;background:#0d0c0c}.tool-card:hover{border-color:#633034;background:#151010}.tool-card strong{display:block;font-size:14px}.tool-card span{display:block;color:var(--muted);font-size:11px;margin-top:5px}.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.form-grid label{color:var(--muted);font-size:11px}.form-grid input,.form-grid select{width:100%;margin-top:5px;height:38px;border:1px solid #382b2b;border-radius:9px;background:#0b0a0a;color:#eee;padding:0 10px}.danger-zone{border-color:#5a2528;background:linear-gradient(180deg,rgba(91,18,24,.12),rgba(13,12,12,.92))}.big-link{display:inline-flex;align-items:center;gap:8px;padding:12px 15px;border:1px solid #6f2528;border-radius:10px;background:#1c0c0d;color:#ffb1b4;font-weight:800;font-size:12px}.epc-topbar .epc-actions{align-items:center}.admin-page-note{padding:11px 13px;border:1px solid #40331c;border-radius:10px;background:#16130d;color:#d8c18c;font-size:11px;margin-bottom:16px}.mobile-title{display:none}@media(max-width:820px){.epc-sidebar{position:fixed;z-index:30;left:0;top:0;bottom:0;width:min(88vw,300px);height:100vh;transform:translateX(-105%);transition:.2s}.menu-open .epc-sidebar{transform:none}.epc-main{padding-top:14px}.mobile-title{display:flex;align-items:center;gap:10px;margin-bottom:14px}.mobile-title button{background:#171313;border:1px solid #3a2929;color:#fff;border-radius:9px;padding:8px 11px}.epc-topbar{padding-top:0}.epc-topbar .epc-actions{display:none}}
+</style></head><body><div class="epc-shell"><aside class="epc-sidebar"><div class="epc-brand"><div class="epc-star">★</div><div><strong>ESTRADA PLAY</strong><small>ADMIN COMPLETO · 2.3.10</small></div></div><nav class="epc-nav">
+<?php foreach($menu as $group=>$items): ?><div class="epc-nav-group"><?=ac_e($group)?></div><?php foreach($items as $key=>$m): ?><a class="<?=$page===$key?'active':''?>" href="<?=ac_e(ac_page($key))?>"><span class="icon"><?=ac_e($m[0])?></span><span><strong style="display:block;font-size:12px"><?=ac_e($m[1])?></strong><small style="display:block;color:#7f7770;font-size:9px;margin-top:2px"><?=ac_e($m[2])?></small></span></a><?php endforeach; ?><?php endforeach; ?>
+</nav><div class="epc-sidebar-bottom">Administrador<br><strong><?=ac_e($admin['name']??$admin['username']??'admin')?></strong><div style="margin-top:8px">Base rodoviária: <strong><?=ac_e($roadMode)?></strong></div><a href="logout.php">Sair</a></div></aside><main class="epc-main"><div class="mobile-title"><button type="button" onclick="document.body.classList.toggle('menu-open')">☰</button><strong><?=ac_e($current[1])?></strong></div><header class="epc-topbar"><div><p class="epc-kicker">EPC · ADMINISTRAÇÃO 2.3.10</p><h1><?=ac_e($current[1])?></h1><p><?=ac_e($current[2])?> · cada opção carrega somente seu próprio módulo.</p></div><div class="epc-actions"><span class="epc-badge ok">● SERVIDOR</span><span class="epc-badge <?=$roadMode==='OFFICIAL'?'ok':'warn'?>">BASE <?=ac_e($roadMode)?></span><a class="epc-btn danger" href="logout.php">Sair</a></div></header>
+<?php if($flash): ?><div class="epc-alert <?=($flash['type']??'bad')==='ok'?'ok':'bad'?>"><?=ac_e($flash['text']??'')?></div><?php endif; ?>
+
+<?php if($page==='dashboard'):
+$metrics=[
+ 'Clientes'=>(int)ac_scalar("SELECT COUNT(*) FROM users WHERE role='client'"),
+ 'Ativos'=>(int)ac_scalar("SELECT COUNT(*) FROM users WHERE role='client' AND status='active'"),
+ 'Dispositivos'=>(int)ac_scalar('SELECT COUNT(*) FROM client_device_state'),
+ 'Radares'=>(int)ac_scalar('SELECT COUNT(*) FROM radars WHERE ativo=1'),
+ 'Estrada Viva'=>ac_table('road_live_events')?(int)ac_scalar('SELECT COUNT(*) FROM road_live_events WHERE expires_at>CURRENT_TIMESTAMP'):0,
+ 'Relatos pendentes'=>ac_table('road_reports')?(int)ac_scalar("SELECT COUNT(*) FROM road_reports WHERE status='PENDENTE'"):0,
+ 'Comboios'=>ac_table('estrada_convoys')?(int)ac_scalar('SELECT COUNT(*) FROM estrada_convoys WHERE expires_at>CURRENT_TIMESTAMP'):0,
+ 'Músicas'=>(int)ac_scalar('SELECT COUNT(*) FROM music_library'),
+]; ?>
+<div class="epc-grid"><?php foreach($metrics as $k=>$v):?><article class="epc-card"><span class="label"><?=ac_e($k)?></span><div class="metric"><?=number_format($v,0,',','.')?></div></article><?php endforeach;?></div>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Central de comando</h2><p>As funções não ficam mais empilhadas em uma página gigante e não são abertas em iframe.</p></div></div><div class="admin-tools"><?php foreach($menu as $group=>$items):foreach($items as $key=>$m):if($key==='dashboard')continue;?><a class="tool-card" href="<?=ac_e(ac_page($key))?>"><strong><?=ac_e($m[0].' '.$m[1])?></strong><span><?=ac_e($m[2])?></span></a><?php endforeach;endforeach;?></div></section>
+<section class="epc-section"><div class="epc-health"><div class="epc-health-main"><div class="epc-health-status"><div><span class="epc-dot"></span><strong><?=ac_e((string)($health['quota_label']??'OK'))?></strong><div class="epc-muted" style="margin-top:5px">Uso gerenciado <?=ac_e((string)($health['managed_h']??'—'))?> / <?=ac_e((string)($health['quota_h']??'500 MB'))?></div></div><strong><?=number_format((float)($health['quota_percent']??0),1,',','.')?>%</strong></div><div class="epc-progress"><span style="width:<?=min(100,max(0,(float)($health['quota_percent']??0)))?>%"></span></div></div><div class="epc-mini-grid"><div class="epc-mini"><strong><?=ac_e((string)($health['db_h']??'—'))?></strong><span>Banco de dados</span></div><div class="epc-mini"><strong><?=ac_e((string)($health['disk_free_h']??'—'))?></strong><span>Espaço livre</span></div><div class="epc-mini"><strong><?=ac_e($roadMode)?></strong><span>Modo rodoviário</span></div><div class="epc-mini"><strong><?=ac_e(ESTRADAPLAY_SERVER_INTELLIGENT_VERSION)?></strong><span>Server inteligente</span></div></div></div></section>
+
+<?php elseif($page==='users'):
+$clients=ac_rows("SELECT u.*, (SELECT COUNT(*) FROM client_device_state d WHERE d.user_id=u.id) devices FROM users u WHERE u.role='client' ORDER BY u.id DESC LIMIT 250"); ?>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Novo cliente</h2><p>Crie a conta que será usada no aplicativo.</p></div></div><form method="post" class="form-grid"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="action" value="create_client"><input type="hidden" name="return_page" value="users"><label>Nome<input name="name" required></label><label>Usuário<input name="username" required></label><label>E-mail<input name="email" type="email"></label><label>Senha inicial<input name="password" type="password" minlength="6" required></label><div style="align-self:end"><button class="epc-btn primary" type="submit">Criar cliente</button></div></form></section>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Clientes · <?=count($clients)?></h2><p>Ativar, desativar, redefinir senha ou remover.</p></div></div><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Cliente</th><th>Status</th><th>Último login</th><th>Dispositivos</th><th>Ações</th></tr></thead><tbody><?php foreach($clients as $c):?><tr><td><strong><?=ac_e($c['name'])?></strong><br><span class="epc-muted"><?=ac_e($c['username'])?> · <?=ac_e($c['email'])?></span></td><td><span class="epc-badge <?=$c['status']==='active'?'ok':'bad'?>"><?=ac_e(strtoupper((string)$c['status']))?></span></td><td><?=ac_e($c['last_login_at']?:'Nunca')?></td><td><?= (int)$c['devices']?></td><td><div class="epc-inline"><form method="post"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="users"><input type="hidden" name="action" value="toggle_client"><input type="hidden" name="client_id" value="<?=(int)$c['id']?>"><button class="epc-btn small" type="submit"><?=$c['status']==='active'?'Desativar':'Ativar'?></button></form><form method="post"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="users"><input type="hidden" name="action" value="reset_client_password"><input type="hidden" name="client_id" value="<?=(int)$c['id']?>"><input class="epc-input compact" name="new_password" type="password" minlength="6" placeholder="Nova senha" required><button class="epc-btn small" type="submit">Redefinir</button></form><?php if((string)$c['username']!=='cliente'):?><form method="post" onsubmit="return confirm('Remover definitivamente este cliente?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="users"><input type="hidden" name="action" value="delete_client"><input type="hidden" name="client_id" value="<?=(int)$c['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form><?php endif;?></div></td></tr><?php endforeach;?><?php if(!$clients):?><tr><td colspan="5" class="epc-empty">Nenhum cliente.</td></tr><?php endif;?></tbody></table></div></section>
+
+<?php elseif($page==='media'):
+$folders=ac_rows('SELECT * FROM drive_folders ORDER BY active DESC,id DESC');$tracks=ac_rows('SELECT id,title,artist,album,origin,origin_ref,file_size,created_at FROM music_library ORDER BY id DESC LIMIT 250'); ?>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Google Drive público</h2><p>O servidor mantém metadados; o áudio continua no Drive.</p></div><form method="post"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="action" value="sync_all"><input type="hidden" name="return_page" value="media"><button class="epc-btn primary" type="submit">Sincronizar tudo</button></form></div><form method="post" class="form-grid"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="action" value="add_drive_folder"><input type="hidden" name="return_page" value="media"><label>Nome<input name="folder_name" placeholder="Ex: Viagem"></label><label style="grid-column:span 2">Link público<input name="folder_link" required placeholder="https://drive.google.com/drive/folders/..."></label><div style="align-self:end"><button class="epc-btn" type="submit">Adicionar pasta</button></div></form></section>
+<section class="epc-section"><h2>Pastas configuradas</h2><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Nome</th><th>Status</th><th>Última importação</th><th>Ações</th></tr></thead><tbody><?php foreach($folders as $f):?><tr><td><strong><?=ac_e($f['name'])?></strong><br><span class="epc-mono"><?=ac_e($f['folder_id'])?></span></td><td><span class="epc-badge <?=$f['active']?'ok':'warn'?>"><?=$f['active']?'ATIVA':'PAUSADA'?></span><br><span class="epc-muted"><?=ac_e($f['last_status']??'')?></span></td><td><?=ac_e($f['last_import_at']??'Nunca')?></td><td><div class="epc-inline"><form method="post"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="media"><input type="hidden" name="action" value="toggle_drive_folder"><input type="hidden" name="folder_id" value="<?=(int)$f['id']?>"><button class="epc-btn small" type="submit"><?=$f['active']?'Pausar':'Ativar'?></button></form><form method="post" onsubmit="return confirm('Remover esta pasta da configuração?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="media"><input type="hidden" name="action" value="delete_drive_folder"><input type="hidden" name="folder_id" value="<?=(int)$f['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form></div></td></tr><?php endforeach;?><?php if(!$folders):?><tr><td colspan="4" class="epc-empty">Nenhuma pasta.</td></tr><?php endif;?></tbody></table></div></section>
+<section class="epc-section"><h2>Biblioteca · <?=count($tracks)?> exibidas</h2><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Faixa</th><th>Origem</th><th>Tamanho</th><th>Data</th><th>Ação</th></tr></thead><tbody><?php foreach($tracks as $t):?><tr><td><strong><?=ac_e($t['title'])?></strong><br><span class="epc-muted"><?=ac_e($t['artist']??'')?></span></td><td><?=ac_e($t['origin'])?></td><td><?=$t['file_size']?number_format(((int)$t['file_size'])/1048576,1,',','.').' MB':'—'?></td><td><?=ac_e($t['created_at'])?></td><td><form method="post" onsubmit="return confirm('Remover esta faixa do catálogo?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="media"><input type="hidden" name="action" value="delete_track"><input type="hidden" name="track_id" value="<?=(int)$t['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form></td></tr><?php endforeach;?></tbody></table></div></section>
+
+<?php elseif($page==='devices'):
+$devices=ac_rows("SELECT d.user_id,d.device_id,d.device_name,d.last_seen_at,u.name user_name,u.username,u.status user_status,c.created_at secure_since,c.last_used_at,c.revoked_at,c.refresh_expires_at FROM client_device_state d JOIN users u ON u.id=d.user_id LEFT JOIN native_device_credentials c ON c.device_id=d.device_id AND c.user_id=d.user_id ORDER BY d.last_seen_at DESC LIMIT 250"); ?>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Aparelhos registrados · <?=count($devices)?></h2><p>Revogar força novo login com senha no aparelho.</p></div></div><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Usuário</th><th>Aparelho</th><th>Estado</th><th>Último sinal</th><th>Ação</th></tr></thead><tbody><?php foreach($devices as $d):$has=!empty($d['secure_since']);$rev=!empty($d['revoked_at']);?><tr><td><strong><?=ac_e($d['user_name']?:$d['username'])?></strong><br><span class="epc-muted"><?=ac_e($d['username'])?></span></td><td><?=ac_e($d['device_name']?:'Android')?><br><span class="epc-mono"><?=ac_e(ac_mask((string)$d['device_id']))?></span></td><td><span class="epc-badge <?=$rev?'bad':($has?'ok':'warn')?>"><?=$rev?'REVOGADO':($has?'SEGURO':'LEGADO')?></span><?php if(ac_online($d['last_seen_at']??null)):?> <span class="epc-badge cyan">ONLINE</span><?php endif;?></td><td><?=ac_e($d['last_seen_at']?:'—')?></td><td><?php if($has&&!$rev):?><form method="post" onsubmit="return confirm('Revogar acesso deste aparelho?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="devices"><input type="hidden" name="action" value="revoke_device"><input type="hidden" name="device_id" value="<?=ac_e($d['device_id'])?>"><button class="epc-btn danger small" type="submit">Revogar</button></form><?php else:?><span class="epc-muted">—</span><?php endif;?></td></tr><?php endforeach;?><?php if(!$devices):?><tr><td colspan="5" class="epc-empty">Nenhum aparelho registrado.</td></tr><?php endif;?></tbody></table></div></section>
+
+<?php elseif($page==='live'):
+$now=date('Y-m-d H:i:s');$live=ac_table('road_live_events')?ac_rows('SELECT * FROM road_live_events ORDER BY id DESC LIMIT 250'):[]; ?>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Estrada Viva · <?=count($live)?></h2><p>Eventos comunitários recebidos em tempo real. Você pode remover qualquer registro.</p></div></div><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Evento</th><th>Rodovia</th><th>Local</th><th>Confirmações</th><th>Expira</th><th>Ação</th></tr></thead><tbody><?php foreach($live as $r):?><tr><td><strong><?=ac_e(strtoupper((string)$r['event_type']))?></strong><br><span class="epc-muted"><?=ac_e($r['note']??'')?></span></td><td><?=ac_e($r['road']??'—')?></td><td><a class="epc-coordinate" target="_blank" href="<?=ac_e(ac_map((float)$r['latitude'],(float)$r['longitude']))?>"><?=number_format((float)$r['latitude'],5,'.','')?>, <?=number_format((float)$r['longitude'],5,'.','')?></a></td><td><?= (int)($r['confirmations']??0)?> / rejeições <?= (int)($r['dismissals']??0)?></td><td><span class="epc-badge <?=($r['expires_at']??'')>$now?'ok':'bad'?>"><?=ac_e($r['expires_at']??'—')?></span></td><td><form method="post" onsubmit="return confirm('Remover este alerta LIVE?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="live"><input type="hidden" name="action" value="delete_live_event"><input type="hidden" name="event_id" value="<?=(int)$r['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form></td></tr><?php endforeach;?><?php if(!$live):?><tr><td colspan="6" class="epc-empty">Nenhum evento LIVE.</td></tr><?php endif;?></tbody></table></div></section>
+
+<?php elseif($page==='reports'):
+$stats=intelligent_server_report_stats();$reports=intelligent_server_reports('',250); ?>
+<div class="epc-grid"><article class="epc-card"><span class="label">Pendentes</span><div class="metric"><?=(int)($stats['pending']??0)?></div></article><article class="epc-card"><span class="label">Confirmados</span><div class="metric"><?=(int)($stats['confirmed']??0)?></div></article><article class="epc-card"><span class="label">Rejeitados</span><div class="metric"><?=(int)($stats['rejected']??0)?></div></article><article class="epc-card"><span class="label">24 horas</span><div class="metric"><?=(int)($stats['last24h']??0)?></div></article></div>
+<section class="epc-section"><h2>Relatos recebidos</h2><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Tipo</th><th>Local</th><th>Dados</th><th>Status</th><th>Ações</th></tr></thead><tbody><?php foreach($reports as $r):?><tr><td><strong><?=ac_e($r['type'])?></strong><br><span class="epc-muted"><?=ac_e($r['created_at'])?></span></td><td><a class="epc-coordinate" target="_blank" href="<?=ac_e(ac_map((float)$r['latitude'],(float)$r['longitude']))?>"><?=number_format((float)$r['latitude'],5,'.','')?>, <?=number_format((float)$r['longitude'],5,'.','')?></a></td><td><?=!empty($r['speed_kmh'])?(int)$r['speed_kmh'].' km/h':''?> <?=ac_e($r['note']??'')?></td><td><span class="epc-badge <?=strtoupper((string)$r['status'])==='CONFIRMADO'?'ok':(strtoupper((string)$r['status'])==='REJEITADO'?'bad':'warn')?>"><?=ac_e($r['status'])?></span></td><td><div class="epc-inline"><form method="post"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="reports"><input type="hidden" name="action" value="report_status"><input type="hidden" name="report_id" value="<?=(int)$r['id']?>"><button class="epc-btn small" name="status" value="CONFIRMADO">Confirmar</button><button class="epc-btn small" name="status" value="REJEITADO">Rejeitar</button></form><form method="post" onsubmit="return confirm('Remover definitivamente este relato?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="reports"><input type="hidden" name="action" value="delete_report"><input type="hidden" name="report_id" value="<?=(int)$r['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form></div></td></tr><?php endforeach;?><?php if(!$reports):?><tr><td colspan="5" class="epc-empty">Nenhum relato.</td></tr><?php endif;?></tbody></table></div></section>
+
+<?php elseif($page==='community'):
+$community=ac_table('road_collective_events')?ac_rows('SELECT * FROM road_collective_events ORDER BY id DESC LIMIT 250'):[]; ?>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Eventos comunitários · <?=count($community)?></h2><p>Qualidade da via, confirmações e eventos coletivos.</p></div></div><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Evento</th><th>Rodovia</th><th>Local</th><th>Impacto</th><th>Quando</th><th>Ação</th></tr></thead><tbody><?php foreach($community as $r):?><tr><td><strong><?=ac_e($r['event_type'])?></strong></td><td><?=ac_e($r['road']??'—')?></td><td><a class="epc-coordinate" target="_blank" href="<?=ac_e(ac_map((float)$r['latitude'],(float)$r['longitude']))?>"><?=number_format((float)$r['latitude'],5,'.','')?>, <?=number_format((float)$r['longitude'],5,'.','')?></a></td><td><?=isset($r['severity'])&&$r['severity']!==null?number_format((float)$r['severity'],1,',','.').'/10':'—'?></td><td><?=ac_e($r['created_at'])?></td><td><form method="post" onsubmit="return confirm('Remover este evento comunitário?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="community"><input type="hidden" name="action" value="delete_collective"><input type="hidden" name="collective_id" value="<?=(int)$r['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form></td></tr><?php endforeach;?><?php if(!$community):?><tr><td colspan="6" class="epc-empty">A base comunitária está vazia ou ainda não foi criada.</td></tr><?php endif;?></tbody></table></div></section>
+
+<?php elseif($page==='traffic'):
+$traffic=ac_table('road_traffic_samples')?ac_rows("SELECT cell_key,MAX(COALESCE(road,'')) road,ROUND(AVG(speed_kmh),1) avg_speed,COUNT(*) samples,MAX(updated_at) updated_at,MAX(expires_at) expires_at FROM road_traffic_samples GROUP BY cell_key ORDER BY updated_at DESC LIMIT 150"):[];$weather=ac_table('road_weather_cache')?ac_rows('SELECT cache_key,latitude,longitude,fetched_at,expires_at FROM road_weather_cache ORDER BY fetched_at DESC LIMIT 120'):[]; ?>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Trânsito colaborativo</h2><p>Amostras efêmeras por região.</p></div><form method="post"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="traffic"><input type="hidden" name="action" value="clear_traffic_expired"><button class="epc-btn" type="submit">Limpar expiradas</button></form></div><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Região</th><th>Rodovia</th><th>Velocidade média</th><th>Amostras</th><th>Atualização</th><th>Ação</th></tr></thead><tbody><?php foreach($traffic as $r):?><tr><td class="epc-mono"><?=ac_e($r['cell_key'])?></td><td><?=ac_e($r['road']?:'—')?></td><td><?=number_format((float)$r['avg_speed'],1,',','.')?> km/h</td><td><?=(int)$r['samples']?></td><td><?=ac_e($r['updated_at'])?></td><td><form method="post" onsubmit="return confirm('Remover todas as amostras desta região?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="traffic"><input type="hidden" name="action" value="delete_traffic_cell"><input type="hidden" name="cell_key" value="<?=ac_e($r['cell_key'])?>"><button class="epc-btn danger small" type="submit">Remover</button></form></td></tr><?php endforeach;?><?php if(!$traffic):?><tr><td colspan="6" class="epc-empty">Sem trânsito colaborativo.</td></tr><?php endif;?></tbody></table></div></section>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Cache meteorológico · <?=count($weather)?></h2><p>O cache será preenchido novamente conforme o app consultar o clima.</p></div><form method="post" onsubmit="return confirm('Limpar todo o cache de clima?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="traffic"><input type="hidden" name="action" value="clear_weather"><button class="epc-btn danger" type="submit">Limpar cache</button></form></div><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Chave</th><th>Local</th><th>Obtido</th><th>Expira</th></tr></thead><tbody><?php foreach($weather as $r):?><tr><td class="epc-mono"><?=ac_e($r['cache_key'])?></td><td><?=number_format((float)$r['latitude'],4,'.','')?>, <?=number_format((float)$r['longitude'],4,'.','')?></td><td><?=ac_e($r['fetched_at'])?></td><td><?=ac_e($r['expires_at'])?></td></tr><?php endforeach;?></tbody></table></div></section>
+
+<?php elseif($page==='fuel'):
+$fuel=ac_table('fuel_price_reports')?ac_rows('SELECT * FROM fuel_price_reports ORDER BY id DESC LIMIT 250'):[]; ?>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Preços recebidos · <?=count($fuel)?></h2><p>Informações de combustível enviadas pelos usuários.</p></div><form method="post" onsubmit="return confirm('Remover preços com mais de 36 horas?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="fuel"><input type="hidden" name="action" value="clear_fuel_old"><button class="epc-btn" type="submit">Limpar antigos</button></form></div><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Posto</th><th>Combustível</th><th>Preço</th><th>Local</th><th>Quando</th><th>Ação</th></tr></thead><tbody><?php foreach($fuel as $r):?><tr><td><strong><?=ac_e($r['station']??'Posto')?></strong></td><td><?=ac_e($r['fuel']??'')?></td><td>R$ <?=number_format((float)$r['price'],2,',','.')?></td><td><a class="epc-coordinate" target="_blank" href="<?=ac_e(ac_map((float)$r['latitude'],(float)$r['longitude']))?>"><?=number_format((float)$r['latitude'],4,'.','')?>, <?=number_format((float)$r['longitude'],4,'.','')?></a></td><td><?=ac_e($r['reported_at']??$r['created_at']??'')?></td><td><form method="post" onsubmit="return confirm('Remover este preço?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="fuel"><input type="hidden" name="action" value="delete_fuel"><input type="hidden" name="fuel_id" value="<?=(int)$r['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form></td></tr><?php endforeach;?><?php if(!$fuel):?><tr><td colspan="6" class="epc-empty">Nenhum preço recebido.</td></tr><?php endif;?></tbody></table></div></section>
+
+<?php elseif($page==='radars'):
+$q=trim((string)($_GET['q']??''));$params=[];$where='';if($q!==''){$where=' WHERE cidade LIKE ? OR rodovia LIKE ? OR fonte LIKE ? OR tipo LIKE ?';$n='%'.$q.'%';$params=[$n,$n,$n,$n];}$radars=ac_rows('SELECT * FROM radars'.$where.' ORDER BY id DESC LIMIT 250',$params);$hazards=ac_table('road_hazards')?ac_rows('SELECT * FROM road_hazards ORDER BY id DESC LIMIT 180'):[]; ?>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Radares locais · <?=count($radars)?></h2><p>Busca, ativação e remoção. Importações avançadas continuam disponíveis na ferramenta especializada.</p></div><a class="epc-btn gold" href="admin_radares.php">Importar / sincronizar ↗</a></div><form method="get" class="epc-inline"><input type="hidden" name="p" value="radars"><input class="epc-input" style="min-width:260px" name="q" value="<?=ac_e($q)?>" placeholder="Rodovia, cidade, fonte ou tipo"><button class="epc-btn" type="submit">Buscar</button></form><div class="epc-table-wrap" style="margin-top:14px"><table class="epc-table"><thead><tr><th>Tipo</th><th>Rodovia</th><th>Fonte</th><th>Confiança</th><th>Estado</th><th>Ações</th></tr></thead><tbody><?php foreach($radars as $r):?><tr><td><strong><?=ac_e($r['tipo'])?></strong><br><span class="epc-muted"><?=ac_e($r['cidade']??'')?></span></td><td><?=ac_e($r['rodovia']??'—')?> <?=!empty($r['km'])?'km '.ac_e($r['km']):''?></td><td><?=ac_e($r['fonte']??'—')?></td><td><?=ac_e($r['confiabilidade']??'—')?></td><td><span class="epc-badge <?=$r['ativo']?'ok':'bad'?>"><?=$r['ativo']?'ATIVO':'INATIVO'?></span></td><td><div class="epc-inline"><form method="post"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="radars"><input type="hidden" name="action" value="toggle_radar"><input type="hidden" name="radar_id" value="<?=(int)$r['id']?>"><button class="epc-btn small" type="submit"><?=$r['ativo']?'Desativar':'Ativar'?></button></form><form method="post" onsubmit="return confirm('Remover este radar e suas fontes associadas?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="radars"><input type="hidden" name="action" value="delete_radar"><input type="hidden" name="radar_id" value="<?=(int)$r['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form></div></td></tr><?php endforeach;?></tbody></table></div></section>
+<section class="epc-section"><h2>Perigos rodoviários · <?=count($hazards)?></h2><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Tipo</th><th>Rodovia</th><th>UF</th><th>Fonte</th><th>Ação</th></tr></thead><tbody><?php foreach($hazards as $h):?><tr><td><?=ac_e($h['type'])?></td><td><?=ac_e($h['road']??'—')?></td><td><?=ac_e($h['uf']??'—')?></td><td><?=ac_e($h['source']??'—')?></td><td><form method="post" onsubmit="return confirm('Remover este perigo da base?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="radars"><input type="hidden" name="action" value="delete_hazard"><input type="hidden" name="hazard_id" value="<?=(int)$h['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form></td></tr><?php endforeach;?></tbody></table></div></section>
+
+<?php elseif($page==='convoys'):
+$now=date('Y-m-d H:i:s');$convoys=ac_table('estrada_convoys')?ac_rows("SELECT c.id,c.code,c.title,c.owner_user_id,c.created_at,c.expires_at,COUNT(m.device_token) members,MAX(m.last_seen) last_seen FROM estrada_convoys c LEFT JOIN estrada_convoy_members m ON m.convoy_id=c.id GROUP BY c.id,c.code,c.title,c.owner_user_id,c.created_at,c.expires_at ORDER BY c.id DESC LIMIT 120"):[]; ?>
+<section class="epc-section"><h2>Comboios · <?=count($convoys)?></h2><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Código</th><th>Título</th><th>Dono</th><th>Membros</th><th>Estado</th><th>Ação</th></tr></thead><tbody><?php foreach($convoys as $c):?><tr><td class="epc-mono"><strong><?=ac_e($c['code'])?></strong></td><td><?=ac_e($c['title']??'Comboio')?></td><td>#<?=(int)$c['owner_user_id']?></td><td><?=(int)$c['members']?></td><td><span class="epc-badge <?=($c['expires_at']??'')>$now?'ok':'bad'?>"><?=($c['expires_at']??'')>$now?'ATIVO':'EXPIRADO'?></span><br><span class="epc-muted"><?=ac_e($c['last_seen']??'')?></span></td><td><form method="post" onsubmit="return confirm('Encerrar e remover este comboio?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="convoys"><input type="hidden" name="action" value="close_convoy"><input type="hidden" name="convoy_id" value="<?=(int)$c['id']?>"><button class="epc-btn danger small" type="submit">Encerrar / remover</button></form></td></tr><?php endforeach;?><?php if(!$convoys):?><tr><td colspan="6" class="epc-empty">Nenhum comboio.</td></tr><?php endif;?></tbody></table></div></section>
+
+<?php elseif($page==='radio'):
+$enabled=app_setting('radio_enabled','1')!=='0';$cut=date('Y-m-d H:i:s',time()-20);$rooms=ac_table('radio_presence')?ac_rows('SELECT room_key,road,direction,segment,COUNT(*) participants,MAX(last_seen_at) last_seen FROM radio_presence WHERE last_seen_at>=? GROUP BY room_key,road,direction,segment ORDER BY participants DESC,last_seen DESC LIMIT 100',[$cut]):[];$alerts=ac_table('radio_alerts')?ac_rows('SELECT id,room_key,alert_type,created_at,expires_at FROM radio_alerts ORDER BY id DESC LIMIT 120'):[]; ?>
+<div class="admin-page-note">O desenvolvimento Android do PTT continua congelado. Esta tela apenas administra o que já existe no servidor.</div><div class="epc-grid"><article class="epc-card"><span class="label">Estado</span><div class="metric" style="font-size:20px"><?=$enabled?'ATIVO':'DESATIVADO'?></div></article><article class="epc-card"><span class="label">Salas ativas</span><div class="metric"><?=count($rooms)?></div></article><article class="epc-card"><span class="label">Participantes</span><div class="metric"><?=array_sum(array_map(fn($r)=>(int)$r['participants'],$rooms))?></div></article><article class="epc-card"><span class="label">Áudio armazenado</span><div class="metric" style="font-size:20px">NÃO</div></article></div>
+<section class="epc-section"><form method="post"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="radio"><input type="hidden" name="action" value="toggle_radio"><input type="hidden" name="enabled" value="<?=$enabled?'0':'1'?>"><button class="epc-btn <?=$enabled?'danger':'primary'?>" type="submit"><?=$enabled?'Desativar rádio no servidor':'Ativar rádio no servidor'?></button></form></section>
+<section class="epc-section"><h2>Salas por trecho</h2><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Rodovia</th><th>Sentido</th><th>Trecho</th><th>Participantes</th><th>Último sinal</th></tr></thead><tbody><?php foreach($rooms as $r):?><tr><td><?=ac_e($r['road'])?></td><td><?=ac_e($r['direction'])?></td><td><?=ac_e($r['segment'])?></td><td><?=(int)$r['participants']?> / 8</td><td><?=ac_e($r['last_seen'])?></td></tr><?php endforeach;?><?php if(!$rooms):?><tr><td colspan="5" class="epc-empty">Nenhuma sala ativa.</td></tr><?php endif;?></tbody></table></div></section>
+<section class="epc-section"><h2>Alertas temporários do rádio</h2><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Sala</th><th>Tipo</th><th>Quando</th><th>Expira</th><th>Ação</th></tr></thead><tbody><?php foreach($alerts as $a):?><tr><td class="epc-mono"><?=ac_e($a['room_key'])?></td><td><?=ac_e($a['alert_type'])?></td><td><?=ac_e($a['created_at'])?></td><td><?=ac_e($a['expires_at'])?></td><td><form method="post" onsubmit="return confirm('Remover este alerta temporário?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="radio"><input type="hidden" name="action" value="delete_radio_alert"><input type="hidden" name="alert_id" value="<?=(int)$a['id']?>"><button class="epc-btn danger small" type="submit">Remover</button></form></td></tr><?php endforeach;?><?php if(!$alerts):?><tr><td colspan="5" class="epc-empty">Nenhum alerta temporário.</td></tr><?php endif;?></tbody></table></div></section>
+
+<?php elseif($page==='official'):
+$officialMarkers=epc_official_source_markers();$radarTotal=(int)ac_scalar('SELECT COUNT(*) FROM radars');$officialSql=epc_official_radar_sql('r');$officialCount=(int)ac_scalar("SELECT COUNT(*) FROM radars r WHERE {$officialSql}");$communityCounts=['Estrada Viva'=>ac_table('road_live_events')?(int)ac_scalar('SELECT COUNT(*) FROM road_live_events'):0,'Trânsito colaborativo'=>ac_table('road_traffic_samples')?(int)ac_scalar('SELECT COUNT(*) FROM road_traffic_samples'):0,'Combustível'=>ac_table('fuel_price_reports')?(int)ac_scalar('SELECT COUNT(*) FROM fuel_price_reports'):0,'Relatos'=>ac_table('road_reports')?(int)ac_scalar('SELECT COUNT(*) FROM road_reports'):0]; ?>
+<div class="epc-grid"><article class="epc-card gold"><span class="label">Modo atual</span><div class="metric" style="font-size:20px"><?=ac_e($roadMode)?></div></article><article class="epc-card"><span class="label">Radares totais</span><div class="metric"><?=$radarTotal?></div></article><article class="epc-card"><span class="label">Radares oficiais</span><div class="metric"><?=$officialCount?></div></article><article class="epc-card"><span class="label">Fontes oficiais</span><div class="metric" style="font-size:18px"><?=ac_e(implode(' / ',$officialMarkers))?></div></article></div>
+<section class="epc-section"><h2>Dados comunitários atualmente armazenados</h2><div class="epc-mini-grid"><?php foreach($communityCounts as $k=>$v):?><div class="epc-mini"><strong><?=number_format($v,0,',','.')?></strong><span><?=ac_e($k)?></span></div><?php endforeach;?></div></section>
+<section class="epc-section danger-zone"><div class="epc-section-head"><div><h2>Limpeza da base não oficial</h2><p>A limpeza continua isolada em uma tela protegida com prévia, CSRF e confirmação textual.</p></div></div><p class="epc-muted">Não execute sem conferir primeiro as fontes que serão mantidas e removidas.</p><a class="big-link" href="admin_official_data_cleanup.php">Abrir prévia e limpeza protegida →</a></section>
+
+<?php elseif($page==='server'):
+$folders=server_folder_health();$history=server_sync_history(20); ?>
+<div class="epc-grid"><article class="epc-card"><span class="label">Uso gerenciado</span><div class="metric" style="font-size:20px"><?=ac_e($health['managed_h']??'—')?></div></article><article class="epc-card"><span class="label">Banco</span><div class="metric" style="font-size:20px"><?=ac_e($health['db_h']??'—')?></div></article><article class="epc-card"><span class="label">Espaço livre</span><div class="metric" style="font-size:20px"><?=ac_e($health['disk_free_h']??'—')?></div></article><article class="epc-card"><span class="label">Catálogo</span><div class="metric"><?=(int)($health['tracks']??0)?></div></article></div>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Operações</h2><p>Sincronização e limpeza controladas pelo administrador.</p></div><div class="epc-section-actions"><form method="post"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="server"><input type="hidden" name="action" value="sync_all"><button class="epc-btn primary" type="submit">Sincronizar Drive</button></form><form method="post" onsubmit="return confirm('Executar housekeeping agora?');"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="server"><input type="hidden" name="action" value="housekeeping"><button class="epc-btn" type="submit">Housekeeping</button></form><a class="epc-btn gold" href="admin_server.php">Central avançada ↗</a></div></div></section>
+<section class="epc-section"><h2>Pastas do Drive</h2><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Pasta</th><th>Estado</th><th>Faixas</th><th>Última importação</th></tr></thead><tbody><?php foreach($folders as $f):?><tr><td><?=ac_e($f['name']??'Google Drive')?></td><td><span class="epc-badge <?=((int)($f['active']??0)===1)?'ok':'warn'?>"><?=((int)($f['active']??0)===1)?'ATIVA':'PAUSADA'?></span></td><td><?=(int)($f['last_sync_tracks']??0)?></td><td><?=ac_e($f['last_import_at']??'Nunca')?></td></tr><?php endforeach;?></tbody></table></div></section>
+<section class="epc-section"><h2>Últimas sincronizações</h2><div class="epc-table-wrap"><table class="epc-table"><thead><tr><th>Quando</th><th>Origem</th><th>Status</th><th>Faixas</th><th>Duração</th></tr></thead><tbody><?php foreach($history as $h):?><tr><td><?=ac_e($h['finished_at'])?></td><td><?=ac_e($h['source'])?></td><td><?=ac_e(strtoupper((string)$h['status']))?></td><td><?=(int)$h['tracks']?></td><td><?=(int)$h['duration_ms']?> ms</td></tr><?php endforeach;?></tbody></table></div></section>
+
+<?php elseif($page==='audit'):
+$logs=ac_rows('SELECT id,action,payload,ip,created_at FROM audit_logs ORDER BY id DESC LIMIT 250'); ?>
+<section class="epc-section"><div class="epc-section-head"><div><h2>Auditoria · <?=count($logs)?></h2><p>Últimas ações administrativas e eventos registrados pelo servidor.</p></div></div><?php foreach($logs as $l):?><div class="epc-log"><span><?=ac_e($l['created_at'])?></span><strong><?=ac_e($l['action'])?></strong><code><?=ac_e(mb_substr((string)$l['payload'],0,500))?></code></div><?php endforeach;?><?php if(!$logs):?><div class="epc-empty">Nenhum log.</div><?php endif;?></section>
+
+<?php elseif($page==='settings'): ?>
+<section class="epc-section"><h2>Segurança do administrador</h2><form method="post" class="form-grid"><input type="hidden" name="csrf" value="<?=ac_e($csrf)?>"><input type="hidden" name="return_page" value="settings"><input type="hidden" name="action" value="change_admin_password"><label>Nova senha<input name="new_password" type="password" minlength="8" required></label><div style="align-self:end"><button class="epc-btn primary" type="submit">Alterar senha</button></div></form></section><section class="epc-section"><h2>Configuração operacional</h2><div class="epc-mini-grid"><div class="epc-mini"><strong><?=ac_e($roadMode)?></strong><span>Base rodoviária</span></div><div class="epc-mini"><strong><?=app_setting('radio_enabled','1')!=='0'?'ATIVO':'DESATIVADO'?></strong><span>Rádio do servidor</span></div><div class="epc-mini"><strong><?=ac_e((string)($health['quota_h']??'500 MB'))?></strong><span>Meta de armazenamento</span></div><div class="epc-mini"><strong><?=ac_e(ESTRADAPLAY_SERVER_INTELLIGENT_VERSION)?></strong><span>Versão do servidor inteligente</span></div></div></section>
+
+<?php elseif($page==='diagnostics'):
+$cred=ac_table('native_device_credentials')?(int)ac_scalar('SELECT COUNT(*) FROM native_device_credentials'):0;$revoked=ac_table('native_device_credentials')?(int)ac_scalar('SELECT COUNT(*) FROM native_device_credentials WHERE revoked_at IS NOT NULL'):0; ?>
+<div class="epc-grid"><article class="epc-card"><span class="label">Credenciais de aparelho</span><div class="metric"><?=$cred?></div></article><article class="epc-card"><span class="label">Revogadas</span><div class="metric"><?=$revoked?></div></article><article class="epc-card"><span class="label">PHP</span><div class="metric" style="font-size:18px"><?=ac_e(PHP_VERSION)?></div></article><article class="epc-card"><span class="label">Banco</span><div class="metric" style="font-size:18px"><?=ac_e((string)db()->getAttribute(PDO::ATTR_DRIVER_NAME))?></div></article></div>
+<section class="epc-section"><div class="admin-tools"><a class="tool-card" href="admin_auth_diagnostics.php"><strong>🔐 Diagnóstico de autenticação</strong><span>Sessão, salt, credenciais e persistência do APK.</span></a><a class="tool-card" href="diagnostico_estradaplay_209.php"><strong>◇ Diagnóstico legado 2.0.9</strong><span>Compatibilidade das rotinas antigas.</span></a><a class="tool-card" href="admin_server.php?format=json" target="_blank"><strong>▤ Diagnóstico JSON do servidor</strong><span>Snapshot sanitizado para análise técnica.</span></a></div></section>
+<?php endif; ?>
+<footer class="epc-footer">Estrada Play · Administração Completa 2.3.10 · sem WebView · nenhum merge executado</footer></main></div><script>document.addEventListener('click',e=>{if(document.body.classList.contains('menu-open')&&!e.target.closest('.epc-sidebar')&&!e.target.closest('.mobile-title'))document.body.classList.remove('menu-open')});</script></body></html>
