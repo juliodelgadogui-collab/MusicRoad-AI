@@ -1,0 +1,98 @@
+name: EstradaPlay Server Auth Diagnostics V1
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'admin_auth_diagnostics.php'
+      - 'docs/AUTH-DIAGNOSTICO-SERVIDOR.md'
+      - '.github/workflows/build-epc-server-auth-diagnostics-v1.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: epc-server-auth-diagnostics-v1
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Validate auth diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l admin_auth_diagnostics.php
+          php -l api/native_app.php
+          php -l api/native_auth.php
+          grep -q 'require_admin' admin_auth_diagnostics.php
+          grep -q 'native_auth_salt_v207' admin_auth_diagnostics.php
+          grep -q 'native_device_credentials' admin_auth_diagnostics.php
+          grep -q 'native-auth-diagnostic-state.json' admin_auth_diagnostics.php
+          grep -q 'native_auth_diag_probe_v1' admin_auth_diagnostics.php
+          grep -q 'action === .device_login.' api/native_app.php
+          grep -q 'action === .refresh.' api/native_app.php
+          grep -q 'native_issue_device_auth' api/native_auth.php
+          grep -q 'native_refresh_device_auth' api/native_auth.php
+          grep -q 'native_auth_salt_v207' api/native_auth.php
+          ! grep -q 'config/config.php' docs/AUTH-DIAGNOSTICO-SERVIDOR.md || true
+
+      - name: Build incremental server package
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST=/tmp/epc-auth-diagnostics-v1
+          OUT="$GITHUB_WORKSPACE/EstradaPlay-SERVIDOR-AUTH-DIAGNOSTICO-v1.zip"
+          rm -rf "$DEST" "$OUT"
+          mkdir -p "$DEST/api" "$DEST/docs"
+          cp admin_auth_diagnostics.php "$DEST/"
+          cp api/native_app.php api/native_auth.php "$DEST/api/"
+          cp docs/AUTH-DIAGNOSTICO-SERVIDOR.md "$DEST/docs/"
+          cat > "$DEST/LEIA-PRIMEIRO-AUTH-DIAGNOSTICO.txt" <<'TXT'
+          ESTRADA PLAY COMUNISTA - AUTH DIAGNOSTICO V1
+
+          PACOTE INCREMENTAL DO SERVIDOR.
+
+          1. Faça backup do servidor e do banco.
+          2. Extraia este ZIP por cima da raiz atual do Estrada Play.
+          3. O pacote NAO contem config/config.php nem banco e usa a configuracao existente.
+          4. Entre como administrador e abra /admin_auth_diagnostics.php.
+          5. Atualize a pagina uma vez, faça login no celular, feche o app, abra novamente e atualize o diagnostico.
+
+          O painel nao mostra senha, segredo do aparelho, tokens, hashes completos ou credenciais do banco.
+          TXT
+          while IFS= read -r -d '' F; do php -l "$F" >/dev/null; done < <(find "$DEST" -type f -name '*.php' -print0)
+          test -f "$DEST/admin_auth_diagnostics.php"
+          test -f "$DEST/api/native_app.php"
+          test -f "$DEST/api/native_auth.php"
+          test ! -e "$DEST/config/config.php"
+          ! find "$DEST" -type f | grep -E '\.(apk|mp3|wav|mp4|m4a|ogg|sqlite|db)$'
+          (cd "$DEST" && zip -qr "$OUT" .)
+          unzip -l "$OUT" | tee /tmp/epc-auth-diag-list.txt
+          ! grep -Eq 'config/config\.php|\.(apk|mp3|wav|mp4|m4a|ogg|sqlite|db)$' /tmp/epc-auth-diag-list.txt
+          sha256sum "$OUT" | tee /tmp/epc-auth-diag-sha.txt
+
+      - name: Upload diagnostics package
+        uses: actions/upload-artifact@v4
+        with:
+          name: EstradaPlay-SERVIDOR-AUTH-DIAGNOSTICO-v1
+          path: EstradaPlay-SERVIDOR-AUTH-DIAGNOSTICO-v1.zip
+          retention-days: 7
+          compression-level: 0
+
+      - name: Publish diagnostics package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estradaplay-server-auth-diagnostico-v1-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "EstradaPlay Server - Auth Diagnostico V1" \
+            --notes "Pacote incremental para diagnosticar pedido recorrente de usuario/senha apos fechar o APK. Alinha native_app.php/native_auth.php com a base atual e adiciona admin_auth_diagnostics.php. O painel verifica driver e identidade do banco por fingerprint, estabilidade do native_auth_salt_v207, schema/persistencia de native_device_credentials, probe de app_settings, validade do refresh e eventos native.* sem expor senha, segredo ou tokens. Nao contem config.php, banco, midia ou APK. Nao faz deploy automatico." \
+            EstradaPlay-SERVIDOR-AUTH-DIAGNOSTICO-v1.zip
