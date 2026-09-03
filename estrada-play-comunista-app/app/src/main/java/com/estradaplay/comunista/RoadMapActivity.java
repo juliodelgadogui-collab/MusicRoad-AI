@@ -101,6 +101,13 @@ public final class RoadMapActivity extends ComponentActivity {
     private double lastRouteLat = Double.NaN;
     private double lastRouteLon = Double.NaN;
 
+    // NAVIGATION_REAL_ACTIVITY_V208: progress follows the matched route polyline, not straight-line displacement.
+    private double routeProgressM;
+    private int routeSegmentHint = -1;
+    private int offRouteSamples;
+    private long lastRerouteAt;
+    private boolean routeArrived;
+
     // TOUCH_INPUT_V171: explicit cockpit hit targets. Automotive Android builds sometimes
     // dispatch touch to a texture/map layer before sibling controls. The Activity sees the
     // event first and routes only real button regions; map gestures remain untouched elsewhere.
@@ -870,18 +877,139 @@ public final class RoadMapActivity extends ComponentActivity {
     }
 
     private void refreshDestinationRoute(double lat, double lon) {
-        DestinationStore.Destination d=destination;if(d==null||!Double.isFinite(lat)||!Double.isFinite(lon)){if(roadMap!=null)roadMap.setRouteGeoJson(null);return;}long now=System.currentTimeMillis();if(routeLoading.get())return;if(activeRoute!=null&&Double.isFinite(lastRouteLat)&&Double.isFinite(lastRouteLon)){double moved=RoadPackStore.distanceM(lat,lon,lastRouteLat,lastRouteLon);if(moved<700&&now-lastRouteAt<120_000L)return;}if(!routeLoading.compareAndSet(false,true))return;if(destinationText!=null)destinationText.setText("Calculando rota…");routeIo.execute(()->{try{RouteEngine.Route route=RouteEngine.fetch(lat,lon,d.lat,d.lon);activeRoute=route;lastRouteAt=System.currentTimeMillis();lastRouteLat=lat;lastRouteLon=lon;ui.post(()->{if(roadMap!=null)roadMap.setRouteGeoJson(route.geoJson);if(universalRouteText!=null)universalRouteText.setText("ROTA · "+route.summary());renderRouteUi(route,0);});}catch(Throwable e){ui.post(()->{if(navInstructionText!=null)navInstructionText.setText("Rota online indisponível");if(navRoadText!=null)navRoadText.setText("A proteção da estrada continua ativa");if(destinationText!=null)destinationText.setText("Rota online indisponível. A proteção continua ativa.");});}finally{routeLoading.set(false);}});
+        DestinationStore.Destination d = destination;
+        if (d == null || !Double.isFinite(lat) || !Double.isFinite(lon)) {
+            activeRoute = null;
+            routeProgressM = 0;
+            routeSegmentHint = -1;
+            routeArrived = false;
+            if (roadMap != null) roadMap.setRouteGeoJson(null);
+            return;
+        }
+        if (routeArrived || activeRoute != null || routeLoading.get()) return;
+        long now = System.currentTimeMillis();
+        if (lastRouteAt > 0 && now - lastRouteAt < 12_000L) return;
+        if (!routeLoading.compareAndSet(false, true)) return;
+        lastRouteAt = now;
+        if (destinationText != null) destinationText.setText("Calculando rota…");
+        routeIo.execute(() -> {
+            try {
+                RouteEngine.Route route = RouteEngine.fetch(RoadMapActivity.this, lat, lon, d.lat, d.lon);
+                activeRoute = route;
+                lastRouteAt = System.currentTimeMillis();
+                lastRouteLat = lat;
+                lastRouteLon = lon;
+                routeProgressM = 0;
+                routeSegmentHint = -1;
+                offRouteSamples = 0;
+                routeArrived = false;
+                ui.post(() -> {
+                    if (roadMap != null) roadMap.setRouteGeoJson(route.geoJson);
+                    if (universalRouteText != null) universalRouteText.setText("ROTA · " + route.summary());
+                    renderRouteUi(route, 0);
+                });
+            } catch (Throwable e) {
+                ui.post(() -> {
+                    if (navInstructionText != null) navInstructionText.setText("Rota online indisponível");
+                    if (navRoadText != null) navRoadText.setText("A proteção da estrada continua ativa");
+                    if (destinationText != null) destinationText.setText("Rota online indisponível. A proteção continua ativa.");
+                });
+            } finally {
+                routeLoading.set(false);
+            }
+        });
     }
 
     // NAV_POLISH_V201 helpers
     private TextView metric(String value,String label){TextView t=this.label(value+"\n"+label,11,TEXT,true);t.setGravity(Gravity.CENTER);t.setLineSpacing(0,.95f);return t;}
     private int hasHazardColor(String type){String t=type==null?"":type.toUpperCase(Locale.ROOT);if(t.contains("RADAR"))return Color.rgb(239,41,58);if(t.contains("QUEBRA")||t.contains("LOMBADA"))return Color.rgb(230,155,48);if(t.contains("CAMERA")||t.contains("CÂMERA"))return Color.rgb(226,185,76);return Color.rgb(92,40,43);}
-    private String maneuverGlyph(RouteEngine.Route r){if(r==null)return"↑";String m=r.maneuverModifier==null?"":r.maneuverModifier;if(r.maneuverType.contains("roundabout")||r.maneuverType.contains("rotary"))return"↻";if(r.maneuverType.contains("arrive"))return"★";if(m.contains("right"))return"↱";if(m.contains("left"))return"↰";return"↑";}
+    private String maneuverGlyph(RouteEngine.Step step) {
+        if (step == null) return "↑";
+        String m = step.modifier == null ? "" : step.modifier;
+        String type = step.type == null ? "" : step.type;
+        if (type.contains("roundabout") || type.contains("rotary")) return "↻";
+        if (type.contains("arrive")) return "★";
+        if (m.contains("right")) return "↱";
+        if (m.contains("left")) return "↰";
+        return "↑";
+    }
     private String navDistance(double m){if(m<=0)return"AGORA";if(m>=1000)return String.format(Locale.getDefault(),"%.1f km",m/1000.0);if(m<120)return Math.max(10,Math.round(m/10.0)*10)+" m";return Math.max(50,Math.round(m/50.0)*50)+" m";}
     private String remainDistance(double m){return m>=1000?String.format(Locale.getDefault(),"%.0f km",m/1000.0):Math.max(0,Math.round(m))+" m";}
     private String durationText(double seconds){long min=Math.max(0,Math.round(seconds/60.0)),h=min/60,m=min%60;return h>0?h+"h "+m+"m":m+" min";}
-    private void renderRouteUi(RouteEngine.Route route,double moved){if(route==null)return;double rem=Math.max(0,route.distanceM-moved),ratio=route.distanceM<=0?0:Math.min(1,rem/route.distanceM),dur=Math.max(0,route.durationS*ratio),next=Math.max(0,route.nextDistanceM-moved);if(navTurnText!=null)navTurnText.setText(maneuverGlyph(route));if(navDistanceText!=null)navDistanceText.setText(navDistance(next));if(navInstructionText!=null)navInstructionText.setText(route.nextInstruction.isEmpty()?"Siga na rota":route.nextInstruction);if(navRoadText!=null)navRoadText.setText(route.nextRoad.isEmpty()?shortDestination(destination==null?"Destino":destination.label):route.nextRoad);if(navEtaText!=null){String eta=new SimpleDateFormat("HH:mm",Locale.getDefault()).format(new Date(System.currentTimeMillis()+(long)(dur*1000)));navEtaText.setText(eta+"\nCHEGADA");}if(navRemainingText!=null)navRemainingText.setText(remainDistance(rem)+"\nRESTANTE");if(navDurationText!=null)navDurationText.setText(durationText(dur)+"\nDURAÇÃO");if(destinationText!=null)destinationText.setText(remainDistance(rem)+" · "+durationText(dur)+"\n"+(route.nextInstruction.isEmpty()?"Siga na rota":route.nextInstruction));}
-    private void updateRouteProgress(double lat,double lon){RouteEngine.Route r=activeRoute;if(r==null||!Double.isFinite(lastRouteLat)||!Double.isFinite(lastRouteLon))return;double moved=RoadPackStore.distanceM(lat,lon,lastRouteLat,lastRouteLon);renderRouteUi(r,Math.min(r.distanceM,moved));}
+    private void renderRouteUi(RouteEngine.Route route, double alongM) {
+        if (route == null) return;
+        double moved = Math.max(0, Math.min(route.distanceM, alongM));
+        double rem = route.remainingDistance(moved);
+        double dur = route.remainingDuration(moved);
+        RouteEngine.Step step = route.upcomingStep(moved);
+        double next = route.nextManeuverDistance(moved);
+        String instruction = step == null || step.instruction.isEmpty() ? "Siga na rota" : step.instruction;
+        String road = step == null || step.road.isEmpty()
+                ? shortDestination(destination == null ? "Destino" : destination.label) : step.road;
+        if (navTurnText != null) navTurnText.setText(maneuverGlyph(step));
+        if (navDistanceText != null) navDistanceText.setText(navDistance(next));
+        if (navInstructionText != null) navInstructionText.setText(instruction);
+        if (navRoadText != null) navRoadText.setText(road);
+        if (navEtaText != null) {
+            String eta = new SimpleDateFormat("HH:mm", Locale.getDefault())
+                    .format(new Date(System.currentTimeMillis() + (long) (dur * 1000)));
+            navEtaText.setText(eta + "
+CHEGADA");
+        }
+        if (navRemainingText != null) navRemainingText.setText(remainDistance(rem) + "
+RESTANTE");
+        if (navDurationText != null) navDurationText.setText(durationText(dur) + "
+DURAÇÃO");
+        if (destinationText != null) destinationText.setText(remainDistance(rem) + " · " + durationText(dur) + "
+" + instruction);
+    }
+
+    private void updateRouteProgress(double lat, double lon) {
+        RouteEngine.Route route = activeRoute;
+        if (route == null || routeArrived) return;
+        RouteEngine.Match match = route.match(lat, lon, lastHeading, routeSegmentHint, routeProgressM);
+        if (!match.valid) return;
+        routeSegmentHint = match.segmentIndex;
+
+        double offRouteThreshold = universalSpeed < 5 ? 95.0 : (universalSpeed < 35 ? 80.0 : 65.0);
+        boolean offRoute = match.lateralM > offRouteThreshold;
+        if (offRoute) {
+            offRouteSamples++;
+            if (navRoadText != null) navRoadText.setText("FORA DA ROTA · " + Math.round(match.lateralM) + " m");
+        } else {
+            offRouteSamples = 0;
+            // Ignore GPS noise that would move progress backwards. A real U-turn naturally triggers a reroute.
+            if (match.alongM >= routeProgressM - 35.0) routeProgressM = Math.max(routeProgressM, match.alongM);
+            routeProgressM = Math.min(route.distanceM, routeProgressM);
+        }
+
+        double remaining = route.remainingDistance(routeProgressM);
+        if (!offRoute && remaining <= 35.0) {
+            routeProgressM = route.distanceM;
+            routeArrived = true;
+            renderRouteUi(route, routeProgressM);
+            if (navTurnText != null) navTurnText.setText("★");
+            if (navDistanceText != null) navDistanceText.setText("CHEGOU");
+            if (navInstructionText != null) navInstructionText.setText("Chegada ao destino");
+            if (destinationText != null) destinationText.setText("Você chegou ao destino");
+            return;
+        }
+
+        if (offRouteSamples >= 3 && System.currentTimeMillis() - lastRerouteAt >= 20_000L) {
+            lastRerouteAt = System.currentTimeMillis();
+            offRouteSamples = 0;
+            activeRoute = null;
+            routeProgressM = 0;
+            routeSegmentHint = -1;
+            lastRouteAt = 0L;
+            if (navInstructionText != null) navInstructionText.setText("Recalculando rota…");
+            if (destinationText != null) destinationText.setText("Saída da rota detectada · recalculando…");
+            refreshDestinationRoute(lat, lon);
+            return;
+        }
+
+        if (!offRoute) renderRouteUi(route, routeProgressM);
+    }
     private void playerCommand(String action){try{startService(new Intent(this,PlayerService.class).setAction(action));}catch(Throwable ignored){}}
     private void queryPlayerState(){try{startService(new Intent(this,PlayerService.class).setAction(PlayerService.ACTION_QUERY_STATE));}catch(Throwable ignored){}}
     private void registerPlayerReceiver(){if(playerReceiverRegistered)return;try{IntentFilter f=new IntentFilter(PlayerService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(playerReceiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(playerReceiver,f);playerReceiverRegistered=true;}catch(Throwable ignored){}}
@@ -915,6 +1043,10 @@ public final class RoadMapActivity extends ComponentActivity {
         if (!DestinationStore.same(destination, fresh)) {
             destination = fresh;
             activeRoute = null;
+            routeProgressM = 0;
+            routeSegmentHint = -1;
+            offRouteSamples = 0;
+            routeArrived = false;
             lastRouteAt = 0L;
             if (roadMap != null) roadMap.setRouteGeoJson(null);
             if (root != null) buildResponsiveUi();
