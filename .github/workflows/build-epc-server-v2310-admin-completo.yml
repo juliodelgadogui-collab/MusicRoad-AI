@@ -1,0 +1,143 @@
+name: EPC Server 2.3.10 Admin Completo
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'admin_central.php'
+      - 'admin*.php'
+      - 'diagnostico_estradaplay_209.php'
+      - 'index.php'
+      - 'login.php'
+      - 'logout.php'
+      - 'mapbox_config.php'
+      - 'api/**'
+      - 'assets/**'
+      - 'importers/**'
+      - 'cron/**'
+      - 'database/**'
+      - '.htaccess'
+      - '.github/workflows/build-epc-server-v2310-admin-completo.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: epc-server-v2310-admin-completo
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Validate complete modular admin
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l admin_central.php
+          php -l index.php
+          php -l login.php
+          for f in admin*.php; do php -l "$f"; done
+          php -l diagnostico_estradaplay_209.php
+          find api importers cron -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+          grep -q 'EPC_ADMIN_COMPLETE_V2310' admin_central.php
+          grep -q "'users'" admin_central.php
+          grep -q "'media'" admin_central.php
+          grep -q "'devices'" admin_central.php
+          grep -q "'live'" admin_central.php
+          grep -q "'reports'" admin_central.php
+          grep -q "'community'" admin_central.php
+          grep -q "'traffic'" admin_central.php
+          grep -q "'fuel'" admin_central.php
+          grep -q "'radars'" admin_central.php
+          grep -q "'convoys'" admin_central.php
+          grep -q "'radio'" admin_central.php
+          grep -q "'official'" admin_central.php
+          grep -q "'server'" admin_central.php
+          grep -q "'audit'" admin_central.php
+          grep -q "'diagnostics'" admin_central.php
+          ! grep -q '<iframe' admin_central.php
+          grep -q 'admin_central.php?p=dashboard' login.php
+          grep -q 'admin_central.php?p=dashboard' index.php
+
+      - name: Package complete server
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=/tmp/epc-v2310
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          cp .htaccess "$OUT/" 2>/dev/null || true
+          cp index.php login.php logout.php mapbox_config.php diagnostico_estradaplay_209.php "$OUT/"
+          cp admin*.php "$OUT/"
+          cp -a api "$OUT/api"
+          cp -a assets "$OUT/assets"
+          cp -a importers "$OUT/importers"
+          cp -a cron "$OUT/cron"
+          cp -a database "$OUT/database"
+          rm -f "$OUT/config/config.php" 2>/dev/null || true
+          rm -rf "$OUT/logs" "$OUT/storage" 2>/dev/null || true
+          cat > "$OUT/LEIA-ME.txt" <<'EOF'
+          Estrada Play Comunista - Servidor 2.3.10 - Painel Administrativo Completo
+
+          O painel administrativo foi refeito.
+          Não usa iframe e não usa uma página gigante com âncoras para simular módulos.
+          Cada opção do menu carrega apenas a função escolhida.
+
+          Módulos:
+          - Visão geral
+          - Usuários: criar, ativar/desativar, redefinir senha e remover
+          - Google Drive e músicas: pastas, catálogo, sincronização e remoção
+          - Dispositivos: estado e revogação de credenciais
+          - Estrada Viva: consulta e remoção de alertas LIVE
+          - Relatos: confirmar, rejeitar e remover
+          - Base comunitária: consulta e remoção individual
+          - Trânsito e clima: consulta, remoção por região e limpeza de cache
+          - Combustível: consulta e remoção de preços
+          - Radares e perigos: ativar/desativar e remover; importação avançada permanece disponível
+          - Comboios: consulta e encerramento/remoção
+          - Rádio PTT: apenas administração do servidor existente, sem alterar o Android/PTT
+          - Base oficial/limpeza: resumo e acesso à limpeza protegida
+          - Servidor: saúde, sincronização e housekeeping
+          - Auditoria
+          - Configurações e senha do ADM
+          - Diagnósticos
+
+          Segurança:
+          - Não inclui config/config.php.
+          - Não inclui o banco atual, logs ou mídia.
+          - Nenhuma limpeza de base é executada automaticamente.
+          - A limpeza oficial continua exigindo login ADM + CSRF + confirmação textual.
+          - Não altera APK nem código Android do PTT.
+
+          Instalação:
+          1. Faça backup do banco e da pasta do servidor.
+          2. Extraia o ZIP na raiz do servidor preservando as pastas.
+          3. Não substitua nem apague config/config.php existente.
+          4. Faça logout e login novamente como administrador.
+          5. O login abrirá admin_central.php?p=dashboard.
+          EOF
+          (cd "$OUT" && zip -r "$GITHUB_WORKSPACE/Estrada-Play-Comunista-SERVIDOR-2.3.10-ADMIN-COMPLETO.zip" .)
+          sha256sum Estrada-Play-Comunista-SERVIDOR-2.3.10-ADMIN-COMPLETO.zip
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-server-2.3.10-admin-completo-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "Estrada Play Comunista - Servidor 2.3.10 Admin Completo" \
+            --notes "Painel administrativo refeito: sem iframe e sem módulos falsamente separados por âncoras. Cada item carrega apenas sua própria função, com gestão de usuários, mídia, dispositivos, Estrada Viva, relatos, base comunitária, trânsito/clima, combustível, radares/perigos, comboios, rádio, base oficial, servidor, auditoria, configurações e diagnósticos. Não altera APK/PTT Android e não inclui config.php ou banco." \
+            Estrada-Play-Comunista-SERVIDOR-2.3.10-ADMIN-COMPLETO.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-SERVIDOR-2.3.10-ADMIN-COMPLETO
+          path: Estrada-Play-Comunista-SERVIDOR-2.3.10-ADMIN-COMPLETO.zip
+          retention-days: 7
