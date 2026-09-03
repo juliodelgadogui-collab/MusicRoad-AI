@@ -22,16 +22,24 @@ import androidx.activity.ComponentActivity;
 public final class HudActivity extends ComponentActivity {
     private final int BG=Color.BLACK,TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(166,148,145),RED=Color.rgb(255,45,52),GREEN=Color.rgb(72,212,134),GOLD=Color.rgb(226,185,76),BORDER=Color.rgb(76,38,44),SURFACE=Color.rgb(17,10,12);
     private LinearLayout projection;
-    private TextView speed,limit,hazard,distance,mirrorState,roadName;
+    private TextView speed,limit,hazard,distance,mirrorState,roadName,contextLine;
     private boolean registered;
+    private boolean localHazardActive;
 
+    // CONTEXTO_VIVO_V220: one receiver keeps local safety first and overlays cached Server 7.0 context only when appropriate.
     private final BroadcastReceiver rx=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){
-        if(speed==null)return;
+        if(i==null)return;
+        if(RouteContextV7BackgroundReceiver.ACTION_CONTEXT.equals(i.getAction())){
+            applyContext(RouteContextV7Cache.load(HudActivity.this),localHazardActive);
+            return;
+        }
+        if(!RoadSafetyService.ACTION_STATE.equals(i.getAction())||speed==null)return;
         speed.setText(String.valueOf(Math.max(0,Math.round(i.getDoubleExtra("speed_kmh",0)))));
         int l=i.getIntExtra("road_limit_kmh",0);limit.setText(l>0?String.valueOf(l):"--");
         String h=i.getStringExtra("hazard_label");double d=i.getDoubleExtra("distance_m",0);String road=i.getStringExtra("road");if(roadName!=null)roadName.setText(road==null||road.trim().isEmpty()?"RODOVIA --":road.trim().toUpperCase());
-        boolean has=h!=null&&!h.trim().isEmpty();hazard.setText(has?h.trim().toUpperCase():"ESTRADA LIVRE");hazard.setTextColor(has?GOLD:GREEN);
+        boolean has=h!=null&&!h.trim().isEmpty();localHazardActive=has;hazard.setText(has?h.trim().toUpperCase():"ESTRADA LIVRE");hazard.setTextColor(has?GOLD:GREEN);
         distance.setText(has&&d>0?(d>=1000?String.format(java.util.Locale.getDefault(),"%.1f km",d/1000.0):Math.round(d)+" m"):"PROTEÇÃO ATIVA");
+        applyContext(RouteContextV7Cache.load(HudActivity.this),has);
     }};
 
     @Override protected void onCreate(Bundle b){super.onCreate(b);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);WindowManager.LayoutParams lp=getWindow().getAttributes();lp.screenBrightness=DriveSettings.nightNow(this)?.22f:.68f;getWindow().setAttributes(lp);build();}
@@ -59,14 +67,36 @@ public final class HudActivity extends ComponentActivity {
 
         LinearLayout alertBox=new LinearLayout(this);alertBox.setOrientation(LinearLayout.VERTICAL);alertBox.setGravity(Gravity.CENTER_VERTICAL);alertBox.setPadding(dp(16),dp(10),dp(16),dp(10));alertBox.setBackground(panel(Color.rgb(15,8,10),18,BORDER));hazard=text("ESTRADA LIVRE",17,GREEN,true);hazard.setGravity(Gravity.CENTER);distance=text("PROTEÇÃO ATIVA",11,MUTED,true);distance.setGravity(Gravity.CENTER);alertBox.addView(hazard);alertBox.addView(distance);LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(useLandscape()?dp(300):0,dp(100),useLandscape()?0f:1f);ap.setMargins(dp(10),0,0,0);center.addView(alertBox,ap);
 
-        TextView safety=text("HUD é apoio visual. Mantenha atenção na estrada.",9,MUTED,false);safety.setGravity(Gravity.CENTER);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,-2);sp.setMargins(0,dp(14),0,0);projection.addView(safety,sp);
+        contextLine=text("SERVER 7.0 · aguardando contexto vivo",9,MUTED,true);contextLine.setGravity(Gravity.CENTER);contextLine.setMaxLines(2);LinearLayout.LayoutParams clp=new LinearLayout.LayoutParams(-1,-2);clp.setMargins(dp(8),dp(12),dp(8),0);projection.addView(contextLine,clp);
+
+        TextView safety=text("HUD é apoio visual. Mantenha atenção na estrada.",9,MUTED,false);safety.setGravity(Gravity.CENTER);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,-2);sp.setMargins(0,dp(10),0,0);projection.addView(safety,sp);
         applyMirror();
+        applyContext(RouteContextV7Cache.load(this),false);
+    }
+
+    private void applyContext(RouteContextV7Client.Snapshot c,boolean hasLocalHazard){
+        if(contextLine==null)return;
+        if(c==null||!c.fresh()){
+            contextLine.setText("SERVER 7.0 · aguardando contexto vivo");
+            contextLine.setTextColor(MUTED);
+            return;
+        }
+        StringBuilder meta=new StringBuilder("SERVER 7.0");
+        if(!c.trafficText.isEmpty())meta.append(" · ").append(c.trafficText);
+        if(!c.weatherText.isEmpty())meta.append(" · ").append(c.weatherText);
+        contextLine.setText(meta.toString());
+        contextLine.setTextColor(c.rainSoon?GOLD:MUTED);
+        if(hasLocalHazard||c.attentionTitle.isEmpty())return;
+        hazard.setText(c.attentionTitle.toUpperCase(java.util.Locale.ROOT));
+        hazard.setTextColor(GOLD);
+        String detail=!c.attentionDetail.isEmpty()?c.attentionDetail:c.aheadLabel();
+        distance.setText(detail.isEmpty()?"CONTEXTO ONLINE ATIVO":detail);
     }
 
     private void applyMirror(){boolean mirrored=DriveSettings.hudMirror(this);if(projection!=null)projection.setScaleX(mirrored?-1f:1f);if(mirrorState!=null){mirrorState.setText(mirrored?"ESPELHADO PARA PARA-BRISA":"LEITURA NORMAL NA TELA");mirrorState.setTextColor(mirrored?GOLD:GREEN);}}
     private boolean useLandscape(){return getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;}
 
-    @Override protected void onStart(){super.onStart();IntentFilter f=new IntentFilter(RoadSafetyService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(rx,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(rx,f);registered=true;}
+    @Override protected void onStart(){super.onStart();IntentFilter f=new IntentFilter();f.addAction(RoadSafetyService.ACTION_STATE);f.addAction(RouteContextV7BackgroundReceiver.ACTION_CONTEXT);if(Build.VERSION.SDK_INT>=33)registerReceiver(rx,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(rx,f);registered=true;applyContext(RouteContextV7Cache.load(this),localHazardActive);}
     @Override protected void onStop(){if(registered){try{unregisterReceiver(rx);}catch(Throwable ignored){}registered=false;}super.onStop();}
 
     private TextView text(String v,float s,int c,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);t.setGravity(Gravity.CENTER_VERTICAL);if(b)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
