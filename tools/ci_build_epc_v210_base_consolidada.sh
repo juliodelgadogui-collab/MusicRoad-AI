@@ -22,6 +22,24 @@ grep -q 'BASE_CONSOLIDADA_V210' "$J/RoadHazardSelector.java"
 grep -q 'BASE_CONSOLIDADA_V210' "$J/RoadLimitPolicy.java"
 grep -q 'BASE_CONSOLIDADA_V210' "$J/RoadSafetyFormat.java"
 
+# 2.1.0 is authoritative. These EPC-only generator chains must never return.
+FORBIDDEN_EPC_GENERATORS=(
+  tools/patch_estrada_play_v208_navigation_real.py
+  tools/fix_epc_v208_navigation_strings.py
+  tools/ci_build_epc_v208_navigation_real.sh
+  tools/patch_estrada_play_v209_context_inteligente.py
+  tools/ci_build_epc_v209_context_inteligente.sh
+  tools/migrate_epc_v210_base_consolidada.py
+  .github/workflows/build-estrada-play-universal-v208-navigation-real.yml
+  .github/workflows/build-estrada-play-universal-v209-contexto-inteligente.yml
+)
+for legacy in "${FORBIDDEN_EPC_GENERATORS[@]}"; do
+  if [ -e "$legacy" ]; then
+    echo "Legacy EPC generator returned: $legacy"
+    exit 1
+  fi
+done
+
 # Prevent the coordinator from silently growing back into the old geometry/state monolith.
 if grep -q 'private Match match\|new HashMap<>\|hazardPriorityBias(' "$J/RoadSafetyService.java"; then
   echo 'RoadSafetyService still contains extracted legacy policy'; exit 1
