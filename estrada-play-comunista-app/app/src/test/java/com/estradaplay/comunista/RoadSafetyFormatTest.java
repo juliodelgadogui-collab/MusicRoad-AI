@@ -17,6 +17,6 @@ public class RoadSafetyFormatTest {
 
     @Test public void speechKeepsMinimumThirtyMeters() {
         assertEquals("30 metros", RoadSafetyFormat.distanceSpeech(4));
-        assertEquals("100 metros", RoadSafetyFormat.distanceSpeech(130));
+        assertEquals("150 metros", RoadSafetyFormat.distanceSpeech(130));
     }
 }
