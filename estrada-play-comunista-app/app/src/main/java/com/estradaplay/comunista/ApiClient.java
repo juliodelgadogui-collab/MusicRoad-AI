@@ -23,6 +23,7 @@ final class ApiClient {
     private final SecureDeviceCredential credential;
     private final String base;
     private boolean secureBootstrapAttempted;
+    private long lastDeviceRecoveryAt;
 
     ApiClient(Context context) {
         app = context.getApplicationContext();
@@ -38,9 +39,9 @@ final class ApiClient {
         prefs.edit().remove(KEY_COOKIE).apply();
         credential.clearTokens();
         secureBootstrapAttempted = false;
+        lastDeviceRecoveryAt = 0L;
     }
 
-    // REINSTALL_AUTH_FIX_V231: remembered UI account is not proof of a usable secure session.
     boolean hasSecureSession() {
         return !credential.accessToken().isEmpty() || !credential.refreshToken().isEmpty();
     }
@@ -53,7 +54,6 @@ final class ApiClient {
         return base + v;
     }
 
-    // LIBRARY_PAGED_V208: normal catalog pages stay small; legacy fallback remains bounded.
     Response getFast(String path) throws Exception { return request("GET", path, null, 5000, 10000, 4_000_000); }
     Response get(String path) throws Exception { return request("GET", path, null, 8000, 18000, 4_000_000); }
     Response getLong(String path) throws Exception { return request("GET", path, null, 10000, 120000, 50_000_000); }
@@ -70,10 +70,14 @@ final class ApiClient {
         boolean trusted = isTrustedTarget(target);
         boolean credentialAction = isCredentialAction(target);
 
-        // SECURITY_V207_MIGRATION: if 2.0.6 still has a valid PHP cookie, bind the new random
-        // device secret before the first protected call. The server only permits this bridge for
-        // the exact device already linked to the active legacy account.
         if (trusted && !credentialAction && !refreshCall) bootstrapSecureSessionIfNeeded();
+
+        // SESSION_HOST_COMPAT_V233: some shared PHP hosts do not expose custom credential headers
+        // consistently to PHP/FastCGI. Credential endpoints therefore receive the same random secret
+        // in their JSON body as a same-origin fallback. It never goes to external URLs.
+        if (trusted && data != null && (credentialAction || refreshCall) && !data.has("device_secret")) {
+            try { data.put("device_secret", credential.secret()); } catch (Exception ignored) {}
+        }
 
         HttpURLConnection c = (HttpURLConnection) new URL(target).openConnection();
         c.setInstanceFollowRedirects("GET".equals(method));
@@ -84,26 +88,24 @@ final class ApiClient {
         c.setRequestProperty("Accept-Encoding", "gzip");
         c.setRequestProperty("User-Agent", "EstradaPlay/" + BuildConfig.VERSION_NAME + " Android");
 
-        // SECURITY_V207: no private credential leaves the configured EstradaPlay origin.
         if (trusted) {
             c.setRequestProperty("X-MusicRoad-Native", "1");
             c.setRequestProperty("X-EstradaPlay-Device", DeviceIdentity.token(app));
             c.setRequestProperty("X-EstradaPlay-Device-Label", DeviceIdentity.label());
 
-            // The long-lived device secret is proof for login/refresh only, never a normal API token.
             if (credentialAction || refreshCall) {
                 c.setRequestProperty("X-EstradaPlay-Device-Secret", credential.secret());
             }
 
             String access = credentialAction || refreshCall ? "" : credential.accessToken();
-            String refresh = credential.refreshToken();
             if (!access.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + access);
 
-            // PHP cookie exists only as a compatibility bridge for 2.0.6 and credential endpoints.
-            // Once a secure refresh token exists, protected requests use Bearer exclusively.
+            // SESSION_HOST_COMPAT_V233: keep the same-origin PHP session cookie alongside Bearer.
+            // Apache/FastCGI installations often strip Authorization before PHP sees it. In that
+            // environment the secure login still creates a PHP session, so Cookie is a safe TLS-only
+            // compatibility path instead of turning every protected endpoint into HTTP 401.
             String cookie = cookie();
-            if (cookie != null && !cookie.trim().isEmpty()
-                    && (credentialAction || refreshCall || refresh.isEmpty())) {
+            if (cookie != null && !cookie.trim().isEmpty()) {
                 c.setRequestProperty("Cookie", cookie.trim());
             }
         }
@@ -126,8 +128,13 @@ final class ApiClient {
         Response response = new Response(code, body);
         if (trusted) captureAuth(response);
 
-        if (code == 401 && allowRefresh && trusted && !credentialAction && refreshIfPossible()) {
-            return requestInternal(method, path, data, connectTimeout, readTimeout, maxChars, false, false);
+        if (code == 401 && allowRefresh && trusted && !credentialAction) {
+            if (refreshIfPossible()) {
+                return requestInternal(method, path, data, connectTimeout, readTimeout, maxChars, false, false);
+            }
+            if (recoverDeviceSessionIfPossible()) {
+                return requestInternal(method, path, data, connectTimeout, readTimeout, maxChars, false, false);
+            }
         }
         return response;
     }
@@ -139,28 +146,52 @@ final class ApiClient {
         if (legacyCookie == null || legacyCookie.trim().isEmpty()) return;
         secureBootstrapAttempted = true;
         try {
-            JSONObject d = new JSONObject();
+            JSONObject d = devicePayload();
+            requestInternal("POST", "api/native_app.php?action=device_login", d, 7000, 14000, 2_000_000, false, false);
+        } catch (Exception ignored) {}
+    }
+
+    private JSONObject devicePayload() {
+        JSONObject d = new JSONObject();
+        try {
             d.put("device_token", DeviceIdentity.token(app));
             d.put("device_label", DeviceIdentity.label());
             d.put("app_version", BuildConfig.VERSION_NAME);
-            requestInternal("POST", "api/native_app.php?action=device_login", d, 7000, 14000, 2_000_000, false, false);
+            d.put("device_secret", credential.secret());
         } catch (Exception ignored) {}
+        return d;
     }
 
     private boolean refreshIfPossible() {
         String refresh = credential.refreshToken();
         if (refresh.isEmpty()) return false;
         try {
-            JSONObject d = new JSONObject();
-            d.put("device_token", DeviceIdentity.token(app));
-            d.put("device_label", DeviceIdentity.label());
-            d.put("app_version", BuildConfig.VERSION_NAME);
+            JSONObject d = devicePayload();
             d.put("refresh_token", refresh);
             Response r = requestInternal("POST", "api/native_app.php?action=refresh", d, 8000, 18000, 2_000_000, false, true);
-            if (r.ok() && r.json().optBoolean("ok", false) && !credential.accessToken().isEmpty()) return true;
+            if (r.ok() && r.json().optBoolean("ok", false)) {
+                secureBootstrapAttempted = true;
+                return !credential.accessToken().isEmpty() || !cookie().isEmpty();
+            }
         } catch (Exception ignored) {}
         credential.clearTokens();
-        prefs.edit().remove(KEY_COOKIE).apply();
+        return false;
+    }
+
+    private boolean recoverDeviceSessionIfPossible() {
+        long now = System.currentTimeMillis();
+        if (now - lastDeviceRecoveryAt < 5000L) return false;
+        lastDeviceRecoveryAt = now;
+        try {
+            Response r = requestInternal("POST", "api/native_app.php?action=device_login", devicePayload(),
+                    8000, 18000, 2_000_000, false, false);
+            JSONObject j = r.json();
+            boolean ok = r.ok() && j.optBoolean("ok", false) && j.optJSONObject("account") != null;
+            if (ok) {
+                secureBootstrapAttempted = true;
+                return !credential.accessToken().isEmpty() || !cookie().isEmpty();
+            }
+        } catch (Exception ignored) {}
         return false;
     }
 
