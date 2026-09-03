@@ -22,6 +22,7 @@ final class ApiClient {
     private final SharedPreferences prefs;
     private final SecureDeviceCredential credential;
     private final String base;
+    private boolean secureBootstrapAttempted;
 
     ApiClient(Context context) {
         app = context.getApplicationContext();
@@ -36,6 +37,7 @@ final class ApiClient {
     void clearSession() {
         prefs.edit().remove(KEY_COOKIE).apply();
         credential.clearTokens();
+        secureBootstrapAttempted = false;
     }
 
     String absolute(String value) {
@@ -61,6 +63,13 @@ final class ApiClient {
                                      int maxChars, boolean allowRefresh, boolean refreshCall) throws Exception {
         String target = path.startsWith("http://") || path.startsWith("https://") ? path : absolute(path);
         boolean trusted = isTrustedTarget(target);
+        boolean credentialAction = isCredentialAction(target);
+
+        // SECURITY_V207_MIGRATION: if 2.0.6 still has a valid PHP cookie, bind the new random
+        // device secret before the first protected call. No password is bypassed: the server only
+        // accepts this bridge for the exact device already attached to the active legacy session.
+        if (trusted && !credentialAction && !refreshCall) bootstrapSecureSessionIfNeeded();
+
         HttpURLConnection c = (HttpURLConnection) new URL(target).openConnection();
         c.setInstanceFollowRedirects("GET".equals(method));
         c.setConnectTimeout(connectTimeout);
@@ -70,7 +79,7 @@ final class ApiClient {
         c.setRequestProperty("Accept-Encoding", "gzip");
         c.setRequestProperty("User-Agent", "EstradaPlay/" + BuildConfig.VERSION_NAME + " Android");
 
-        // SECURITY_V207: never leak device identity, secret, cookies or bearer tokens to a third-party URL.
+        // SECURITY_V207: never leak identity, secret, cookies or bearer tokens to a third-party URL.
         if (trusted) {
             c.setRequestProperty("X-MusicRoad-Native", "1");
             c.setRequestProperty("X-EstradaPlay-Device", DeviceIdentity.token(app));
@@ -78,7 +87,7 @@ final class ApiClient {
             c.setRequestProperty("X-EstradaPlay-Device-Secret", credential.secret());
             String cookie = cookie();
             if (cookie != null && !cookie.trim().isEmpty()) c.setRequestProperty("Cookie", cookie.trim());
-            if (!refreshCall && !isCredentialAction(target)) {
+            if (!refreshCall && !credentialAction) {
                 String access = credential.accessToken();
                 if (!access.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + access);
             }
@@ -102,10 +111,25 @@ final class ApiClient {
         Response response = new Response(code, body);
         if (trusted) captureAuth(response);
 
-        if (code == 401 && allowRefresh && trusted && !isCredentialAction(target) && refreshIfPossible()) {
+        if (code == 401 && allowRefresh && trusted && !credentialAction && refreshIfPossible()) {
             return requestInternal(method, path, data, connectTimeout, readTimeout, maxChars, false, false);
         }
         return response;
+    }
+
+    private void bootstrapSecureSessionIfNeeded() {
+        if (secureBootstrapAttempted) return;
+        if (!credential.accessToken().isEmpty() || !credential.refreshToken().isEmpty()) return;
+        String legacyCookie = cookie();
+        if (legacyCookie == null || legacyCookie.trim().isEmpty()) return;
+        secureBootstrapAttempted = true;
+        try {
+            JSONObject d = new JSONObject();
+            d.put("device_token", DeviceIdentity.token(app));
+            d.put("device_label", DeviceIdentity.label());
+            d.put("app_version", BuildConfig.VERSION_NAME);
+            requestInternal("POST", "api/native_app.php?action=device_login", d, 7000, 14000, 2_000_000, false, false);
+        } catch (Exception ignored) {}
     }
 
     private boolean refreshIfPossible() {
@@ -138,6 +162,7 @@ final class ApiClient {
                 credential.saveTokens(access, refresh,
                         accessSec > 0L ? accessSec * 1000L : 0L,
                         refreshSec > 0L ? refreshSec * 1000L : 0L);
+                secureBootstrapAttempted = true;
             }
         } catch (Exception ignored) {}
     }
