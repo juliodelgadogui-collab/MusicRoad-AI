@@ -1,8 +1,13 @@
 package com.estradaplay.comunista;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -14,7 +19,12 @@ import android.widget.TextView;
 
 import androidx.activity.ComponentActivity;
 
+import org.json.JSONObject;
+
 public final class GateActivity extends ComponentActivity {
+    private static final String UI_PREFS = "estradaplay_ui_v1";
+    private static final String KEY_ACCOUNT = "account";
+
     private final Handler ui = new Handler(Looper.getMainLooper());
     private boolean launched;
 
@@ -64,10 +74,50 @@ public final class GateActivity extends ComponentActivity {
     private void openApp() {
         if (launched || isFinishing()) return;
         launched = true;
+
+        // REINSTALL_AUTH_FIX_V231: Android can restore a remembered account shell while the
+        // Keystore-backed secret/tokens were destroyed by uninstall/clear-data. In that state the
+        // app must not open Radio/Central/Comboio as if authenticated. When online, remove only the
+        // stale remembered session so MainActivity immediately follows its normal secure login flow.
+        ApiClient api = new ApiClient(this);
+        if (ReinstallSessionPolicy.shouldRequireLogin(hasRememberedAccount(), online(), api.hasSecureSession())) {
+            api.clearSession();
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().remove(KEY_ACCOUNT).apply();
+        }
+
         Intent next = new Intent(this, MainActivity.class);
         startActivity(next);
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
         finish();
+    }
+
+    private boolean hasRememberedAccount() {
+        SharedPreferences p = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
+        String raw = p.getString(KEY_ACCOUNT, "{}");
+        if (raw == null || raw.trim().isEmpty() || "{}".equals(raw.trim())) return false;
+        try {
+            JSONObject account = new JSONObject(raw);
+            return account.optBoolean("authenticated", false) || account.optJSONObject("user") != null;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean online() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return false;
+            if (Build.VERSION.SDK_INT >= 23) {
+                android.net.Network n = cm.getActiveNetwork();
+                if (n == null) return false;
+                NetworkCapabilities c = cm.getNetworkCapabilities(n);
+                return c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+            }
+            android.net.NetworkInfo info = cm.getActiveNetworkInfo();
+            return info != null && info.isConnected();
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     @Override protected void onDestroy() {
