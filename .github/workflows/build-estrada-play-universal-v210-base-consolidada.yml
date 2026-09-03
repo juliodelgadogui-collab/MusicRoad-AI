@@ -14,6 +14,15 @@ on:
       - 'estrada-play-comunista-app/app/src/test/**'
       - 'estrada-play-comunista-app/app/build.gradle'
       - 'tools/ci_build_epc_v210_base_consolidada.sh'
+      # Reintroducing any legacy EPC generator must run this workflow and fail the architecture gate.
+      - 'tools/patch_estrada_play_v208_navigation_real.py'
+      - 'tools/fix_epc_v208_navigation_strings.py'
+      - 'tools/ci_build_epc_v208_navigation_real.sh'
+      - 'tools/patch_estrada_play_v209_context_inteligente.py'
+      - 'tools/ci_build_epc_v209_context_inteligente.sh'
+      - 'tools/migrate_epc_v210_base_consolidada.py'
+      - '.github/workflows/build-estrada-play-universal-v208-navigation-real.yml'
+      - '.github/workflows/build-estrada-play-universal-v209-contexto-inteligente.yml'
       - '.github/workflows/build-estrada-play-universal-v210-base-consolidada.yml'
   workflow_dispatch:
 
@@ -34,10 +43,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadSafetyService.java
-          grep -q 'versionCode 210' estrada-play-comunista-app/app/build.gradle
-          grep -q "versionName '2.1.0'" estrada-play-comunista-app/app/build.gradle
-          grep -q 'BASE_CONSOLIDADA_V210' estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadSafetyService.java
+          APP=estrada-play-comunista-app
+          J="$APP/app/src/main/java/com/estradaplay/comunista"
+          test -f "$J/RoadSafetyService.java"
+          grep -q 'versionCode 210' "$APP/app/build.gradle"
+          grep -q "versionName '2.1.0'" "$APP/app/build.gradle"
+          grep -q 'BASE_CONSOLIDADA_V210' "$J/RoadSafetyService.java"
+          forbidden=(
+            tools/patch_estrada_play_v208_navigation_real.py
+            tools/fix_epc_v208_navigation_strings.py
+            tools/ci_build_epc_v208_navigation_real.sh
+            tools/patch_estrada_play_v209_context_inteligente.py
+            tools/ci_build_epc_v209_context_inteligente.sh
+            tools/migrate_epc_v210_base_consolidada.py
+            .github/workflows/build-estrada-play-universal-v208-navigation-real.yml
+            .github/workflows/build-estrada-play-universal-v209-contexto-inteligente.yml
+          )
+          for legacy in "${forbidden[@]}"; do
+            if [ -e "$legacy" ]; then
+              echo "Legacy EPC generator returned: $legacy"
+              exit 1
+            fi
+          done
 
       - uses: actions/setup-java@v4
         with:
@@ -75,7 +102,7 @@ jobs:
           TAG="estrada-play-comunista-2.1.0-base-consolidada-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" --target "$GITHUB_SHA" \
             --title "Estrada Play Comunista Universal 2.1.0 - Base Consolidada" \
-            --notes "Base interna consolidada e compilada diretamente do fonte versionado, sem gerador de patch no caminho de build. RoadSafetyService coordena ciclo de vida e efeitos Android, enquanto geometria de alertas, seleção, cooldown, estado de limite e formatação ficam em políticas puras com testes JUnit obrigatórios. Navegação Real 2.0.8, Contexto Inteligente 2.0.9 e Segurança 2.0.7 preservados. Build nativo sem WebView. Signing: ${SIGNING_STATUS}." \
+            --notes "Base interna consolidada e compilada diretamente do fonte versionado, sem gerador de patch no caminho de build. A cadeia geradora EPC 2.0.8/2.0.9 foi aposentada e o CI bloqueia sua reintrodução. RoadSafetyService coordena ciclo de vida e efeitos Android, enquanto geometria de alertas, seleção, cooldown, estado de limite e formatação ficam em políticas puras com testes JUnit obrigatórios. Navegação Real 2.0.8, Contexto Inteligente 2.0.9 e Segurança 2.0.7 preservados. Build nativo sem WebView. Signing: ${SIGNING_STATUS}." \
             Estrada-Play-Comunista-Universal-2.1.0-Base-Consolidada.apk
 
       - uses: actions/upload-artifact@v4
