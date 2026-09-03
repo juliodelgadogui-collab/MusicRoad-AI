@@ -66,8 +66,8 @@ final class ApiClient {
         boolean credentialAction = isCredentialAction(target);
 
         // SECURITY_V207_MIGRATION: if 2.0.6 still has a valid PHP cookie, bind the new random
-        // device secret before the first protected call. No password is bypassed: the server only
-        // accepts this bridge for the exact device already attached to the active legacy session.
+        // device secret before the first protected call. The server only permits this bridge for
+        // the exact device already linked to the active legacy account.
         if (trusted && !credentialAction && !refreshCall) bootstrapSecureSessionIfNeeded();
 
         HttpURLConnection c = (HttpURLConnection) new URL(target).openConnection();
@@ -79,17 +79,27 @@ final class ApiClient {
         c.setRequestProperty("Accept-Encoding", "gzip");
         c.setRequestProperty("User-Agent", "EstradaPlay/" + BuildConfig.VERSION_NAME + " Android");
 
-        // SECURITY_V207: never leak identity, secret, cookies or bearer tokens to a third-party URL.
+        // SECURITY_V207: no private credential leaves the configured EstradaPlay origin.
         if (trusted) {
             c.setRequestProperty("X-MusicRoad-Native", "1");
             c.setRequestProperty("X-EstradaPlay-Device", DeviceIdentity.token(app));
             c.setRequestProperty("X-EstradaPlay-Device-Label", DeviceIdentity.label());
-            c.setRequestProperty("X-EstradaPlay-Device-Secret", credential.secret());
+
+            // The long-lived device secret is proof for login/refresh only, never a normal API token.
+            if (credentialAction || refreshCall) {
+                c.setRequestProperty("X-EstradaPlay-Device-Secret", credential.secret());
+            }
+
+            String access = credentialAction || refreshCall ? "" : credential.accessToken();
+            String refresh = credential.refreshToken();
+            if (!access.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + access);
+
+            // PHP cookie exists only as a compatibility bridge for 2.0.6 and credential endpoints.
+            // Once a secure refresh token exists, protected requests use Bearer exclusively.
             String cookie = cookie();
-            if (cookie != null && !cookie.trim().isEmpty()) c.setRequestProperty("Cookie", cookie.trim());
-            if (!refreshCall && !credentialAction) {
-                String access = credential.accessToken();
-                if (!access.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + access);
+            if (cookie != null && !cookie.trim().isEmpty()
+                    && (credentialAction || refreshCall || refresh.isEmpty())) {
+                c.setRequestProperty("Cookie", cookie.trim());
             }
         }
 
