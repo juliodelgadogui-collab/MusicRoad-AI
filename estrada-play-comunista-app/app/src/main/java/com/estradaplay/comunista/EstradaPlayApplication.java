@@ -12,21 +12,36 @@ public final class EstradaPlayApplication extends Application {
 
     @Override public void onCreate() {
         super.onCreate();
+
+        UiVersionLabelFix.register(this);
+        boolean deferOptionalBridges = ProcessCrashGuard.install(this);
+        if (deferOptionalBridges) return;
+
         IntentFilter roadState = new IntentFilter(RoadSafetyService.ACTION_STATE);
-        contextReceiver = new RouteContextV7BackgroundReceiver();
-        convoyReceiver = new ConvoyLiveBridge();
+
+        // STABILITY_V232: register optional bridges independently. One bridge can fail without
+        // taking the other one, the Application, or the local road-safety core down with it.
         try {
+            contextReceiver = new RouteContextV7BackgroundReceiver();
             if (Build.VERSION.SDK_INT >= 33) {
                 registerReceiver(contextReceiver, roadState, Context.RECEIVER_NOT_EXPORTED);
-                registerReceiver(convoyReceiver, roadState, Context.RECEIVER_NOT_EXPORTED);
             } else {
                 registerReceiver(contextReceiver, roadState);
+            }
+        } catch (Throwable ignored) {
+            try { if (contextReceiver != null) unregisterReceiver(contextReceiver); } catch (Throwable ignored2) {}
+            contextReceiver = null;
+        }
+
+        try {
+            convoyReceiver = new ConvoyLiveBridge();
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(convoyReceiver, roadState, Context.RECEIVER_NOT_EXPORTED);
+            } else {
                 registerReceiver(convoyReceiver, roadState);
             }
         } catch (Throwable ignored) {
-            try { unregisterReceiver(contextReceiver); } catch (Throwable ignored2) {}
-            try { unregisterReceiver(convoyReceiver); } catch (Throwable ignored2) {}
-            contextReceiver = null;
+            try { if (convoyReceiver != null) unregisterReceiver(convoyReceiver); } catch (Throwable ignored2) {}
             convoyReceiver = null;
         }
     }
