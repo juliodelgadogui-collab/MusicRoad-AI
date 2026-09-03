@@ -1,0 +1,105 @@
+name: Estrada Play Universal 2.3.2 Sessao Persistente
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/SecureDeviceCredential.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/GateActivity.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/EstradaPlayApplication.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/UiVersionLabelFix.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ProcessCrashGuard.java'
+      - 'estrada-play-comunista-app/app/src/test/**'
+      - 'estrada-play-comunista-app/app/build.gradle'
+      - 'tools/ci_build_epc_v232_session_persistente.sh'
+      - '.github/workflows/build-estrada-play-comunista*.yml'
+      - '.github/workflows/build-estrada-play-portable*.yml'
+      - '.github/workflows/build-estrada-play-universal-v*.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estrada-play-comunista-v232-session-persistente
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Verify session-persistent direct-source architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          J="$APP/app/src/main/java/com/estradaplay/comunista"
+          grep -q 'versionCode 232' "$APP/app/build.gradle"
+          grep -q "versionName '2.3.2'" "$APP/app/build.gradle"
+          grep -q 'SESSION_PERSIST_V232' "$J/SecureDeviceCredential.java"
+          grep -q 'device_secret_recovery_v232' "$J/SecureDeviceCredential.java"
+          grep -q 'SESSION_PERSIST_V232' "$J/GateActivity.java"
+          grep -q 'native_app.php?action=device_login' "$J/GateActivity.java"
+          grep -q 'UiVersionLabelFix.register' "$J/EstradaPlayApplication.java"
+          grep -q 'ProcessCrashGuard.install' "$J/EstradaPlayApplication.java"
+          grep -q 'BuildConfig.VERSION_NAME' "$J/UiVersionLabelFix.java"
+          grep -q 'COMBOIO_AVANCADO_V230' "$J/ConvoyActivity.java"
+          grep -q 'BASE_CONSOLIDADA_V210' "$J/RoadSafetyService.java"
+
+          legacy_workflows="$(find .github/workflows -maxdepth 1 -type f \
+            \( -name 'build-estrada-play-comunista*.yml' -o -name 'build-estrada-play-portable*.yml' -o -name 'build-estrada-play-universal-v*.yml' \) \
+            ! -name 'build-estrada-play-universal-v232-session-persistente.yml' -print)"
+          if [ -n "$legacy_workflows" ]; then
+            echo 'Obsolete EPC Android workflow detected:'
+            printf '%s\n' "$legacy_workflows"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Production signing readiness
+        env:
+          KEYSTORE_B64: ${{ secrets.ESTRADAPLAY_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ESTRADAPLAY_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ESTRADAPLAY_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ESTRADAPLAY_RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -n "${KEYSTORE_B64:-}" ] && [ -n "${STORE_PASSWORD:-}" ] && [ -n "${KEY_ALIAS:-}" ] && [ -n "${KEY_PASSWORD:-}" ]; then
+            echo 'SIGNING_STATUS=production-ready' >> "$GITHUB_ENV"
+          else
+            echo 'SIGNING_STATUS=development-test' >> "$GITHUB_ENV"
+          fi
+
+      - name: Unit tests, build and validate 2.3.2
+        run: bash tools/ci_build_epc_v232_session_persistente.sh
+
+      - name: Publish 2.3.2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-2.3.2-sessao-persistente-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "Estrada Play Comunista Universal 2.3.2 - Sessao Persistente" \
+            --notes "Corrige o pedido repetido de usuário/senha observado após fechar e abrir o app em ROMs onde o Android Keystore não reabre de forma confiável. O segredo aleatório de instalação ganha recuperação privada local, enquanto access/refresh tokens continuam curtos e o servidor continua exigindo prova do aparelho. O splash tenta renovar silenciosamente por device_login antes de limpar conta lembrada; falha de rede não vira logout. A versão exibida na Central passa a usar a versão real do APK. Um guard de crash-loop pode adiar somente os bridges online opcionais após uma queda, preservando GPS/proteção/offline. Comboio Avançado 2.3.0 e os marcos anteriores permanecem preservados. Sem mudança de servidor. Build nativo direto do fonte, sem WebView. Signing: ${SIGNING_STATUS}." \
+            Estrada-Play-Comunista-Universal-2.3.2-Sessao-Persistente.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-2.3.2-Sessao-Persistente
+          path: Estrada-Play-Comunista-Universal-2.3.2-Sessao-Persistente.apk
+          retention-days: 3
+          compression-level: 0
