@@ -5,6 +5,7 @@ import android.app.Application;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.TextView;
 
 /** Keeps legacy visual labels synchronized with the actual APK version. */
@@ -16,7 +17,12 @@ final class UiVersionLabelFix {
             @Override public void onActivityResumed(Activity activity) {
                 try {
                     View root = activity.getWindow().getDecorView();
-                    if (root != null) root.post(() -> apply(root));
+                    if (root == null) return;
+                    root.post(() -> apply(root));
+                    // MainActivity can rebuild its entire native hierarchy after an asynchronous login.
+                    // Watching layout keeps the visible version correct without coupling auth code to UI code.
+                    ViewTreeObserver observer = root.getViewTreeObserver();
+                    if (observer.isAlive()) observer.addOnGlobalLayoutListener(() -> apply(root));
                 } catch (Throwable ignored) {}
             }
             @Override public void onActivityCreated(Activity activity, Bundle state) {}
