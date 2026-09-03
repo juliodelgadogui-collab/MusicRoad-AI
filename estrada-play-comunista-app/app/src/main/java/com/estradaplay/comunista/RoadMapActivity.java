@@ -267,7 +267,8 @@ public final class RoadMapActivity extends ComponentActivity {
 
         int outer = clamp(Math.round(height * 0.015f), dp(6), dp(12));
         int gap = clamp(Math.round(height * 0.012f), dp(6), dp(10));
-        int railWidth = clamp(Math.round(width * 0.064f), dp(88), dp(106));
+        // SIDE_MENU_FIX_V206: compact rail only; map/dock/navigation remain unchanged.
+        int railWidth = clamp(Math.round(width * 0.052f), dp(76), dp(90));
         int dockWidth = ultrawide
                 ? clamp(Math.round(width * 0.175f), dp(235), dp(310))
                 : clamp(Math.round(width * 0.185f), dp(215), dp(285));
@@ -334,7 +335,7 @@ public final class RoadMapActivity extends ComponentActivity {
         LinearLayout rail = new LinearLayout(this);
         rail.setOrientation(LinearLayout.VERTICAL);
         rail.setGravity(Gravity.CENTER_HORIZONTAL);
-        rail.setPadding(dp(7), dp(8), dp(7), dp(8));
+        rail.setPadding(dp(5), dp(7), dp(5), dp(7));
         rail.setBackground(panel(20, Color.rgb(11, 6, 8), Color.rgb(80, 37, 43)));
 
         LinearLayout emblem = new LinearLayout(this);
@@ -347,23 +348,26 @@ public final class RoadMapActivity extends ComponentActivity {
         brand.setGravity(Gravity.CENTER);
         emblem.addView(star);
         emblem.addView(brand);
-        rail.addView(emblem, new LinearLayout.LayoutParams(-1, clamp(Math.round(height * .125f), dp(62), dp(82))));
+        rail.addView(emblem, new LinearLayout.LayoutParams(-1, clamp(Math.round(height * .105f), dp(54), dp(68))));
 
         TextView active = label("● ATIVO", 7, GREEN, true);
         active.setGravity(Gravity.CENTER);
         active.setSingleLine(true);
-        rail.addView(active, new LinearLayout.LayoutParams(-1, dp(26)));
+        rail.addView(active, new LinearLayout.LayoutParams(-1, dp(22)));
 
         Button estrada = landscapeNavV205("ESTRADA", true);
         Button music = landscapeNavV205("MÚSICA", false);
         Button radio = landscapeNavV205("RÁDIO", false);
         Button trip = landscapeNavV205("VIAGEM", false);
         Button central = landscapeNavV205("CENTRAL", false);
+        int navH = clamp(Math.round(height * .092f), dp(48), dp(58));
         for (Button b : new Button[]{estrada, music, radio, trip, central}) {
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, 0, 1f);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, navH);
             p.setMargins(0, dp(3), 0, dp(3));
             rail.addView(b, p);
         }
+        View railFill = new View(this);
+        rail.addView(railFill, new LinearLayout.LayoutParams(1, 0, 1f));
         estrada.setOnClickListener(v -> { if (roadMap != null) roadMap.recenter(); });
         music.setOnClickListener(v -> startActivity(new Intent(this, MusicPlayerActivity.class)));
         radio.setOnClickListener(v -> startActivity(new Intent(this, RoadRadioActivity.class)));
@@ -373,7 +377,7 @@ public final class RoadMapActivity extends ComponentActivity {
         TextView version = label("v" + BuildConfig.VERSION_NAME, 8, Color.rgb(132,94,90), true);
         version.setGravity(Gravity.CENTER);
         version.setSingleLine(true);
-        rail.addView(version, new LinearLayout.LayoutParams(-1, dp(25)));
+        rail.addView(version, new LinearLayout.LayoutParams(-1, dp(22)));
         return rail;
     }
 
@@ -381,9 +385,11 @@ public final class RoadMapActivity extends ComponentActivity {
         Button b = nav(text, active, 0);
         b.setSingleLine(true);
         b.setHorizontallyScrolling(true);
-        b.setTextSize(7.6f);
-        b.setLetterSpacing(0.035f);
-        b.setPadding(0, 0, 0, 0);
+        b.setTextSize(8.0f);
+        b.setLetterSpacing(0.018f);
+        b.setPadding(dp(1), 0, dp(1), 0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
         return b;
     }
 
