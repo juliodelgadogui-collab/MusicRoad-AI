@@ -100,14 +100,89 @@ function native_bearer_token(): string
     return $m[1];
 }
 
+// SERVER_AUTH_PERSIST_V235: create-once persistence prevents simultaneous first requests from
+// generating different auth salts. A PHP config fallback keeps the salt stable even if app_settings
+// temporarily cannot persist on a shared host. The database value remains authoritative.
+function native_auth_salt_file(): string
+{
+    return dirname(__DIR__) . '/config/native-auth-salt-v207.php';
+}
+
+function native_auth_read_file_salt(): string
+{
+    $file = native_auth_salt_file();
+    if (!is_file($file)) return '';
+    try { $value = include $file; }
+    catch (Throwable $e) { return ''; }
+    $value = trim(is_string($value) ? $value : '');
+    return preg_match('/^[a-f0-9]{64}$/i', $value) ? strtolower($value) : '';
+}
+
+function native_auth_write_file_salt(string $salt): void
+{
+    if (!preg_match('/^[a-f0-9]{64}$/i', $salt)) return;
+    $file = native_auth_salt_file();
+    $content = "<?php\nreturn '" . strtolower($salt) . "';\n";
+    try {
+        if (!is_dir(dirname($file))) @mkdir(dirname($file), 0770, true);
+        $current = native_auth_read_file_salt();
+        if ($current === strtolower($salt)) return;
+        @file_put_contents($file, $content, LOCK_EX);
+        @chmod($file, 0600);
+    } catch (Throwable $ignored) {}
+}
+
+function native_auth_persist_setting_once(string $key, string $candidate): string
+{
+    ensure_runtime_tables();
+    try {
+        if (native_auth_is_mysql()) {
+            $s = db()->prepare("INSERT INTO app_settings (`key`,value) VALUES (?,?) ON DUPLICATE KEY UPDATE value=value");
+        } else {
+            $s = db()->prepare('INSERT OR IGNORE INTO app_settings (key,value) VALUES (?,?)');
+        }
+        $s->execute([$key,$candidate]);
+    } catch (Throwable $e) {
+        $existing = trim((string)app_setting($key, ''));
+        if ($existing === '') {
+            try { set_app_setting($key, $candidate); } catch (Throwable $ignored) {}
+        }
+    }
+    return trim((string)app_setting($key, ''));
+}
+
 function native_auth_salt(): string
 {
-    $salt = trim((string)app_setting('native_auth_salt_v207', ''));
-    if ($salt !== '') return $salt;
-    try { $salt = bin2hex(random_bytes(32)); }
-    catch (Throwable $e) { $salt = hash('sha256', APP_ROOT . '|' . microtime(true) . '|' . mt_rand()); }
-    set_app_setting('native_auth_salt_v207', $salt);
-    return $salt;
+    static $cached = '';
+    if ($cached !== '') return $cached;
+
+    $stored = trim((string)app_setting('native_auth_salt_v207', ''));
+    if (preg_match('/^[a-f0-9]{64}$/i', $stored)) {
+        $cached = strtolower($stored);
+        native_auth_write_file_salt($cached);
+        return $cached;
+    }
+
+    $fileSalt = native_auth_read_file_salt();
+    if ($fileSalt !== '') {
+        $persisted = native_auth_persist_setting_once('native_auth_salt_v207', $fileSalt);
+        $cached = preg_match('/^[a-f0-9]{64}$/i', $persisted) ? strtolower($persisted) : $fileSalt;
+        native_auth_write_file_salt($cached);
+        return $cached;
+    }
+
+    try { $candidate = bin2hex(random_bytes(32)); }
+    catch (Throwable $e) { $candidate = hash('sha256', APP_ROOT . '|' . microtime(true) . '|' . mt_rand()); }
+
+    $persisted = native_auth_persist_setting_once('native_auth_salt_v207', $candidate);
+    $canonical = preg_match('/^[a-f0-9]{64}$/i', $persisted) ? strtolower($persisted) : strtolower($candidate);
+    native_auth_write_file_salt($canonical);
+
+    // If the DB write failed but another concurrent request won the file race, use that winner.
+    $fileWinner = native_auth_read_file_salt();
+    if ($persisted === '' && $fileWinner !== '') $canonical = $fileWinner;
+    $cached = $canonical;
+    return $cached;
 }
 
 function native_auth_hash(string $kind, string $value): string
