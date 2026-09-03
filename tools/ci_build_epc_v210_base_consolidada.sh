@@ -40,6 +40,19 @@ for legacy in "${FORBIDDEN_EPC_GENERATORS[@]}"; do
   fi
 done
 
+# Only the 2.1.0 Android workflow may remain in the EPC Android workflow namespace.
+# Server/admin workflows and the separate estradaplay-* product line are intentionally excluded.
+LEGACY_EPC_WORKFLOWS="$(find .github/workflows -maxdepth 1 -type f \
+  \( -name 'build-estrada-play-comunista*.yml' \
+     -o -name 'build-estrada-play-portable*.yml' \
+     -o -name 'build-estrada-play-universal-v*.yml' \) \
+  ! -name 'build-estrada-play-universal-v210-base-consolidada.yml' -print)"
+if [ -n "$LEGACY_EPC_WORKFLOWS" ]; then
+  echo 'Obsolete EPC Android workflow detected:'
+  printf '%s\n' "$LEGACY_EPC_WORKFLOWS"
+  exit 1
+fi
+
 # Prevent the coordinator from silently growing back into the old geometry/state monolith.
 if grep -q 'private Match match\|new HashMap<>\|hazardPriorityBias(' "$J/RoadSafetyService.java"; then
   echo 'RoadSafetyService still contains extracted legacy policy'; exit 1
