@@ -188,6 +188,11 @@ final class RouteEngine {
 
     private RouteEngine() {}
 
+    // NAVIGATION_REAL_COMPAT_V208: legacy planner overload during consolidation.
+    static Route fetch(double fromLat, double fromLon, double toLat, double toLon) throws Exception {
+        return fetchOsrmFallback(fromLat, fromLon, toLat, toLon);
+    }
+
     static Route fetch(Context context, double fromLat, double fromLon, double toLat, double toLon) throws Exception {
         Exception serverError = null;
         try {
