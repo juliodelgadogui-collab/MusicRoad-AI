@@ -40,6 +40,11 @@ final class ApiClient {
         secureBootstrapAttempted = false;
     }
 
+    // REINSTALL_AUTH_FIX_V231: remembered UI account is not proof of a usable secure session.
+    boolean hasSecureSession() {
+        return !credential.accessToken().isEmpty() || !credential.refreshToken().isEmpty();
+    }
+
     String absolute(String value) {
         if (value == null) return "";
         String v = value.trim();
