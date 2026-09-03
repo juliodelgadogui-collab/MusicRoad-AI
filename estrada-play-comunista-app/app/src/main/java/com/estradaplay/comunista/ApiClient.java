@@ -36,7 +36,8 @@ final class ApiClient {
     String base() { return base; }
     String cookie() { return prefs.getString(KEY_COOKIE, ""); }
     void clearSession() {
-        prefs.edit().remove(KEY_COOKIE).apply();
+        // SESSION_RECOVERY_V234: commit critical auth state because RoadRadioService runs isolated.
+        prefs.edit().remove(KEY_COOKIE).commit();
         credential.clearTokens();
         secureBootstrapAttempted = false;
         lastDeviceRecoveryAt = 0L;
@@ -101,9 +102,6 @@ final class ApiClient {
             if (!access.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + access);
 
             // SESSION_HOST_COMPAT_V233: keep the same-origin PHP session cookie alongside Bearer.
-            // Apache/FastCGI installations often strip Authorization before PHP sees it. In that
-            // environment the secure login still creates a PHP session, so Cookie is a safe TLS-only
-            // compatibility path instead of turning every protected endpoint into HTTP 401.
             String cookie = cookie();
             if (cookie != null && !cookie.trim().isEmpty()) {
                 c.setRequestProperty("Cookie", cookie.trim());
@@ -248,7 +246,10 @@ final class ApiClient {
                 jar.append(pair);
             }
         }
-        if (jar.length() > 0) prefs.edit().putString(KEY_COOKIE, jar.toString()).apply();
+        if (jar.length() > 0) {
+            // SESSION_RECOVERY_V234: make the PHP compatibility session visible before :radio starts.
+            prefs.edit().putString(KEY_COOKIE, jar.toString()).commit();
+        }
     }
 
     private static String read(InputStream in, int maxChars) throws Exception {
