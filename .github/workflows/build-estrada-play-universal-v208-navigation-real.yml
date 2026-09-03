@@ -43,6 +43,7 @@ jobs:
           grep -q 'versionCode 208' "$APP/app/build.gradle"
           grep -q "versionName '2.0.8'" "$APP/app/build.gradle"
           grep -q 'NAVIGATION_REAL_V208' "$J/RouteEngine.java"
+          grep -q 'NAVIGATION_REAL_COMPAT_V208' "$J/RouteEngine.java"
           grep -q 'NAVIGATION_REAL_ACTIVITY_V208' "$J/RoadMapActivity.java"
           grep -q 'route.match(lat, lon' "$J/RoadMapActivity.java"
           grep -q 'api/navigation_route.php' "$J/RouteEngine.java"
@@ -58,7 +59,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add estrada-play-comunista-app/app/build.gradle \
-                  estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java
+                  estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java \
+                  estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RouteEngine.java
           git commit -m "Generate Universal 2.0.8 Navegacao Real [skip ci]" || true
           git push origin HEAD:agent/estrada-play-comunista
           echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
