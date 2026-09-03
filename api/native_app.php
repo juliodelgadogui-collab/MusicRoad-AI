@@ -7,6 +7,7 @@ require_once __DIR__ . '/native_library_sync.php';
 
 header('Content-Type: application/json; charset=utf-8');
 ensure_default_users();
+native_auth_ensure_schema();
 $action = strtolower(trim((string)($_GET['action'] ?? '')));
 $data = input_json();
 
@@ -20,10 +21,14 @@ if ($action === 'login') {
     if (!$user || ($user['status'] ?? 'active') !== 'active' || !password_verify($password,(string)$user['password_hash'])) json_response(['ok'=>false,'error'=>'Usuário ou senha inválidos.'], 401);
     native_start_user_session($user);
     $token = native_device_token_from_request($data);
+    $secret = native_device_secret_from_request($data);
     native_bind_device((int)$user['id'],$token,native_device_label_from_request($data));
+    $auth = ($token !== '' && $secret !== '') ? native_issue_device_auth((int)$user['id'],$token,$secret) : [];
     try { $u = db()->prepare('UPDATE users SET last_login_at = ? WHERE id = ?'); $u->execute([date('Y-m-d H:i:s'),(int)$user['id']]); } catch (Throwable $ignored) {}
-    audit_log('native.login',['user_id'=>(int)$user['id']]);
-    json_response(['ok'=>true,'account'=>native_account_payload($user),'csrf'=>csrf_token()]);
+    audit_log('native.login',['user_id'=>(int)$user['id'],'secure_device'=>(bool)$auth]);
+    $out = ['ok'=>true,'account'=>native_account_payload($user),'csrf'=>csrf_token()];
+    if ($auth) $out['auth'] = $auth;
+    json_response($out);
 }
 
 if ($action === 'register') {
@@ -44,20 +49,51 @@ if ($action === 'register') {
     $user = $s->fetch();
     native_start_user_session($user);
     $token = native_device_token_from_request($data);
+    $secret = native_device_secret_from_request($data);
     native_bind_device($id,$token,native_device_label_from_request($data));
-    audit_log('native.register',['user_id'=>$id]);
-    json_response(['ok'=>true,'account'=>native_account_payload($user),'csrf'=>csrf_token()]);
+    $auth = ($token !== '' && $secret !== '') ? native_issue_device_auth($id,$token,$secret) : [];
+    audit_log('native.register',['user_id'=>$id,'secure_device'=>(bool)$auth]);
+    $out = ['ok'=>true,'account'=>native_account_payload($user),'csrf'=>csrf_token()];
+    if ($auth) $out['auth'] = $auth;
+    json_response($out);
 }
 
 if ($action === 'device_login') {
     $token = native_device_token_from_request($data);
+    $secret = native_device_secret_from_request($data);
     if ($token === '') json_response(['ok'=>false,'error'=>'Identificação do aparelho inválida.'], 422);
-    $user = native_user_for_device($token);
-    if (!$user) json_response(['ok'=>false,'error'=>'Este aparelho ainda não está registrado.'], 401);
+    if ($secret === '') json_response(['ok'=>false,'error'=>'Este aplicativo precisa renovar a segurança do aparelho. Entre com sua conta uma vez.'], 401);
+
+    $credential = native_credential_row($token);
+    if ($credential) {
+        $user = native_user_for_secure_device($token,$secret);
+        if (!$user) json_response(['ok'=>false,'error'=>'Credencial do aparelho inválida ou revogada. Entre novamente.'], 401);
+    } else {
+        // Seamless 2.0.6 -> 2.0.7 migration is allowed only when a legitimate legacy PHP session
+        // is still active AND this same device was already bound to that account.
+        $legacy = current_user();
+        if (!$legacy || !native_can_bootstrap_secure_device($legacy,$token)) json_response(['ok'=>false,'error'=>'Confirme sua conta neste aparelho para ativar a nova segurança.'], 401);
+        $user = $legacy;
+    }
+
     native_start_user_session($user);
     native_bind_device((int)$user['id'],$token,native_device_label_from_request($data));
-    audit_log('native.device_login',['user_id'=>(int)$user['id']]);
-    json_response(['ok'=>true,'account'=>native_account_payload($user),'csrf'=>csrf_token()]);
+    $auth = native_issue_device_auth((int)$user['id'],$token,$secret);
+    audit_log('native.device_login',['user_id'=>(int)$user['id'],'secure_device'=>true]);
+    json_response(['ok'=>true,'account'=>native_account_payload($user),'auth'=>$auth,'csrf'=>csrf_token()]);
+}
+
+if ($action === 'refresh') {
+    $token = native_device_token_from_request($data);
+    $secret = native_device_secret_from_request($data);
+    $refresh = trim((string)($data['refresh_token'] ?? ''));
+    $renewed = native_refresh_device_auth($token,$secret,$refresh);
+    if (!$renewed) json_response(['ok'=>false,'error'=>'A sessão segura expirou. Entre novamente neste aparelho.'],401);
+    $user = $renewed['user'];
+    native_start_user_session($user);
+    native_bind_device((int)$user['id'],$token,native_device_label_from_request($data));
+    audit_log('native.refresh',['user_id'=>(int)$user['id']]);
+    json_response(['ok'=>true,'account'=>native_account_payload($user),'auth'=>$renewed['auth'],'csrf'=>csrf_token()]);
 }
 
 if ($action === 'library_page') {
@@ -86,7 +122,7 @@ if ($action === 'library_page') {
     ]);
 }
 
-// Legacy full-catalog actions remain for APK 2.0.7 compatibility.
+// Legacy full-catalog actions remain for older installed APKs while they migrate safely.
 if ($action === 'library_fast' || $action === 'library') {
     $user = native_require_json_user($data);
     $rows = db()->query('SELECT * FROM music_library ORDER BY title ASC LIMIT 5000')->fetchAll() ?: [];
