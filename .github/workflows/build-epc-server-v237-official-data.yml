@@ -8,6 +8,7 @@ on:
       - 'api/official_data_policy.php'
       - 'api/server_context_v7.php'
       - 'admin_official_data_cleanup.php'
+      - 'admin_central.php'
       - '.github/workflows/build-epc-server-v237-official-data.yml'
   workflow_dispatch:
 
@@ -24,19 +25,22 @@ jobs:
           ref: agent/estrada-play-comunista
           fetch-depth: 0
 
-      - name: Validate official-only data policy
+      - name: Validate official-only data policy and unified admin
         shell: bash
         run: |
           set -euo pipefail
           php -l api/official_data_policy.php
           php -l api/server_context_v7.php
           php -l admin_official_data_cleanup.php
+          php -l admin_central.php
           grep -q 'EPC_OFFICIAL_DATA_V250' api/official_data_policy.php
           grep -q "return \['DNIT', 'DER'\]" api/official_data_policy.php
           grep -q "road_data_mode.*OFFICIAL" api/server_context_v7.php
           grep -q 'LIMPAR_BASE_OFICIAL' admin_official_data_cleanup.php
           grep -q "road_live_events" admin_official_data_cleanup.php
           grep -q "road_hazards" admin_official_data_cleanup.php
+          grep -q "Base oficial / limpeza" admin_central.php
+          grep -q "admin_official_data_cleanup.php" admin_central.php
 
       - name: Package server cleanup
         shell: bash
@@ -47,6 +51,7 @@ jobs:
           cp api/official_data_policy.php /tmp/epc-v237/api/official_data_policy.php
           cp api/server_context_v7.php /tmp/epc-v237/api/server_context_v7.php
           cp admin_official_data_cleanup.php /tmp/epc-v237/admin_official_data_cleanup.php
+          cp admin_central.php /tmp/epc-v237/admin_central.php
           cat > /tmp/epc-v237/LEIA-ME.txt <<'EOF'
           Estrada Play Comunista - Servidor 2.3.7 - Base Rodoviaria Oficial
 
@@ -57,6 +62,11 @@ jobs:
           Fontes oficiais reconhecidas nesta versao:
           - DNIT
           - DER
+
+          Painel administrativo:
+          - admin_central.php acompanha este pacote;
+          - Base oficial / limpeza aparece dentro da Administracao Unificada;
+          - as funcoes administrativas continuam acessiveis pelo menu lateral central.
 
           O que o modo OFICIAL faz no Server 7.0:
           - nao exibe eventos LIVE/comunitarios;
@@ -69,7 +79,7 @@ jobs:
           1. Faca BACKUP do banco de dados.
           2. Extraia este ZIP na raiz do servidor, preservando as pastas.
           3. Entre no painel como administrador.
-          4. Abra admin_official_data_cleanup.php.
+          4. No menu lateral, abra Base oficial / limpeza.
           5. PRIMEIRO confira a tabela de fontes e quantidades.
           6. Se estiver correto, digite exatamente LIMPAR_BASE_OFICIAL.
           7. A pagina apaga somente as bases rodoviarias nao oficiais/comunitarias.
@@ -108,7 +118,7 @@ jobs:
           TAG="estrada-play-comunista-server-2.3.7-base-oficial-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" --target "$GITHUB_SHA" \
             --title "Estrada Play Comunista - Servidor 2.3.7 Base Oficial" \
-            --notes "Pacote seguro para separar a inteligencia rodoviaria oficial de dados comunitarios/teste. O Server 7.0 passa a operar em modo OFICIAL por padrao, reconhecendo DNIT e DER como fontes oficiais. Inclui painel de PREVIA e limpeza manual protegida por login admin, CSRF e confirmacao textual. Nenhuma exclusao e executada automaticamente e config/config.php nao e alterado." \
+            --notes "Pacote seguro para separar a inteligencia rodoviaria oficial de dados comunitarios/teste. Inclui agora admin_central.php para que Base oficial / limpeza apareca dentro da Administracao Unificada. O Server 7.0 opera em modo OFICIAL por padrao, reconhecendo DNIT e DER como fontes oficiais. Nenhuma exclusao e executada automaticamente e config/config.php nao e alterado." \
             Estrada-Play-Comunista-SERVIDOR-2.3.7-BASE-OFICIAL.zip
 
       - uses: actions/upload-artifact@v4
