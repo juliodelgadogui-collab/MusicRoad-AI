@@ -2,6 +2,7 @@
 from pathlib import Path
 
 ROAD = Path('estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java')
+ENGINE = Path('estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RouteEngine.java')
 s = ROAD.read_text(encoding='utf-8')
 
 # re.sub interprets backslash escapes in replacement strings. Repair the source
@@ -20,7 +21,6 @@ for broken, fixed in repairs.items():
         s = s.replace(broken, fixed)
         changed = True
 
-# Validate the exact Java forms required by the cockpit.
 required = [
     'navEtaText.setText(eta + "\\nCHEGADA");',
     'navRemainingText.setText(remainDistance(rem) + "\\nRESTANTE");',
@@ -30,6 +30,26 @@ required = [
 for item in required:
     if item not in s:
         raise SystemExit('2.0.8 navigation string repair failed: ' + item)
-
 ROAD.write_text(s, encoding='utf-8')
-print('2.0.8 Java navigation strings repaired' + (' (changed)' if changed else ' (already clean)'))
+
+# TripPlannerActivity still uses the pre-2.0.8 four-coordinate signature.
+# Keep this overload during the transition; cockpit navigation uses the new
+# Context-aware authenticated server route method.
+e = ENGINE.read_text(encoding='utf-8')
+overload = '''
+    // NAVIGATION_REAL_COMPAT_V208: legacy planner overload during consolidation.
+    static Route fetch(double fromLat, double fromLon, double toLat, double toLon) throws Exception {
+        return fetchOsrmFallback(fromLat, fromLon, toLat, toLon);
+    }
+'''
+if 'NAVIGATION_REAL_COMPAT_V208' not in e:
+    anchor = '    private RouteEngine() {}\n'
+    if anchor not in e:
+        raise SystemExit('RouteEngine constructor anchor not found')
+    e = e.replace(anchor, anchor + overload, 1)
+    changed = True
+if 'static Route fetch(double fromLat, double fromLon, double toLat, double toLon)' not in e:
+    raise SystemExit('Trip planner compatibility overload missing')
+ENGINE.write_text(e, encoding='utf-8')
+
+print('2.0.8 navigation compatibility repaired' + (' (changed)' if changed else ' (already clean)'))
