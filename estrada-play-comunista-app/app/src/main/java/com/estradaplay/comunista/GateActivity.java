@@ -21,11 +21,15 @@ import androidx.activity.ComponentActivity;
 
 import org.json.JSONObject;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 public final class GateActivity extends ComponentActivity {
     private static final String UI_PREFS = "estradaplay_ui_v1";
     private static final String KEY_ACCOUNT = "account";
 
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
     private boolean launched;
 
     @Override protected void onCreate(Bundle state) {
@@ -33,7 +37,7 @@ public final class GateActivity extends ComponentActivity {
         getWindow().setStatusBarColor(Color.rgb(8, 5, 7));
         getWindow().setNavigationBarColor(Color.rgb(8, 5, 7));
         showBrandIntro();
-        ui.postDelayed(this::openApp, 900L);
+        ui.postDelayed(this::openApp, 700L);
     }
 
     private void showBrandIntro() {
@@ -45,8 +49,7 @@ public final class GateActivity extends ComponentActivity {
         center.setOrientation(LinearLayout.VERTICAL);
         center.setGravity(Gravity.CENTER);
         center.setPadding(dp(30), dp(28), dp(30), dp(28));
-        FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(-1, -1);
-        root.addView(center, cp);
+        root.addView(center, new FrameLayout.LayoutParams(-1, -1));
 
         BrandMarkView mark = new BrandMarkView(this);
         center.addView(mark, new LinearLayout.LayoutParams(dp(104), dp(104)));
@@ -65,26 +68,68 @@ public final class GateActivity extends ComponentActivity {
         center.addView(subtitle, wrap());
         margins(subtitle, 0, 11, 0, 0);
 
+        TextView version = label("v" + BuildConfig.VERSION_NAME, 10, Color.rgb(118, 84, 77), true);
+        version.setLetterSpacing(0.10f);
+        center.addView(version, wrap());
+        margins(version, 0, 12, 0, 0);
+
         View line = new View(this);
         line.setBackgroundColor(Color.rgb(224, 30, 47));
         center.addView(line, new LinearLayout.LayoutParams(dp(54), dp(3)));
-        margins(line, 0, 24, 0, 0);
+        margins(line, 0, 20, 0, 0);
     }
 
     private void openApp() {
         if (launched || isFinishing()) return;
-        launched = true;
 
-        // REINSTALL_AUTH_FIX_V231: Android can restore a remembered account shell while the
-        // Keystore-backed secret/tokens were destroyed by uninstall/clear-data. In that state the
-        // app must not open Radio/Central/Comboio as if authenticated. When online, remove only the
-        // stale remembered session so MainActivity immediately follows its normal secure login flow.
-        ApiClient api = new ApiClient(this);
-        if (ReinstallSessionPolicy.shouldRequireLogin(hasRememberedAccount(), online(), api.hasSecureSession())) {
-            api.clearSession();
-            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().remove(KEY_ACCOUNT).apply();
+        // SESSION_PERSIST_V232: never translate "Keystore token could not be reopened" directly
+        // into a password prompt. If a remembered account exists, first try device_login using the
+        // stable random installation secret. A successful response silently mints fresh tokens.
+        boolean remembered = hasRememberedAccount();
+        if (!remembered || !online()) {
+            launchMain();
+            return;
         }
 
+        ApiClient api = new ApiClient(this);
+        if (api.hasSecureSession()) {
+            launchMain();
+            return;
+        }
+
+        io.execute(() -> {
+            boolean authenticated = false;
+            boolean definitelyRejected = false;
+            try {
+                JSONObject data = new JSONObject();
+                data.put("device_token", DeviceIdentity.token(GateActivity.this));
+                data.put("device_label", DeviceIdentity.label());
+                data.put("app_version", BuildConfig.VERSION_NAME);
+                ApiClient.Response response = api.post("api/native_app.php?action=device_login", data);
+                JSONObject body = response.json();
+                authenticated = response.ok() && body.optBoolean("ok", false)
+                        && body.optJSONObject("account") != null;
+                definitelyRejected = response.code == 401 || response.code == 403;
+            } catch (Throwable ignored) {
+                // Network failure is not an authentication failure. Keep remembered offline state.
+            }
+
+            final boolean ok = authenticated;
+            final boolean rejected = definitelyRejected;
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                if (!ok && rejected) {
+                    api.clearSession();
+                    getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().remove(KEY_ACCOUNT).apply();
+                }
+                launchMain();
+            });
+        });
+    }
+
+    private void launchMain() {
+        if (launched || isFinishing()) return;
+        launched = true;
         Intent next = new Intent(this, MainActivity.class);
         startActivity(next);
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
@@ -122,6 +167,7 @@ public final class GateActivity extends ComponentActivity {
 
     @Override protected void onDestroy() {
         ui.removeCallbacksAndMessages(null);
+        io.shutdownNow();
         super.onDestroy();
     }
 
