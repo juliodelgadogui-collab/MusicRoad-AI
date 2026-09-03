@@ -67,6 +67,7 @@ public final class DriveToolsActivity extends ComponentActivity {
         toggle("CHUVA AUTOMÁTICA","Antecipa alertas e observa a rota","rain_auto",DriveSettings.autoRain(this));
         toggle("PROTEGER VÍDEO EM IMPACTO","Preserva o trecho da dashcam","protect_impact_video",DriveSettings.protectImpactVideo(this));
         toggle("BASE COLETIVA","Compartilha eventos leves da estrada","collective_enabled",DriveSettings.collectiveEnabled(this));
+        toggle("TRÂNSITO COLABORATIVO","Opt-in: envia velocidade/posição com ID em hash e retenção de 2h","context_traffic_opt_in",DriveSettings.contextTrafficOptIn(this));
 
         LinearLayout maintenance=row();Button voice=btn("DIAGNÓSTICO DE VOZ",false);Button server=btn("SERVIDOR",false);maintenance.addView(voice,new LinearLayout.LayoutParams(0,dp(50),1));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(0,dp(50),1);sp.setMargins(dp(8),0,0,0);maintenance.addView(server,sp);voice.setOnClickListener(v->open(VoiceDiagnosticsActivity.class));server.setOnClickListener(v->open(ServerSettingsActivity.class));page.addView(maintenance);margins(maintenance,0,10,0,0);
         page.postDelayed(() -> EpcMotion.stagger(page), 55L);

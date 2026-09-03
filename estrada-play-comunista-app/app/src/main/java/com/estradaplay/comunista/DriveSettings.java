@@ -34,6 +34,8 @@ final class DriveSettings {
     static float tankLiters(Context c){return VehicleProfileStore.active(c).tankL;}
     static float fuelPercent(Context c){return VehicleProfileStore.active(c).fuelPercent;}
     static void setVehicleCost(Context c,float kmL,float price){VehicleProfileStore.Profile a=VehicleProfileStore.active(c);VehicleProfileStore.save(c,new VehicleProfileStore.Profile(a.id,a.name,a.type,Math.max(1f,kmL),Math.max(0f,price),a.tankL,a.fuelPercent));}
+    // CONTEXTO_INTELIGENTE_V209: collaborative traffic is explicit opt-in and defaults OFF.
+    static boolean contextTrafficOptIn(Context c){return p(c).getBoolean("context_traffic_opt_in",false);}
     static int impactSensitivity(Context c){return Math.max(0,Math.min(2,p(c).getInt("impact_sensitivity",1)));}
     static void setImpactSensitivity(Context c,int value){p(c).edit().putInt("impact_sensitivity",Math.max(0,Math.min(2,value))).apply();}
 }

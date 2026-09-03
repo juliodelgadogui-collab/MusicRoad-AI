@@ -83,7 +83,9 @@ public final class RoadMapActivity extends ComponentActivity {
     private OfflineRoadStore offlineRoadStore;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final ExecutorService routeIo = Executors.newSingleThreadExecutor();
+    private final ExecutorService contextIo = Executors.newSingleThreadExecutor();
     private final AtomicBoolean routeLoading = new AtomicBoolean(false);
+    private final AtomicBoolean contextLoading = new AtomicBoolean(false);
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private volatile long lastHazardRefreshAt;
@@ -107,6 +109,13 @@ public final class RoadMapActivity extends ComponentActivity {
     private int offRouteSamples;
     private long lastRerouteAt;
     private boolean routeArrived;
+
+    // CONTEXTO_INTELIGENTE_V209: Server 7.0 is the unified online context source.
+    private volatile RouteContextV7Client.Snapshot intelligentContext;
+    private volatile long lastContextAttemptAt;
+    private String currentRoadForContext = "";
+    private boolean localHazardPresent;
+    private double localHazardDistanceM = Double.POSITIVE_INFINITY;
 
     // TOUCH_INPUT_V171: explicit cockpit hit targets. Automotive Android builds sometimes
     // dispatch touch to a texture/map layer before sibling controls. The Activity sees the
@@ -143,6 +152,7 @@ public final class RoadMapActivity extends ComponentActivity {
             String hazard = intent.getStringExtra("hazard_label");
             String type = intent.getStringExtra("hazard_type");
             String road = intent.getStringExtra("road");
+            currentRoadForContext = road == null ? "" : road.trim();
             double distance = intent.getDoubleExtra("distance_m", 0);
             int limit = intent.getIntExtra("limit_kmh", 0);
             universalSpeed=speed; universalLimit=intent.getIntExtra("road_limit_kmh",0); currentLatForSave=lat; currentLonForSave=lon;
@@ -171,6 +181,8 @@ public final class RoadMapActivity extends ComponentActivity {
             if (gpsText != null) gpsText.setText(Double.isFinite(lat) ? "GPS ATIVO" : "GPS BUSCANDO");
 
             boolean hasHazard = hazard != null && !hazard.trim().isEmpty();
+            localHazardPresent = hasHazard;
+            localHazardDistanceM = hasHazard && distance > 0 ? distance : Double.POSITIVE_INFINITY;
             boolean hasAlertBase = count > 0;
             if (protectionText != null) protectionText.setText(hasHazard ? "ATENÇÃO À FRENTE" : (hasAlertBase ? "PROTEÇÃO ATIVA" : "BASE DE ALERTAS VAZIA"));
             if (hazardTitle != null) hazardTitle.setText(hasHazard ? hazard.trim() : (hasAlertBase ? "Estrada livre à frente" : "Sem radares carregados"));
@@ -194,6 +206,8 @@ public final class RoadMapActivity extends ComponentActivity {
                 hazardDetail.setText(value);
             }
             updateMapStatus();
+            refreshIntelligentContext(lat, lon);
+            applyIntelligentContextToUi();
         }
     };
 
@@ -903,6 +917,7 @@ public final class RoadMapActivity extends ComponentActivity {
                 routeSegmentHint = -1;
                 offRouteSamples = 0;
                 routeArrived = false;
+                lastContextAttemptAt = 0L;
                 ui.post(() -> {
                     if (roadMap != null) roadMap.setRouteGeoJson(route.geoJson);
                     if (universalRouteText != null) universalRouteText.setText("ROTA · " + route.summary());
@@ -1006,6 +1021,68 @@ public final class RoadMapActivity extends ComponentActivity {
 
         if (!offRoute) renderRouteUi(route, routeProgressM);
     }
+    private void refreshIntelligentContext(double lat, double lon) {
+        if (!Double.isFinite(lat) || !Double.isFinite(lon)) return;
+        long now = System.currentTimeMillis();
+        long cadence = activeRoute == null ? 45_000L : 30_000L;
+        if (lastContextAttemptAt > 0 && now - lastContextAttemptAt < cadence) return;
+        if (!contextLoading.compareAndSet(false, true)) return;
+        lastContextAttemptAt = now;
+
+        final RouteEngine.Route route = activeRoute;
+        final double heading = lastHeading;
+        final double speed = universalSpeed;
+        final int limit = universalLimit;
+        final String road = currentRoadForContext;
+        contextIo.execute(() -> {
+            try {
+                RouteContextV7Client.Snapshot snapshot = RouteContextV7Client.fetch(
+                        getApplicationContext(), lat, lon, heading, speed, limit, road, route);
+                intelligentContext = snapshot;
+                // Server weather now drives the existing automatic rain safety mode too.
+                DriveSettings.setRainAutoDetected(getApplicationContext(), snapshot.rainSoon);
+                ui.post(() -> {
+                    applyIntelligentContextToUi();
+                    updateMapStatus();
+                    applyIntelligentContextToUi();
+                });
+            } catch (Throwable ignored) {
+                // Offline/local protection remains authoritative when Server 7.0 is unavailable.
+            } finally {
+                contextLoading.set(false);
+            }
+        });
+    }
+
+    private void applyIntelligentContextToUi() {
+        RouteContextV7Client.Snapshot c = intelligentContext;
+        if (c == null || !c.fresh()) return;
+
+        if (navWeatherText != null && !c.weatherText.isEmpty()) navWeatherText.setText(c.weatherText);
+
+        // Radar/physical local safety alerts remain first priority. Unified online context fills
+        // the same automotive alert area when there is no closer local hazard.
+        boolean serverCanOwnAlert = !localHazardPresent
+                || (c.attentionAheadM > 0 && c.attentionAheadM + 120 < localHazardDistanceM);
+        if (serverCanOwnAlert && !c.attentionTitle.isEmpty() && c.attentionAheadM <= 60_000) {
+            if (protectionText != null) protectionText.setText("SERVER 7.0 · " +
+                    (c.attentionKind.isEmpty() ? "CONTEXTO" : c.attentionKind));
+            if (hazardTitle != null) hazardTitle.setText(c.attentionTitle);
+            if (hazardDetail != null) hazardDetail.setText(c.attentionDetail);
+            if (hazardCard != null) hazardCard.setBackground(panel(17, Color.argb(240,17,9,11), Color.rgb(184,20,38)));
+        }
+
+        if (universalAheadText != null) {
+            if (!c.attentionTitle.isEmpty()) universalAheadText.setText("À FRENTE · " + c.aheadLabel());
+            else universalAheadText.setText("À FRENTE · contexto Server 7.0 atualizado");
+        }
+        if (universalMetaText != null) {
+            VehicleProfileStore.Profile v = VehicleProfileStore.active(this);
+            universalMetaText.setText(c.metaLine() + " · AUTONOMIA ~" + Math.round(v.autonomyKm()) + " km");
+        }
+        if (mapStateText != null) mapStateText.setText(c.metaLine());
+    }
+
     private void playerCommand(String action){try{startService(new Intent(this,PlayerService.class).setAction(action));}catch(Throwable ignored){}}
     private void queryPlayerState(){try{startService(new Intent(this,PlayerService.class).setAction(PlayerService.ACTION_QUERY_STATE));}catch(Throwable ignored){}}
     private void registerPlayerReceiver(){if(playerReceiverRegistered)return;try{IntentFilter f=new IntentFilter(PlayerService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(playerReceiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(playerReceiver,f);playerReceiverRegistered=true;}catch(Throwable ignored){}}
@@ -1043,6 +1120,8 @@ public final class RoadMapActivity extends ComponentActivity {
             routeSegmentHint = -1;
             offRouteSamples = 0;
             routeArrived = false;
+            intelligentContext = null;
+            lastContextAttemptAt = 0L;
             lastRouteAt = 0L;
             if (roadMap != null) roadMap.setRouteGeoJson(null);
             if (root != null) buildResponsiveUi();
@@ -1077,6 +1156,8 @@ public final class RoadMapActivity extends ComponentActivity {
                 if (best.hasBearing()) lastHeading = best.getBearing();
                 if (roadMap != null) roadMap.setUserLocation(lastLat, lastLon, lastHeading);
                 refreshMapData(lastLat, lastLon, 0);
+                refreshDestinationRoute(lastLat, lastLon);
+                refreshIntelligentContext(lastLat, lastLon);
             }
         } catch (Throwable ignored) {}
     }
@@ -1238,6 +1319,7 @@ public final class RoadMapActivity extends ComponentActivity {
         if (playerReceiverRegistered) { try { unregisterReceiver(playerReceiver); } catch (Throwable ignored) {} playerReceiverRegistered=false; }
         try { io.shutdownNow(); } catch (Throwable ignored) {}
         try { routeIo.shutdownNow(); } catch (Throwable ignored) {}
+        try { contextIo.shutdownNow(); } catch (Throwable ignored) {}
         if (roadMap != null) roadMap.onDestroyMap();
         super.onDestroy();
     }
