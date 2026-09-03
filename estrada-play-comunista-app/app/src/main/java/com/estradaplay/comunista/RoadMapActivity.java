@@ -259,6 +259,7 @@ public final class RoadMapActivity extends ComponentActivity {
     }
 
     // HORIZONTAL_COCKPIT_V205: true automotive layout, not a stretched portrait screen.
+    // HORIZONTAL_COCKPIT_V205: true automotive layout, not a stretched portrait screen.
     private void buildLandscapeUi(int width, int height) {
         float ratio = height <= 0 ? 1.8f : (float) width / (float) height;
         boolean compact = height < dp(430) || ratio < 1.58f;
