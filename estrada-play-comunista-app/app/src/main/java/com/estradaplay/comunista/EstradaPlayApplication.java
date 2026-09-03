@@ -5,22 +5,29 @@ import android.content.Context;
 import android.content.IntentFilter;
 import android.os.Build;
 
-/** CONTEXTO_VIVO_V220: process-level bridge registration while road safety is running. */
+/** Process-level bridges for Server 7.0 context and live convoy presence. */
 public final class EstradaPlayApplication extends Application {
     private RouteContextV7BackgroundReceiver contextReceiver;
+    private ConvoyLiveBridge convoyReceiver;
 
     @Override public void onCreate() {
         super.onCreate();
+        IntentFilter roadState = new IntentFilter(RoadSafetyService.ACTION_STATE);
         contextReceiver = new RouteContextV7BackgroundReceiver();
-        IntentFilter filter = new IntentFilter(RoadSafetyService.ACTION_STATE);
+        convoyReceiver = new ConvoyLiveBridge();
         try {
             if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(contextReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+                registerReceiver(contextReceiver, roadState, Context.RECEIVER_NOT_EXPORTED);
+                registerReceiver(convoyReceiver, roadState, Context.RECEIVER_NOT_EXPORTED);
             } else {
-                registerReceiver(contextReceiver, filter);
+                registerReceiver(contextReceiver, roadState);
+                registerReceiver(convoyReceiver, roadState);
             }
         } catch (Throwable ignored) {
+            try { unregisterReceiver(contextReceiver); } catch (Throwable ignored2) {}
+            try { unregisterReceiver(convoyReceiver); } catch (Throwable ignored2) {}
             contextReceiver = null;
+            convoyReceiver = null;
         }
     }
 }
