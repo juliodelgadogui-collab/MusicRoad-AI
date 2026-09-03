@@ -10,6 +10,8 @@ import android.widget.TextView;
 
 /** Keeps legacy visual labels synchronized with the actual APK version. */
 final class UiVersionLabelFix {
+    private static final long[] RETRIES_MS = new long[]{0L, 150L, 500L, 1200L, 3000L, 6000L};
+
     private UiVersionLabelFix() {}
 
     static void register(Application app) {
@@ -18,9 +20,7 @@ final class UiVersionLabelFix {
                 try {
                     View root = activity.getWindow().getDecorView();
                     if (root == null) return;
-                    root.post(() -> apply(root));
-                    // MainActivity can rebuild its entire native hierarchy after an asynchronous login.
-                    // Watching layout keeps the visible version correct without coupling auth code to UI code.
+                    for (long delay : RETRIES_MS) root.postDelayed(() -> apply(root), delay);
                     ViewTreeObserver observer = root.getViewTreeObserver();
                     if (observer.isAlive()) observer.addOnGlobalLayoutListener(() -> apply(root));
                 } catch (Throwable ignored) {}
@@ -40,8 +40,9 @@ final class UiVersionLabelFix {
             TextView text = (TextView)view;
             CharSequence raw = text.getText();
             if (raw != null) {
-                String value = raw.toString();
-                if ("EPC 2.0  ·  CENTRAL AUTOMOTIVA".equals(value)) {
+                String value = raw.toString().trim();
+                // VERSION_VISIBLE_V233: do not depend on the exact spacing of the old hardcoded label.
+                if (value.startsWith("EPC 2.") && value.contains("CENTRAL AUTOMOTIVA")) {
                     text.setText("EPC " + BuildConfig.VERSION_NAME + "  ·  CENTRAL AUTOMOTIVA");
                 }
             }
