@@ -20,18 +20,23 @@ final class ApiClient {
     private static final String KEY_COOKIE = "cookie";
     private final Context app;
     private final SharedPreferences prefs;
+    private final SecureDeviceCredential credential;
     private final String base;
 
     ApiClient(Context context) {
         app = context.getApplicationContext();
         prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        credential = new SecureDeviceCredential(app);
         String fallback = BuildConfig.SERVER_URL == null ? "" : BuildConfig.SERVER_URL.trim();
         base = ServerEndpointStore.base(app, fallback);
     }
 
     String base() { return base; }
     String cookie() { return prefs.getString(KEY_COOKIE, ""); }
-    void clearSession() { prefs.edit().remove(KEY_COOKIE).apply(); }
+    void clearSession() {
+        prefs.edit().remove(KEY_COOKIE).apply();
+        credential.clearTokens();
+    }
 
     String absolute(String value) {
         if (value == null) return "";
@@ -49,7 +54,13 @@ final class ApiClient {
     Response post(String path, JSONObject data) throws Exception { return request("POST", path, data == null ? new JSONObject() : data, 8000, 18000, 4_000_000); }
 
     private Response request(String method, String path, JSONObject data, int connectTimeout, int readTimeout, int maxChars) throws Exception {
+        return requestInternal(method, path, data, connectTimeout, readTimeout, maxChars, true, false);
+    }
+
+    private Response requestInternal(String method, String path, JSONObject data, int connectTimeout, int readTimeout,
+                                     int maxChars, boolean allowRefresh, boolean refreshCall) throws Exception {
         String target = path.startsWith("http://") || path.startsWith("https://") ? path : absolute(path);
+        boolean trusted = isTrustedTarget(target);
         HttpURLConnection c = (HttpURLConnection) new URL(target).openConnection();
         c.setInstanceFollowRedirects("GET".equals(method));
         c.setConnectTimeout(connectTimeout);
@@ -58,11 +69,21 @@ final class ApiClient {
         c.setRequestProperty("Accept", "application/json");
         c.setRequestProperty("Accept-Encoding", "gzip");
         c.setRequestProperty("User-Agent", "EstradaPlay/" + BuildConfig.VERSION_NAME + " Android");
-        c.setRequestProperty("X-MusicRoad-Native", "1");
-        c.setRequestProperty("X-EstradaPlay-Device", DeviceIdentity.token(app));
-        c.setRequestProperty("X-EstradaPlay-Device-Label", DeviceIdentity.label());
-        String cookie = cookie();
-        if (cookie != null && !cookie.trim().isEmpty()) c.setRequestProperty("Cookie", cookie.trim());
+
+        // SECURITY_V207: never leak device identity, secret, cookies or bearer tokens to a third-party URL.
+        if (trusted) {
+            c.setRequestProperty("X-MusicRoad-Native", "1");
+            c.setRequestProperty("X-EstradaPlay-Device", DeviceIdentity.token(app));
+            c.setRequestProperty("X-EstradaPlay-Device-Label", DeviceIdentity.label());
+            c.setRequestProperty("X-EstradaPlay-Device-Secret", credential.secret());
+            String cookie = cookie();
+            if (cookie != null && !cookie.trim().isEmpty()) c.setRequestProperty("Cookie", cookie.trim());
+            if (!refreshCall && !isCredentialAction(target)) {
+                String access = credential.accessToken();
+                if (!access.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + access);
+            }
+        }
+
         if (data != null) {
             byte[] bytes = data.toString().getBytes(StandardCharsets.UTF_8);
             c.setDoOutput(true);
@@ -71,14 +92,76 @@ final class ApiClient {
             try (OutputStream out = c.getOutputStream()) { out.write(bytes); }
         }
         int code = c.getResponseCode();
-        captureCookies(c.getHeaderFields());
+        if (trusted) captureCookies(c.getHeaderFields());
         InputStream raw = code >= 200 && code < 400 ? c.getInputStream() : c.getErrorStream();
         InputStream in = raw;
         String encoding = c.getContentEncoding();
         if (raw != null && encoding != null && encoding.toLowerCase().contains("gzip")) in = new java.util.zip.GZIPInputStream(raw);
         String body = read(in, maxChars);
         c.disconnect();
-        return new Response(code, body);
+        Response response = new Response(code, body);
+        if (trusted) captureAuth(response);
+
+        if (code == 401 && allowRefresh && trusted && !isCredentialAction(target) && refreshIfPossible()) {
+            return requestInternal(method, path, data, connectTimeout, readTimeout, maxChars, false, false);
+        }
+        return response;
+    }
+
+    private boolean refreshIfPossible() {
+        String refresh = credential.refreshToken();
+        if (refresh.isEmpty()) return false;
+        try {
+            JSONObject d = new JSONObject();
+            d.put("device_token", DeviceIdentity.token(app));
+            d.put("device_label", DeviceIdentity.label());
+            d.put("app_version", BuildConfig.VERSION_NAME);
+            d.put("refresh_token", refresh);
+            Response r = requestInternal("POST", "api/native_app.php?action=refresh", d, 8000, 18000, 2_000_000, false, true);
+            if (r.ok() && r.json().optBoolean("ok", false) && !credential.accessToken().isEmpty()) return true;
+        } catch (Exception ignored) {}
+        credential.clearTokens();
+        prefs.edit().remove(KEY_COOKIE).apply();
+        return false;
+    }
+
+    private void captureAuth(Response response) {
+        if (response == null || !response.ok() || response.body.isEmpty()) return;
+        try {
+            JSONObject auth = response.json().optJSONObject("auth");
+            if (auth == null) return;
+            String access = auth.optString("access_token", "").trim();
+            String refresh = auth.optString("refresh_token", "").trim();
+            long accessSec = auth.optLong("access_expires_at", 0L);
+            long refreshSec = auth.optLong("refresh_expires_at", 0L);
+            if (!access.isEmpty() && !refresh.isEmpty()) {
+                credential.saveTokens(access, refresh,
+                        accessSec > 0L ? accessSec * 1000L : 0L,
+                        refreshSec > 0L ? refreshSec * 1000L : 0L);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private boolean isTrustedTarget(String target) {
+        try {
+            URL server = new URL(base);
+            URL url = new URL(target);
+            int serverPort = server.getPort() >= 0 ? server.getPort() : server.getDefaultPort();
+            int urlPort = url.getPort() >= 0 ? url.getPort() : url.getDefaultPort();
+            return server.getProtocol().equalsIgnoreCase(url.getProtocol())
+                    && server.getHost().equalsIgnoreCase(url.getHost())
+                    && serverPort == urlPort;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean isCredentialAction(String target) {
+        String lower = target == null ? "" : target.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("native_app.php?action=login")
+                || lower.contains("native_app.php?action=register")
+                || lower.contains("native_app.php?action=device_login")
+                || lower.contains("native_app.php?action=refresh");
     }
 
     private void captureCookies(Map<String, List<String>> headers) {
