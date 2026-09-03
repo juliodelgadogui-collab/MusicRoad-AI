@@ -10,6 +10,7 @@ on:
       - 'estrada-play-comunista-app/app/build.gradle'
       - 'api/navigation_route.php'
       - 'tools/patch_estrada_play_v208_navigation_real.py'
+      - 'tools/fix_epc_v208_navigation_strings.py'
       - 'tools/ci_build_epc_v208_navigation_real.sh'
       - '.github/workflows/build-estrada-play-universal-v208-navigation-real.yml'
   workflow_dispatch:
@@ -27,10 +28,11 @@ jobs:
           ref: agent/estrada-play-comunista
           fetch-depth: 0
 
-      - name: Generate 2.0.8 navigation source
+      - name: Generate and repair 2.0.8 navigation source
         run: |
-          python3 -m py_compile tools/patch_estrada_play_v208_navigation_real.py
+          python3 -m py_compile tools/patch_estrada_play_v208_navigation_real.py tools/fix_epc_v208_navigation_strings.py
           python3 tools/patch_estrada_play_v208_navigation_real.py
+          python3 tools/fix_epc_v208_navigation_strings.py
 
       - name: Verify 2.0.8 source scope
         shell: bash
@@ -44,6 +46,8 @@ jobs:
           grep -q 'NAVIGATION_REAL_ACTIVITY_V208' "$J/RoadMapActivity.java"
           grep -q 'route.match(lat, lon' "$J/RoadMapActivity.java"
           grep -q 'api/navigation_route.php' "$J/RouteEngine.java"
+          grep -Fq 'navEtaText.setText(eta + "\nCHEGADA");' "$J/RoadMapActivity.java"
+          grep -Fq 'navRemainingText.setText(remainDistance(rem) + "\nRESTANTE");' "$J/RoadMapActivity.java"
           php -l api/navigation_route.php
           if grep -R -q 'android.webkit.WebView\|new WebView' "$J"; then exit 1; fi
 
