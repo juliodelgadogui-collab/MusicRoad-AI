@@ -1,0 +1,107 @@
+name: Estrada Play Universal 2.3.0 Comboio Avancado
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ConvoyActivity.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ConvoyStore.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ConvoyLiveBridge.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ConvoySyncPolicy.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/EstradaPlayApplication.java'
+      - 'estrada-play-comunista-app/app/src/test/**'
+      - 'estrada-play-comunista-app/app/build.gradle'
+      - 'api/convoy.php'
+      - 'tools/ci_build_epc_v230_comboio_avancado.sh'
+      - '.github/workflows/build-estrada-play-comunista*.yml'
+      - '.github/workflows/build-estrada-play-portable*.yml'
+      - '.github/workflows/build-estrada-play-universal-v*.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estrada-play-comunista-v230-comboio-avancado
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Verify direct-source architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          J="$APP/app/src/main/java/com/estradaplay/comunista"
+          grep -q 'versionCode 230' "$APP/app/build.gradle"
+          grep -q "versionName '2.3.0'" "$APP/app/build.gradle"
+          grep -q 'COMBOIO_AVANCADO_V230' "$J/ConvoyActivity.java"
+          grep -q 'COMBOIO_AVANCADO_V230' "$J/ConvoyStore.java"
+          grep -q 'ConvoyLiveBridge' "$J/EstradaPlayApplication.java"
+          grep -q 'BASE_CONSOLIDADA_V210' "$J/RoadSafetyService.java"
+          grep -q 'CONTEXTO_VIVO_V220' "$J/RouteContextV7BackgroundReceiver.java"
+          grep -q 'set_route' api/convoy.php
+          grep -q 'self_is_leader' api/convoy.php
+
+          legacy_workflows="$(find .github/workflows -maxdepth 1 -type f \
+            \( -name 'build-estrada-play-comunista*.yml' -o -name 'build-estrada-play-portable*.yml' -o -name 'build-estrada-play-universal-v*.yml' \) \
+            ! -name 'build-estrada-play-universal-v230-comboio-avancado.yml' -print)"
+          if [ -n "$legacy_workflows" ]; then
+            echo 'Obsolete EPC Android workflow detected:'
+            printf '%s\n' "$legacy_workflows"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Production signing readiness
+        env:
+          KEYSTORE_B64: ${{ secrets.ESTRADAPLAY_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ESTRADAPLAY_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ESTRADAPLAY_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ESTRADAPLAY_RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -n "${KEYSTORE_B64:-}" ] && [ -n "${STORE_PASSWORD:-}" ] && [ -n "${KEY_ALIAS:-}" ] && [ -n "${KEY_PASSWORD:-}" ]; then
+            echo 'SIGNING_STATUS=production-ready' >> "$GITHUB_ENV"
+          else
+            echo 'SIGNING_STATUS=development-test' >> "$GITHUB_ENV"
+          fi
+
+      - name: Unit tests, build and validate 2.3.0
+        run: bash tools/ci_build_epc_v230_comboio_avancado.sh
+
+      - name: Publish 2.3.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-2.3.0-comboio-avancado-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "Estrada Play Comunista Universal 2.3.0 - Comboio Avancado" \
+            --notes "Comboio Avançado mantém posição em segundo plano enquanto a proteção GPS está ativa, com cadência de 6 s em movimento e 12 s parado. O criador é líder, pode compartilhar o destino/rota atual, remover e bloquear participantes. O servidor calcula presença (TTL 90 s), distância ao líder, separação, desvio da rota (>180 m), distância ao destino e ETA individual. Se o líder sair, a liderança passa automaticamente ao participante mais antigo. IDs de aparelho brutos não são devolvidos ao grupo. Navegação 2.0.8, Segurança 2.0.7, Contexto Server 7.0 e Base Consolidada continuam preservados. Build nativo direto do fonte, sem WebView. Signing: ${SIGNING_STATUS}." \
+            Estrada-Play-Comunista-Universal-2.3.0-Comboio-Avancado.apk \
+            Estrada-Play-Comunista-2.3.0-SERVIDOR-COMBOIO.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-2.3.0-Comboio-Avancado
+          path: |
+            Estrada-Play-Comunista-Universal-2.3.0-Comboio-Avancado.apk
+            Estrada-Play-Comunista-2.3.0-SERVIDOR-COMBOIO.zip
+          retention-days: 3
+          compression-level: 0
