@@ -6,6 +6,8 @@ on:
     branches: [agent/estrada-play-comunista]
     paths:
       - 'admin_auth_diagnostics.php'
+      - 'api/native_app.php'
+      - 'api/native_auth.php'
       - 'docs/AUTH-DIAGNOSTICO-SERVIDOR.md'
       - '.github/workflows/build-epc-server-auth-diagnostics-v1.yml'
   workflow_dispatch:
@@ -35,12 +37,13 @@ jobs:
           grep -q 'native_device_credentials' admin_auth_diagnostics.php
           grep -q 'native-auth-diagnostic-state.json' admin_auth_diagnostics.php
           grep -q 'native_auth_diag_probe_v1' admin_auth_diagnostics.php
+          grep -q 'native_auth_read_file_salt' admin_auth_diagnostics.php
           grep -q 'action === .device_login.' api/native_app.php
           grep -q 'action === .refresh.' api/native_app.php
           grep -q 'native_issue_device_auth' api/native_auth.php
           grep -q 'native_refresh_device_auth' api/native_auth.php
-          grep -q 'native_auth_salt_v207' api/native_auth.php
-          ! grep -q 'config/config.php' docs/AUTH-DIAGNOSTICO-SERVIDOR.md || true
+          grep -q 'SERVER_AUTH_PERSIST_V235' api/native_auth.php
+          grep -q 'native-auth-salt-v207.php' api/native_auth.php
 
       - name: Build incremental server package
         shell: bash
@@ -54,9 +57,13 @@ jobs:
           cp api/native_app.php api/native_auth.php "$DEST/api/"
           cp docs/AUTH-DIAGNOSTICO-SERVIDOR.md "$DEST/docs/"
           cat > "$DEST/LEIA-PRIMEIRO-AUTH-DIAGNOSTICO.txt" <<'TXT'
-          ESTRADA PLAY COMUNISTA - AUTH DIAGNOSTICO V1
+          ESTRADA PLAY COMUNISTA - AUTH DIAGNOSTICO V1.1
 
           PACOTE INCREMENTAL DO SERVIDOR.
+
+          Inclui a estabilizacao SERVER_AUTH_PERSIST_V235: o salt de autenticacao passa a ser
+          create-once no banco e recebe fallback privado em config/native-auth-salt-v207.php.
+          Esse arquivo e criado automaticamente no servidor e NAO vem dentro deste ZIP.
 
           1. Faça backup do servidor e do banco.
           2. Extraia este ZIP por cima da raiz atual do Estrada Play.
@@ -71,10 +78,11 @@ jobs:
           test -f "$DEST/api/native_app.php"
           test -f "$DEST/api/native_auth.php"
           test ! -e "$DEST/config/config.php"
+          test ! -e "$DEST/config/native-auth-salt-v207.php"
           ! find "$DEST" -type f | grep -E '\.(apk|mp3|wav|mp4|m4a|ogg|sqlite|db)$'
           (cd "$DEST" && zip -qr "$OUT" .)
           unzip -l "$OUT" | tee /tmp/epc-auth-diag-list.txt
-          ! grep -Eq 'config/config\.php|\.(apk|mp3|wav|mp4|m4a|ogg|sqlite|db)$' /tmp/epc-auth-diag-list.txt
+          ! grep -Eq 'config/config\.php|native-auth-salt-v207\.php|\.(apk|mp3|wav|mp4|m4a|ogg|sqlite|db)$' /tmp/epc-auth-diag-list.txt
           sha256sum "$OUT" | tee /tmp/epc-auth-diag-sha.txt
 
       - name: Upload diagnostics package
@@ -93,6 +101,6 @@ jobs:
           set -euo pipefail
           TAG="estradaplay-server-auth-diagnostico-v1-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" --target "$GITHUB_SHA" \
-            --title "EstradaPlay Server - Auth Diagnostico V1" \
-            --notes "Pacote incremental para diagnosticar pedido recorrente de usuario/senha apos fechar o APK. Alinha native_app.php/native_auth.php com a base atual e adiciona admin_auth_diagnostics.php. O painel verifica driver e identidade do banco por fingerprint, estabilidade do native_auth_salt_v207, schema/persistencia de native_device_credentials, probe de app_settings, validade do refresh e eventos native.* sem expor senha, segredo ou tokens. Nao contem config.php, banco, midia ou APK. Nao faz deploy automatico." \
+            --title "EstradaPlay Server - Auth Diagnostico V1.1" \
+            --notes "Pacote incremental para corrigir/diagnosticar pedido recorrente de usuario/senha apos fechar o APK. Inclui SERVER_AUTH_PERSIST_V235: salt create-once no banco com fallback privado gerado no servidor, evitando divergencia entre requisicoes concorrentes. Alinha native_app.php/native_auth.php e adiciona admin_auth_diagnostics.php, que compara banco, salt efetivo, salt no app_settings, fallback privado, schema/persistencia de native_device_credentials, validade do refresh e eventos native.* sem expor credenciais. Nao contem config.php, salt, banco, midia ou APK. Nao faz deploy automatico." \
             EstradaPlay-SERVIDOR-AUTH-DIAGNOSTICO-v1.zip
