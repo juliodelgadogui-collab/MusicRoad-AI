@@ -18,11 +18,19 @@ import javax.crypto.spec.GCMParameterSpec;
 /**
  * SECURITY_V207: separates the public device identifier from the credential used to authenticate it.
  * Secrets are encrypted with Android Keystore whenever the automotive ROM supports it.
+ *
+ * SESSION_PERSIST_V232: some OEM/automotive ROMs can encrypt successfully and then fail to reopen
+ * the same Keystore key after the process is recreated. A recovery copy of ONLY the random device
+ * secret is therefore kept in this application's private SharedPreferences. It is still removed on
+ * uninstall/clear-data, is never derived from Android ID, and access/refresh tokens remain protected
+ * by the normal Keystore/fallback path. This lets device_login mint fresh short-lived tokens without
+ * asking the driver for a password after every app restart.
  */
 final class SecureDeviceCredential {
     private static final String PREFS = "estradaplay_secure_auth_v207";
     private static final String KEY_ALIAS = "estradaplay.auth.v207";
     private static final String KEY_SECRET = "device_secret";
+    private static final String KEY_SECRET_RECOVERY = "device_secret_recovery_v232";
     private static final String KEY_ACCESS = "access_token";
     private static final String KEY_REFRESH = "refresh_token";
     private static final String KEY_ACCESS_EXP = "access_exp";
@@ -41,11 +49,23 @@ final class SecureDeviceCredential {
 
     synchronized String secret() {
         String current = load(KEY_SECRET);
-        if (current != null && current.length() >= 40) return current;
+        if (validSecret(current)) {
+            ensureRecoverySecret(current);
+            return current;
+        }
+
+        String recovered = loadRecoverySecret();
+        if (validSecret(recovered)) {
+            // Repair the Keystore-backed copy when an OEM provider temporarily lost access to it.
+            save(KEY_SECRET, recovered);
+            return recovered;
+        }
+
         byte[] bytes = new byte[48];
         random.nextBytes(bytes);
         String generated = Base64.encodeToString(bytes, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
         save(KEY_SECRET, generated);
+        ensureRecoverySecret(generated);
         return generated;
     }
 
@@ -70,6 +90,8 @@ final class SecureDeviceCredential {
 
     synchronized void saveTokens(String access, String refresh, long accessExpiresAtMs, long refreshExpiresAtMs) {
         if (access == null || access.trim().isEmpty() || refresh == null || refresh.trim().isEmpty()) return;
+        // Touch secret() so every successful secure session also gets the v2.3.2 recovery mirror.
+        secret();
         save(KEY_ACCESS, access.trim());
         save(KEY_REFRESH, refresh.trim());
         prefs.edit()
@@ -94,6 +116,32 @@ final class SecureDeviceCredential {
             store.load(null);
             if (store.containsAlias(KEY_ALIAS)) store.deleteEntry(KEY_ALIAS);
         } catch (Throwable ignored) {}
+    }
+
+    private boolean validSecret(String value) {
+        return value != null && value.length() >= 40 && value.length() <= 192;
+    }
+
+    private void ensureRecoverySecret(String value) {
+        if (!validSecret(value)) return;
+        String existing = loadRecoverySecret();
+        if (value.equals(existing)) return;
+        // App-private recovery mirror. android:allowBackup=false keeps it out of Android backup.
+        String encoded = Base64.encodeToString(value.getBytes(StandardCharsets.UTF_8),
+                Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+        prefs.edit().putString(KEY_SECRET_RECOVERY, encoded).apply();
+    }
+
+    private String loadRecoverySecret() {
+        String encoded = prefs.getString(KEY_SECRET_RECOVERY, "");
+        if (encoded == null || encoded.isEmpty()) return "";
+        try {
+            byte[] raw = Base64.decode(encoded, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+            String value = new String(raw, StandardCharsets.UTF_8);
+            return validSecret(value) ? value : "";
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     private void save(String key, String value) {
