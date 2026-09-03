@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # EPC_V205_HORIZONTAL_COCKPIT: dedicated landscape automotive composition.
+# Trigger build after workflow registration.
 APP=estrada-play-comunista-app
 OUT=Estrada-Play-Comunista-Universal-2.0.5-Cockpit-Horizontal.apk
 J="$APP/app/src/main/java/com/estradaplay/comunista"
