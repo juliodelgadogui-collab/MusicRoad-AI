@@ -41,8 +41,16 @@ if ($driver === 'mysql') {
     $dbIdentity .= '|' . (string)($cfg['db']['sqlite_path'] ?? '');
 }
 $dbFp = epcad_fp($dbIdentity);
-$salt = trim((string)app_setting('native_auth_salt_v207', ''));
-$saltFp = epcad_fp($salt);
+
+// SERVER_AUTH_PERSIST_V235: compare database, effective and private-file salts without exposing them.
+$dbSalt = trim((string)app_setting('native_auth_salt_v207', ''));
+$effectiveSalt = function_exists('native_auth_salt') ? trim((string)native_auth_salt()) : $dbSalt;
+$fileSalt = function_exists('native_auth_read_file_salt') ? trim((string)native_auth_read_file_salt()) : '';
+$dbSaltFp = epcad_fp($dbSalt);
+$saltFp = epcad_fp($effectiveSalt);
+$fileSaltFp = epcad_fp($fileSalt);
+$dbSaltMatches = $dbSalt !== '' && $effectiveSalt !== '' && hash_equals(strtolower($dbSalt), strtolower($effectiveSalt));
+$fileSaltMatches = $fileSalt === '' || ($effectiveSalt !== '' && hash_equals(strtolower($fileSalt), strtolower($effectiveSalt)));
 
 $expectedColumns = ['device_id','user_id','secret_hash','access_hash','access_expires_at','refresh_hash','refresh_expires_at','revoked_at','created_at','updated_at','last_used_at'];
 $columns = schema_columns('native_device_credentials');
@@ -73,6 +81,8 @@ $statePayload = [
     'checked_at' => date('c'),
     'db_fp' => $dbFp,
     'salt_fp' => $saltFp,
+    'db_salt_fp' => $dbSaltFp,
+    'file_salt_fp' => $fileSaltFp,
     'driver' => $driver,
     'credential_count' => $credentialCount,
 ];
@@ -107,11 +117,15 @@ try {
 
 $critical = [];
 $warnings = [];
-if ($salt === '') $critical[] = 'native_auth_salt_v207 não está persistido em app_settings.';
+if ($effectiveSalt === '') $critical[] = 'O servidor não conseguiu obter um salt de autenticação estável.';
+if ($dbSalt === '') $critical[] = 'native_auth_salt_v207 não está persistido em app_settings mesmo após a tentativa de reparo.';
+if ($dbSalt !== '' && !$dbSaltMatches) $critical[] = 'O salt do banco diverge do salt efetivo usado para validar credenciais.';
+if (!$fileSaltMatches) $critical[] = 'O fallback privado de salt diverge do salt efetivo.';
+if ($fileSalt === '') $warnings[] = 'Fallback config/native-auth-salt-v207.php ainda não existe ou não pôde ser gravado; o banco continua autoritativo.';
 if ($missingColumns) $critical[] = 'Tabela native_device_credentials incompleta: ' . implode(', ', $missingColumns) . '.';
 if (!$dbWriteReadOk) $critical[] = 'Falha ao gravar e reler app_settings na mesma requisição.';
 if ($dbChanged) $critical[] = 'A identidade do banco mudou entre requisições.';
-if ($saltChanged) $critical[] = 'O fingerprint do salt de autenticação mudou entre requisições.';
+if ($saltChanged) $critical[] = 'O fingerprint do salt efetivo mudou entre requisições.';
 if (!$stateWriteOk) $warnings[] = 'Não foi possível gravar o baseline em logs/. A comparação entre requisições ficará limitada.';
 if ($previousProbe === '') $warnings[] = 'Primeira execução do probe. Atualize esta página uma vez para confirmar persistência entre requisições.';
 if ($credentialCount === 0) $warnings[] = 'Nenhuma credencial segura existe em native_device_credentials.';
@@ -123,17 +137,18 @@ $statusClass = $critical ? 'bad' : ($warnings ? 'warn' : 'ok');
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#080507"><title>EPC · Diagnóstico da autenticação</title>
 <style>
-:root{--bg:#080507;--panel:#160b0e;--panel2:#211014;--line:#4b2931;--text:#f5eee2;--muted:#ae9792;--red:#d4142f;--gold:#e2b94c;--green:#45d483;--blue:#5da9ff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.shell{max-width:1280px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.kicker{color:var(--red);font-size:11px;font-weight:850;letter-spacing:.14em}.top h1{margin:4px 0 5px;font-size:29px}.muted{color:var(--muted)}a{color:var(--text);text-decoration:none}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid var(--line);border-radius:11px;background:var(--panel2);padding:10px 14px;font-weight:750}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;margin:20px 0}.card{background:var(--panel);border:1px solid #3d2228;border-radius:16px;padding:16px}.metric{font-size:26px;font-weight:850}.label{font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}.notice{border:1px solid;border-radius:13px;padding:14px 16px;margin:10px 0}.notice.ok{background:#102c21;border-color:#286748}.notice.warn{background:#302610;border-color:#786128}.notice.bad{background:#3a1118;border-color:#8e2735}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.tablewrap{overflow:auto;border:1px solid #3d2228;border-radius:16px;background:var(--panel);margin-top:14px}table{width:100%;border-collapse:collapse;min-width:1050px}th,td{padding:12px;border-bottom:1px solid #321b20;text-align:left;vertical-align:top}th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);background:#10080a}.pill{display:inline-block;border:1px solid #554047;border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850}.pill.ok{color:var(--green);border-color:#286748;background:#102c21}.pill.warn{color:var(--gold);border-color:#786128;background:#302610}.pill.bad{color:#ff8790;border-color:#8e2735;background:#3a1118}.section{margin-top:24px}.section h2{margin:0 0 6px;font-size:20px}.small{font-size:12px}.steps{line-height:1.55}.audit{display:grid;grid-template-columns:180px 1fr 110px;gap:8px;padding:9px 0;border-bottom:1px solid #321b20}.audit:last-child{border:0}@media(max-width:800px){.shell{padding:15px}.top{flex-direction:column}.grid{grid-template-columns:repeat(2,1fr)}.audit{grid-template-columns:1fr}}
+:root{--bg:#080507;--panel:#160b0e;--panel2:#211014;--line:#4b2931;--text:#f5eee2;--muted:#ae9792;--red:#d4142f;--gold:#e2b94c;--green:#45d483;--blue:#5da9ff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.shell{max-width:1280px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.kicker{color:var(--red);font-size:11px;font-weight:850;letter-spacing:.14em}.top h1{margin:4px 0 5px;font-size:29px}.muted{color:var(--muted)}a{color:var(--text);text-decoration:none}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid var(--line);border-radius:11px;background:var(--panel2);padding:10px 14px;font-weight:750}.grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px;margin:20px 0}.card{background:var(--panel);border:1px solid #3d2228;border-radius:16px;padding:16px}.metric{font-size:26px;font-weight:850}.label{font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}.notice{border:1px solid;border-radius:13px;padding:14px 16px;margin:10px 0}.notice.ok{background:#102c21;border-color:#286748}.notice.warn{background:#302610;border-color:#786128}.notice.bad{background:#3a1118;border-color:#8e2735}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.tablewrap{overflow:auto;border:1px solid #3d2228;border-radius:16px;background:var(--panel);margin-top:14px}table{width:100%;border-collapse:collapse;min-width:1050px}th,td{padding:12px;border-bottom:1px solid #321b20;text-align:left;vertical-align:top}th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);background:#10080a}.pill{display:inline-block;border:1px solid #554047;border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850}.pill.ok{color:var(--green);border-color:#286748;background:#102c21}.pill.warn{color:var(--gold);border-color:#786128;background:#302610}.pill.bad{color:#ff8790;border-color:#8e2735;background:#3a1118}.section{margin-top:24px}.section h2{margin:0 0 6px;font-size:20px}.small{font-size:12px}.steps{line-height:1.55}.audit{display:grid;grid-template-columns:180px 1fr 110px;gap:8px;padding:9px 0;border-bottom:1px solid #321b20}.audit:last-child{border:0}@media(max-width:900px){.shell{padding:15px}.top{flex-direction:column}.grid{grid-template-columns:repeat(2,1fr)}.audit{grid-template-columns:1fr}}
 </style></head><body><main class="shell">
-<header class="top"><div><div class="kicker">EPC · AUTH DIAGNOSTICS V1</div><h1>Diagnóstico da sessão do aparelho</h1><div class="muted">Somente administrador. Nenhum token, senha, segredo ou hash completo é exibido.</div></div><div class="actions"><a class="btn" href="admin_devices.php">Aparelhos</a><a class="btn" href="admin_epc.php">Painel EPC</a><a class="btn" href="admin_auth_diagnostics.php">Atualizar</a></div></header>
+<header class="top"><div><div class="kicker">EPC · AUTH DIAGNOSTICS V1.1</div><h1>Diagnóstico da sessão do aparelho</h1><div class="muted">Somente administrador. Nenhum token, senha, segredo ou hash completo é exibido.</div></div><div class="actions"><a class="btn" href="admin_devices.php">Aparelhos</a><a class="btn" href="admin_epc.php">Painel EPC</a><a class="btn" href="admin_auth_diagnostics.php">Atualizar</a></div></header>
 
 <div class="notice <?=$statusClass?>"><strong>RESULTADO: <?=epcad_e($status)?></strong><br><?php if(!$critical && !$warnings):?>Banco, salt, schema e persistência básica estão consistentes nesta verificação.<?php else:?><?php foreach($critical as $x):?><div>• <?=epcad_e($x)?></div><?php endforeach;?><?php foreach($warnings as $x):?><div>• <?=epcad_e($x)?></div><?php endforeach;?><?php endif;?></div>
 
 <section class="grid">
 <div class="card"><div class="label">Driver</div><div class="metric"><?=epcad_e(strtoupper($driver))?></div><div class="small muted">DB fp <span class="mono"><?=epcad_e($dbFp)?></span></div></div>
-<div class="card"><div class="label">Salt de autenticação</div><div class="metric"><?=$salt!==''?'PRESENTE':'AUSENTE'?></div><div class="small muted">salt fp <span class="mono"><?=epcad_e($saltFp?:'—')?></span></div></div>
-<div class="card"><div class="label">Credenciais seguras</div><div class="metric"><?=$credentialCount?></div><div class="small muted">aparelhos conhecidos: <?=$deviceCount?></div></div>
-<div class="card"><div class="label">Probe app_settings</div><div class="metric"><?=$dbWriteReadOk?'OK':'FALHA'?></div><div class="small muted">anterior: <?=$previousProbe!==''?'encontrado':'primeira execução'?></div></div>
+<div class="card"><div class="label">Salt efetivo</div><div class="metric"><?=$effectiveSalt!==''?'ESTÁVEL':'AUSENTE'?></div><div class="small muted">fp <span class="mono"><?=epcad_e($saltFp?:'—')?></span></div></div>
+<div class="card"><div class="label">Salt no banco</div><div class="metric"><?=$dbSaltMatches?'OK':'FALHA'?></div><div class="small muted">fp <span class="mono"><?=epcad_e($dbSaltFp?:'—')?></span></div></div>
+<div class="card"><div class="label">Fallback privado</div><div class="metric"><?=$fileSalt===''?'AUSENTE':($fileSaltMatches?'OK':'FALHA')?></div><div class="small muted">fp <span class="mono"><?=epcad_e($fileSaltFp?:'—')?></span></div></div>
+<div class="card"><div class="label">Credenciais seguras</div><div class="metric"><?=$credentialCount?></div><div class="small muted">aparelhos conhecidos: <?=$deviceCount?> · probe <?=$dbWriteReadOk?'OK':'FALHA'?></div></div>
 </section>
 
 <section class="section"><h2>Aparelhos e credenciais</h2><div class="muted small">Procure pelo modelo do seu celular. Após fazer login, “credencial” deve ficar SEGURA e “último uso seguro” deve avançar quando o app é reaberto.</div>
@@ -159,11 +174,11 @@ elseif(empty($r['last_used_at'])){$reading='NUNCA REVALIDOU';$cls='warn';}
 <?php foreach($events as $ev):?><div class="audit"><span class="mono small"><?=epcad_e($ev['created_at'])?></span><strong><?=epcad_e($ev['action'])?></strong><span class="small muted">user #<?=epcad_e((string)$ev['user_id'])?></span></div><?php endforeach;?><?php if(!$events):?><div class="muted">Nenhum evento native.* encontrado no audit_logs.</div><?php endif;?></div></section>
 
 <section class="section"><h2>Como confirmar o defeito</h2><div class="card steps small">
-1. Atualize esta página uma vez. O resultado não deve acusar mudança de <span class="mono">DB fp</span> ou <span class="mono">salt fp</span>.<br>
+1. Atualize esta página uma vez. <strong>DB fp, salt efetivo, salt no banco e fallback</strong> devem permanecer iguais.<br>
 2. No celular, faça login no Estrada Play uma vez.<br>
 3. Atualize esta página: seu aparelho deve aparecer como <strong>SEGURA</strong> e com refresh válido.<br>
 4. Feche completamente o app e abra novamente.<br>
-5. Atualize esta página de novo. Se o app pedir senha e o aparelho continuar SEGURA, compare “último uso seguro”. Se não avançar, o servidor rejeitou a revalidação; se a credencial sumir, o banco/tabela não está persistindo; se salt/db fp mudar, a causa está confirmada no backend.<br><br>
-Baseline em arquivo: <strong><?=$stateWriteOk?'OK':'NÃO GRAVOU'?></strong>. PHP <?=epcad_e(PHP_VERSION)?> · servidor <?=epcad_e(date('Y-m-d H:i:s'))?>.
+5. Atualize esta página de novo. Se o app pedir senha e o aparelho continuar SEGURA, compare “último uso seguro”. Se não avançar, a revalidação foi rejeitada; se a credencial sumir, o banco/tabela não está persistindo; se DB fp ou algum salt mudar, a causa está confirmada no backend.<br><br>
+Probe anterior: <strong><?=$previousProbe!==''?'ENCONTRADO':'PRIMEIRA EXECUÇÃO'?></strong> · baseline em arquivo: <strong><?=$stateWriteOk?'OK':'NÃO GRAVOU'?></strong>. PHP <?=epcad_e(PHP_VERSION)?> · servidor <?=epcad_e(date('Y-m-d H:i:s'))?>.
 </div></section>
 </main></body></html>
