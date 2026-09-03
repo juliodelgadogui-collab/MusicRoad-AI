@@ -953,15 +953,11 @@ public final class RoadMapActivity extends ComponentActivity {
         if (navEtaText != null) {
             String eta = new SimpleDateFormat("HH:mm", Locale.getDefault())
                     .format(new Date(System.currentTimeMillis() + (long) (dur * 1000)));
-            navEtaText.setText(eta + "
-CHEGADA");
+            navEtaText.setText(eta + "\nCHEGADA");
         }
-        if (navRemainingText != null) navRemainingText.setText(remainDistance(rem) + "
-RESTANTE");
-        if (navDurationText != null) navDurationText.setText(durationText(dur) + "
-DURAÇÃO");
-        if (destinationText != null) destinationText.setText(remainDistance(rem) + " · " + durationText(dur) + "
-" + instruction);
+        if (navRemainingText != null) navRemainingText.setText(remainDistance(rem) + "\nRESTANTE");
+        if (navDurationText != null) navDurationText.setText(durationText(dur) + "\nDURAÇÃO");
+        if (destinationText != null) destinationText.setText(remainDistance(rem) + " · " + durationText(dur) + "\n" + instruction);
     }
 
     private void updateRouteProgress(double lat, double lon) {
