@@ -196,15 +196,19 @@ function require_client(): array
     return $user;
 }
 
+// APP_SETTINGS_KEY_QUOTE_V236: `key` is a MySQL/MariaDB keyword. Always quote it when reading.
 function app_setting(string $key, ?string $default = null): ?string
 {
     ensure_schema();
     try {
-        $stmt = db()->prepare('SELECT value FROM app_settings WHERE key = ? LIMIT 1');
+        $stmt = db()->prepare('SELECT value FROM app_settings WHERE `key` = ? LIMIT 1');
         $stmt->execute([$key]);
         $value = $stmt->fetchColumn();
         return $value === false ? $default : (string)$value;
-    } catch (Throwable $e) { return $default; }
+    } catch (Throwable $e) {
+        error_log('app_setting read failed: ' . $e->getMessage());
+        return $default;
+    }
 }
 
 function set_app_setting(string $key, ?string $value): void
