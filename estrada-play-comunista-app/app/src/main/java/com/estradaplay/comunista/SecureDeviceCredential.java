@@ -19,12 +19,13 @@ import javax.crypto.spec.GCMParameterSpec;
  * SECURITY_V207: separates the public device identifier from the credential used to authenticate it.
  * Secrets are encrypted with Android Keystore whenever the automotive ROM supports it.
  *
- * SESSION_PERSIST_V232: some OEM/automotive ROMs can encrypt successfully and then fail to reopen
- * the same Keystore key after the process is recreated. A recovery copy of ONLY the random device
- * secret is therefore kept in this application's private SharedPreferences. It is still removed on
- * uninstall/clear-data, is never derived from Android ID, and access/refresh tokens remain protected
- * by the normal Keystore/fallback path. This lets device_login mint fresh short-lived tokens without
- * asking the driver for a password after every app restart.
+ * SESSION_PERSIST_V232: keeps an app-private recovery copy of the random installation secret for
+ * OEM/automotive ROMs whose Keystore can encrypt but later fails to reopen the key.
+ *
+ * SESSION_RECOVERY_V234: access/refresh tokens also receive an app-private recovery mirror bounded
+ * by their server expiry. android:allowBackup=false keeps these mirrors out of Android backup and
+ * uninstall/clear-data removes them. The Keystore copy remains the primary storage; recovery exists
+ * only so a process restart does not become a password prompt on broken OEM Keystore providers.
  */
 final class SecureDeviceCredential {
     private static final String PREFS = "estradaplay_secure_auth_v207";
@@ -33,6 +34,8 @@ final class SecureDeviceCredential {
     private static final String KEY_SECRET_RECOVERY = "device_secret_recovery_v232";
     private static final String KEY_ACCESS = "access_token";
     private static final String KEY_REFRESH = "refresh_token";
+    private static final String KEY_ACCESS_RECOVERY = "access_token_recovery_v234";
+    private static final String KEY_REFRESH_RECOVERY = "refresh_token_recovery_v234";
     private static final String KEY_ACCESS_EXP = "access_exp";
     private static final String KEY_REFRESH_EXP = "refresh_exp";
     private static final String PREFIX_ENCRYPTED = "g1:";
@@ -56,7 +59,6 @@ final class SecureDeviceCredential {
 
         String recovered = loadRecoverySecret();
         if (validSecret(recovered)) {
-            // Repair the Keystore-backed copy when an OEM provider temporarily lost access to it.
             save(KEY_SECRET, recovered);
             return recovered;
         }
@@ -70,47 +72,63 @@ final class SecureDeviceCredential {
     }
 
     synchronized String accessToken() {
-        String value = load(KEY_ACCESS);
-        if (value == null || value.isEmpty()) return "";
         long exp = prefs.getLong(KEY_ACCESS_EXP, 0L);
         if (exp > 0L && System.currentTimeMillis() >= exp - 15_000L) return "";
-        return value;
+
+        String value = load(KEY_ACCESS);
+        if (!validToken(value)) {
+            value = loadRecoveryToken(KEY_ACCESS_RECOVERY);
+            if (validToken(value)) save(KEY_ACCESS, value);
+        }
+        return validToken(value) ? value : "";
     }
 
     synchronized String refreshToken() {
-        String value = load(KEY_REFRESH);
-        if (value == null || value.isEmpty()) return "";
         long exp = prefs.getLong(KEY_REFRESH_EXP, 0L);
         if (exp > 0L && System.currentTimeMillis() >= exp - 30_000L) {
             clearTokens();
             return "";
         }
-        return value;
+
+        String value = load(KEY_REFRESH);
+        if (!validToken(value)) {
+            value = loadRecoveryToken(KEY_REFRESH_RECOVERY);
+            if (validToken(value)) save(KEY_REFRESH, value);
+        }
+        return validToken(value) ? value : "";
     }
 
     synchronized void saveTokens(String access, String refresh, long accessExpiresAtMs, long refreshExpiresAtMs) {
-        if (access == null || access.trim().isEmpty() || refresh == null || refresh.trim().isEmpty()) return;
-        // Touch secret() so every successful secure session also gets the v2.3.2 recovery mirror.
+        String a = access == null ? "" : access.trim();
+        String r = refresh == null ? "" : refresh.trim();
+        if (!validToken(a) || !validToken(r)) return;
+
         secret();
-        save(KEY_ACCESS, access.trim());
-        save(KEY_REFRESH, refresh.trim());
+        save(KEY_ACCESS, a);
+        save(KEY_REFRESH, r);
+
+        // Commit is deliberate: auth is read by a separately isolated radio process in v2.3.4.
         prefs.edit()
+                .putString(KEY_ACCESS_RECOVERY, encodeRecoveryToken(a))
+                .putString(KEY_REFRESH_RECOVERY, encodeRecoveryToken(r))
                 .putLong(KEY_ACCESS_EXP, Math.max(0L, accessExpiresAtMs))
                 .putLong(KEY_REFRESH_EXP, Math.max(0L, refreshExpiresAtMs))
-                .apply();
+                .commit();
     }
 
     synchronized void clearTokens() {
         prefs.edit()
                 .remove(KEY_ACCESS)
                 .remove(KEY_REFRESH)
+                .remove(KEY_ACCESS_RECOVERY)
+                .remove(KEY_REFRESH_RECOVERY)
                 .remove(KEY_ACCESS_EXP)
                 .remove(KEY_REFRESH_EXP)
-                .apply();
+                .commit();
     }
 
     synchronized void clearAllForReset() {
-        prefs.edit().clear().apply();
+        prefs.edit().clear().commit();
         try {
             KeyStore store = KeyStore.getInstance("AndroidKeyStore");
             store.load(null);
@@ -122,14 +140,17 @@ final class SecureDeviceCredential {
         return value != null && value.length() >= 40 && value.length() <= 192;
     }
 
+    private boolean validToken(String value) {
+        return value != null && value.length() >= 24 && value.length() <= 512;
+    }
+
     private void ensureRecoverySecret(String value) {
         if (!validSecret(value)) return;
         String existing = loadRecoverySecret();
         if (value.equals(existing)) return;
-        // App-private recovery mirror. android:allowBackup=false keeps it out of Android backup.
         String encoded = Base64.encodeToString(value.getBytes(StandardCharsets.UTF_8),
                 Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
-        prefs.edit().putString(KEY_SECRET_RECOVERY, encoded).apply();
+        prefs.edit().putString(KEY_SECRET_RECOVERY, encoded).commit();
     }
 
     private String loadRecoverySecret() {
@@ -144,18 +165,34 @@ final class SecureDeviceCredential {
         }
     }
 
+    private String encodeRecoveryToken(String value) {
+        if (!validToken(value)) return "";
+        return Base64.encodeToString(value.getBytes(StandardCharsets.UTF_8),
+                Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+    }
+
+    private String loadRecoveryToken(String key) {
+        String encoded = prefs.getString(key, "");
+        if (encoded == null || encoded.isEmpty()) return "";
+        try {
+            byte[] raw = Base64.decode(encoded, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+            String value = new String(raw, StandardCharsets.UTF_8);
+            return validToken(value) ? value : "";
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
     private void save(String key, String value) {
         if (value == null) return;
         String stored;
         try {
             stored = encrypt(value);
         } catch (Throwable unavailableKeystore) {
-            // Some old automotive ROMs ship broken Keystore providers. App-private storage is a
-            // compatibility fallback; the credential is still random and never derived from Android ID.
             stored = PREFIX_PRIVATE_FALLBACK + Base64.encodeToString(
                     value.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP | Base64.NO_PADDING);
         }
-        prefs.edit().putString(key, stored).apply();
+        prefs.edit().putString(key, stored).commit();
     }
 
     private String load(String key) {
