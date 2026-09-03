@@ -3,5 +3,5 @@ require __DIR__ . '/api/bootstrap.php';
 ensure_default_users();
 $user = current_user();
 if (!$user) { header('Location: login.php'); exit; }
-header('Location: ' . (($user['role'] ?? '') === 'admin' ? 'admin.php' : 'client.php'));
+header('Location: ' . (($user['role'] ?? '') === 'admin' ? 'admin_central.php' : 'client.php'));
 exit;
