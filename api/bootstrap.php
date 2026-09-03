@@ -325,6 +325,28 @@ function http_json(string $url, ?string $postBody = null, array $headers = []): 
     return is_array($data) ? $data : null;
 }
 
-
 require_once __DIR__ . '/server_500mb.php';
 server_rotate_logs();
+
+// AUTH_SALT_BRIDGE_V236: v2.3.5 diagnostics exposed that older MySQL reads could not see
+// app_settings.`key`. Existing secure credentials were therefore hashed with the private file
+// fallback. Before native_auth.php is loaded, copy that already-effective salt into the database
+// so fixing the SQL reader cannot silently switch hash identity and invalidate those credentials.
+function ensure_native_auth_salt_storage_v236(): void
+{
+    $file = __DIR__ . '/../config/native-auth-salt-v207.php';
+    if (!is_file($file)) return;
+    try { $fileSalt = include $file; }
+    catch (Throwable $e) { return; }
+    $fileSalt = strtolower(trim(is_string($fileSalt) ? $fileSalt : ''));
+    if (!preg_match('/^[a-f0-9]{64}$/', $fileSalt)) return;
+
+    $dbSalt = strtolower(trim((string)app_setting('native_auth_salt_v207', '')));
+    if ($dbSalt !== $fileSalt) {
+        try { set_app_setting('native_auth_salt_v207', $fileSalt); }
+        catch (Throwable $e) { error_log('AUTH_SALT_BRIDGE_V236 write failed: ' . $e->getMessage()); return; }
+    }
+    $verify = strtolower(trim((string)app_setting('native_auth_salt_v207', '')));
+    if (!hash_equals($fileSalt, $verify)) error_log('AUTH_SALT_BRIDGE_V236 verify failed');
+}
+ensure_native_auth_salt_storage_v236();
