@@ -27,15 +27,14 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class RoadSafetyService extends Service {
+    // BASE_CONSOLIDADA_V210: Android Service coordinates extracted/tested policies.
     static final String ACTION_STATE = "com.estradaplay.comunista.ROAD_SAFETY_STATE";
     private static final String CHANNEL = "estradaplay_road_safety";
     private static final int NOTIFICATION_ID = 4110;
@@ -46,7 +45,7 @@ public final class RoadSafetyService extends Service {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final ExecutorService limitIo = Executors.newSingleThreadExecutor();
     private final AtomicBoolean fetching = new AtomicBoolean(false);
-    private final Map<String, Long> alertedAt = new HashMap<>();
+    private final RoadAlertCooldown alertCooldown = new RoadAlertCooldown(ALERT_COOLDOWN_MS, 300);
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private LocationManager locationManager;
@@ -85,9 +84,7 @@ public final class RoadSafetyService extends Service {
     private String lastStateText = "GPS ativo · preparando proteção";
     // ROAD_LIMIT_V202: announce road limit changes, radar limits and one-shot overspeed.
     private final AtomicBoolean roadLimitResolving = new AtomicBoolean(false);
-    private volatile int currentRoadLimitKmh;
-    private int announcedRoadLimitKmh;
-    private boolean roadOverspeedWarned;
+    private final RoadLimitPolicy roadLimitPolicy = new RoadLimitPolicy();
     private long lastRoadLimitCheckAt;
     // ROAD_THOUGHTS_V142: low-priority cultural layer; safety always wins.
     private final long thoughtSessionStartedAt = System.currentTimeMillis();
@@ -268,37 +265,15 @@ public final class RoadSafetyService extends Service {
         evaluateRoadLimit(speedKmh);
         ensureCoverage(loc.getLatitude(), loc.getLongitude(), heading);
         List<RoadHazard> nearby = packs.nearby(loc.getLatitude(), loc.getLongitude(), 1900);
-        RoadHazard best = null;
-        RoadHazard next = null;
-        double bestForward = Double.MAX_VALUE;
-        double bestDistance = Double.MAX_VALUE;
-        double bestScore = Double.MAX_VALUE;
-        double nextForward = Double.MAX_VALUE;
-        double nextScore = Double.MAX_VALUE;
-
-        if (Float.isFinite(heading) && speedKmh >= 3.0) {
-            for (RoadHazard h : nearby) {
-                if (!shouldAlert(h)) continue;
-                Match m = match(loc.getLatitude(), loc.getLongitude(), heading, speedKmh, h);
-                if (!m.valid) continue;
-                double score = m.forwardM + hazardPriorityBias(h.type);
-                if (score < bestScore) {
-                    best = h;
-                    bestForward = m.forwardM;
-                    bestDistance = m.distanceM;
-                    bestScore = score;
-                }
-            }
-            if (best != null) {
-                for (RoadHazard h : nearby) {
-                    if (h == null || h.id.equals(best.id) || !shouldAlert(h)) continue;
-                    Match m = match(loc.getLatitude(), loc.getLongitude(), heading, speedKmh, h);
-                    if (!m.valid || m.forwardM < bestForward + 15) continue;
-                    double score = m.forwardM + hazardPriorityBias(h.type);
-                    if (score < nextScore) { next = h; nextForward = m.forwardM; nextScore = score; }
-                }
-            }
-        }
+        RoadHazardSelector.Selection selection = RoadHazardSelector.select(
+                nearby, loc.getLatitude(), loc.getLongitude(),
+                Float.isFinite(heading) ? heading : Double.NaN, speedKmh,
+                DriveSettings.rainNow(this), alertCooldown, nowWall);
+        RoadHazard best = selection.best;
+        RoadHazard next = selection.next;
+        double bestForward = selection.bestMatch.forwardM;
+        double bestDistance = selection.bestMatch.distanceM;
+        double nextForward = selection.nextMatch.forwardM;
 
         if (best != null) {
             rememberAlert(best);
@@ -392,25 +367,16 @@ public final class RoadSafetyService extends Service {
     }
 
     private void applyRoadLimit(int limitKmh) {
-        if (limitKmh < 10 || limitKmh > 180) return;
-        boolean changed = currentRoadLimitKmh != limitKmh;
-        currentRoadLimitKmh = limitKmh;
-        if (changed) roadOverspeedWarned = false;
-        if (limitKmh != announcedRoadLimitKmh && speakRoadLimitVoice(limitKmh)) {
-            announcedRoadLimitKmh = limitKmh;
+        if (!roadLimitPolicy.applyLimit(limitKmh)) return;
+        if (roadLimitPolicy.shouldAnnounceLimit() && speakRoadLimitVoice(roadLimitPolicy.currentLimit())) {
+            roadLimitPolicy.markLimitAnnounced();
         }
     }
 
     private void evaluateRoadLimit(double speedKmh) {
-        int limit = currentRoadLimitKmh;
-        if (limit <= 0 || !Double.isFinite(speedKmh)) return;
-        if (speedKmh <= limit) {
-            roadOverspeedWarned = false;
-            return;
-        }
-        // Small GPS tolerance prevents a 60/61 oscillation from becoming a false warning.
-        if (!roadOverspeedWarned && speedKmh >= limit + 2.0 && speakOverspeedVoice(limit)) {
-            roadOverspeedWarned = true;
+        int limit = roadLimitPolicy.currentLimit();
+        if (roadLimitPolicy.observeSpeedAndShouldWarn(speedKmh) && speakOverspeedVoice(limit)) {
+            roadLimitPolicy.markOverspeedWarned();
         }
     }
 
@@ -465,65 +431,12 @@ public final class RoadSafetyService extends Service {
         }
     }
 
-    private Match match(double lat, double lon, float heading, double speedKmh, RoadHazard h) {
-        double dLat = h.lat - lat;
-        double dLon = h.lon - lon;
-        double north = dLat * 110540.0;
-        double east = dLon * 111320.0 * Math.max(0.25, Math.cos(Math.toRadians(lat)));
-        double rad = Math.toRadians(heading);
-        double forward = east * Math.sin(rad) + north * Math.cos(rad);
-        double lateral = Math.abs(east * Math.cos(rad) - north * Math.sin(rad));
-        double distance = Math.hypot(east, north);
-        // If a bump enters the local pack very late, still warn while it is almost
-        // under the car. Other point types retain the normal forward safety gate.
-        if ("QUEBRA_MOLAS".equals(h.type)) {
-            if (forward < -12.0) return Match.no();
-        } else if (forward <= 12.0) return Match.no();
-
-        double maxDistance;
-        double maxLateral;
-        double minSpeed;
-        switch (h.type) {
-            case "SEMAFORO":
-                maxDistance = speedKmh >= 55 ? 300 : 220; maxLateral = 55; minSpeed = 18; break;
-            case "QUEBRA_MOLAS":
-                maxDistance = speedKmh >= 55 ? 430 : 300; maxLateral = 55; minSpeed = 3; break;
-            case "CAMERA_MONITORAMENTO":
-                maxDistance = speedKmh >= 80 ? 650 : 450; maxLateral = 75; minSpeed = 8; break;
-            case "PEDAGIO":
-                maxDistance = speedKmh >= 80 ? 1100 : 800; maxLateral = 150; minSpeed = 10; break;
-            case "PASSAGEM_NIVEL":
-                maxDistance = speedKmh >= 70 ? 700 : 500; maxLateral = 85; minSpeed = 10; break;
-            default:
-                maxDistance = speedKmh >= 95 ? 1250 : (speedKmh >= 70 ? 1000 : 700);
-                maxLateral = speedKmh >= 70 ? 115 : 85;
-                minSpeed = 10;
-                break;
-        }
-        if (DriveSettings.rainNow(this)) maxDistance *= 1.18;
-        if (speedKmh < minSpeed || forward > maxDistance || lateral > maxLateral || distance > maxDistance * 1.18) return Match.no();
-        if (Double.isFinite(h.heading) && angleDiff(heading, h.heading) > 75.0) return Match.no();
-        return new Match(true, forward, lateral, distance);
-    }
-
-    private double hazardPriorityBias(String type) {
-        if ("QUEBRA_MOLAS".equals(type)) return -220.0;
-        if ("RADAR".equals(type)) return -160.0;
-        if ("PASSAGEM_NIVEL".equals(type)) return -130.0;
-        if ("SEMAFORO".equals(type)) return -90.0;
-        if ("CAMERA_MONITORAMENTO".equals(type)) return -35.0;
-        return 0.0;
-    }
-
     private boolean shouldAlert(RoadHazard h) {
-        Long when = alertedAt.get(h.id);
-        return when == null || System.currentTimeMillis() - when > ALERT_COOLDOWN_MS;
+        return h != null && alertCooldown.shouldAlert(h.id, System.currentTimeMillis());
     }
 
     private void rememberAlert(RoadHazard h) {
-        long now = System.currentTimeMillis();
-        alertedAt.put(h.id, now);
-        if (alertedAt.size() > 300) alertedAt.entrySet().removeIf(e -> now - e.getValue() > ALERT_COOLDOWN_MS);
+        if (h != null) alertCooldown.remember(h.id, System.currentTimeMillis());
     }
 
     private float heading(Location loc) {
@@ -800,16 +713,9 @@ public final class RoadSafetyService extends Service {
     }
 
 
-    private String distanceSpeech(double m) {
-        if (m < 120) return Math.max(30, (int)(Math.round(m / 10.0) * 10)) + " metros";
-        if (m >= 1000) return String.format(Locale.getDefault(), "%.1f quilômetros", m / 1000.0);
-        return Math.max(100, (int)(Math.round(m / 50.0) * 50)) + " metros";
-    }
+    private String distanceSpeech(double m) { return RoadSafetyFormat.distanceSpeech(m); }
 
-    private String distanceText(double m) {
-        if (m >= 1000) return String.format(Locale.getDefault(), "%.1f km", m / 1000.0);
-        return Math.max(10, (int)(Math.round(m / 10.0) * 10)) + " m";
-    }
+    private String distanceText(double m) { return RoadSafetyFormat.distanceText(m); }
 
     private void broadcast(Location loc, double speedKmh, RoadHazard h, double distance, String status,
                            RoadHazard next, double nextDistance) {
@@ -850,7 +756,7 @@ public final class RoadSafetyService extends Service {
         i.putExtra("lat", lat);
         i.putExtra("lon", lon);
         i.putExtra("speed_kmh", speedKmh);
-        i.putExtra("road_limit_kmh", currentRoadLimitKmh);
+        i.putExtra("road_limit_kmh", roadLimitPolicy.currentLimit());
         i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f);
         i.putExtra("pack_count", packs.packCount());
         i.putExtra("state_pack_count", packs.statePackCount());
@@ -962,12 +868,4 @@ public final class RoadSafetyService extends Service {
         super.onDestroy();
     }
 
-    private static final class Match {
-        final boolean valid;
-        final double forwardM, lateralM, distanceM;
-        Match(boolean valid, double forwardM, double lateralM, double distanceM) {
-            this.valid=valid; this.forwardM=forwardM; this.lateralM=lateralM; this.distanceM=distanceM;
-        }
-        static Match no() { return new Match(false, 0, 0, 0); }
-    }
 }
