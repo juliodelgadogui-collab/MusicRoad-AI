@@ -1,0 +1,22 @@
+/* MusicRoad v13.4.3 — compact navigation overlay for the v13.4.2 server UI */
+body[data-screen="map"] .aurora-topbar{z-index:1200!important}
+#screen-map{overflow:hidden!important}
+#screen-map .map-toolbar{position:absolute!important;z-index:610!important;top:14px!important;left:auto!important;right:14px!important;width:auto!important;height:48px!important;min-height:48px!important;padding:0!important;display:block!important;background:transparent!important}
+#screen-map #mapBack,#screen-map #fitRoute{display:none!important}
+#screen-map .map-toolbar-actions{display:flex!important;gap:8px!important;width:auto!important;max-width:none!important;margin:0!important}
+#screen-map .map-toolbar-actions #reportPoint,#screen-map .map-toolbar-actions #recenterMap{display:grid!important;width:46px!important;height:46px!important;min-height:46px!important;border-radius:17px!important;background:rgba(5,11,24,.90)!important;border:1px solid rgba(156,175,222,.18)!important;box-shadow:0 8px 26px rgba(0,0,0,.32)!important}
+#screen-map .aurora-turn-card{top:12px!important;left:72px!important;right:118px!important;min-height:64px!important;max-height:64px!important;border-radius:17px!important;padding:8px 10px!important;grid-template-columns:28px minmax(0,1fr)!important;gap:7px!important;overflow:hidden!important}
+#screen-map .turn-icon{font-size:27px!important}
+#screen-map .aurora-turn-card strong{font-size:16px!important;line-height:1.05!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+#screen-map .aurora-turn-card span{font-size:11px!important;line-height:1.1!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+#screen-map .aurora-turn-card small{display:none!important}
+#screen-map .turn-stats{display:none!important}
+#screen-map .map-driving-hud{top:90px!important;left:14px!important;width:88px!important;gap:8px!important}
+#screen-map .hud-speed{width:82px!important;height:82px!important}
+#screen-map .hud-speed strong{font-size:33px!important}
+#screen-map .hud-metric:not(.radar){width:62px!important;height:62px!important;margin-left:10px!important}
+#screen-map .hud-metric:not(.radar) strong{font-size:22px!important}
+#screen-map .hud-metric.radar{position:absolute!important;top:auto!important;left:auto!important;right:14px!important;bottom:calc(94px + var(--mr-safe-bottom))!important;width:124px!important;min-height:72px!important;border-radius:18px!important;padding:10px 12px!important;z-index:560!important}
+#screen-map .hud-metric.radar strong{font-size:19px!important;color:#fff!important}
+#screen-map .radar-coverage{display:none!important}
+@media(max-width:390px){#screen-map .aurora-turn-card{left:66px!important;right:112px!important}}
