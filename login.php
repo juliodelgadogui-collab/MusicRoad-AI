@@ -2,7 +2,7 @@
 require __DIR__ . '/api/bootstrap.php';
 ensure_default_users();
 if ($u = current_user()) {
-    header('Location: ' . (($u['role'] ?? '') === 'admin' ? 'admin_epc.php' : 'client.php'));
+    header('Location: ' . (($u['role'] ?? '') === 'admin' ? 'admin_central.php' : 'client.php'));
     exit;
 }
 $error = '';
@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $upd = db()->prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?");
         $upd->execute([(int)$user['id']]);
         audit_log('auth.login', ['user_id'=>(int)$user['id'],'role'=>$user['role']]);
-        header('Location: ' . (($user['role'] ?? '') === 'admin' ? 'admin_epc.php' : 'client.php'));
+        header('Location: ' . (($user['role'] ?? '') === 'admin' ? 'admin_central.php' : 'client.php'));
         exit;
     } else {
         $error = 'Usuário ou senha inválidos.';
@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div class="brand login-brand"><span class="brand-mark" style="background:#a51218;color:#f2d47d">★</span><strong>Estrada Play Comunista</strong></div>
       <span class="version-chip">Servidor Central</span>
       <h1>Acesso EPC</h1>
-      <p><strong>Administrador</strong> entra na Central Administrativa. <strong>Cliente</strong> mantém o acesso normal da conta.</p>
+      <p><strong>Administrador</strong> entra na Administração Unificada. <strong>Cliente</strong> mantém o acesso normal da conta.</p>
       <?php if ($error): ?><div class="alert"><?= htmlspecialchars($error) ?></div><?php endif; ?>
       <label>Usuário ou e-mail<input name="login" autocomplete="username" required></label>
       <label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
