@@ -4,6 +4,11 @@ plugins {
 
 def estradaPlayUrl = project.findProperty('ESTRADAPLAY_URL') ?: 'https://musicroad1.gestao2.store/'
 def estradaPlayDevKey = file('../signing/estradaplay-dev.keystore')
+def releaseKeyPath = project.findProperty('ESTRADAPLAY_RELEASE_KEYSTORE') ?: System.getenv('ESTRADAPLAY_RELEASE_KEYSTORE')
+def releaseStorePassword = project.findProperty('ESTRADAPLAY_RELEASE_STORE_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = project.findProperty('ESTRADAPLAY_RELEASE_KEY_ALIAS') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_ALIAS')
+def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_PASSWORD')
+def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
 android {
     namespace 'com.estradaplay.comunista'
@@ -13,8 +18,8 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 35
-        versionCode 206
-        versionName '2.0.6'
+        versionCode 207
+        versionName '2.0.7'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
     }
 
@@ -58,12 +63,21 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (releaseSigningReady) {
+                storeFile file(releaseKeyPath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         debug { signingConfig signingConfigs.debug }
         release {
             minifyEnabled false
+            if (releaseSigningReady) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
