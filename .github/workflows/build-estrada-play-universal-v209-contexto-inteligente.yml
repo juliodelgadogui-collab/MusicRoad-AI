@@ -1,0 +1,110 @@
+name: Estrada Play Universal 2.0.9 Contexto Inteligente
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RouteContextV7Client.java'
+      - 'tools/patch_estrada_play_v209_context_inteligente.py'
+      - 'tools/ci_build_epc_v209_context_inteligente.sh'
+      - '.github/workflows/build-estrada-play-universal-v209-contexto-inteligente.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estrada-play-comunista-v209-contexto-inteligente
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Generate 2.0.9 unified context source
+        run: |
+          python3 -m py_compile tools/patch_estrada_play_v209_context_inteligente.py
+          python3 tools/patch_estrada_play_v209_context_inteligente.py
+
+      - name: Verify 2.0.9 source scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          J="$APP/app/src/main/java/com/estradaplay/comunista"
+          grep -q 'versionCode 209' "$APP/app/build.gradle"
+          grep -q "versionName '2.0.9'" "$APP/app/build.gradle"
+          grep -q 'CONTEXTO_INTELIGENTE_V209' "$J/RouteContextV7Client.java"
+          grep -q 'CONTEXTO_INTELIGENTE_V209' "$J/RoadMapActivity.java"
+          grep -q 'TRÂNSITO COLABORATIVO' "$J/DriveToolsActivity.java"
+          grep -q 'getBoolean("context_traffic_opt_in",false)' "$J/DriveSettings.java"
+          grep -q 'api/route_context.php' "$J/RouteContextV7Client.java"
+          php -l api/route_context.php
+          php -l api/server_context_v7.php
+          if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then exit 1; fi
+
+      - name: Persist generated 2.0.9 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estrada-play-comunista-app/app/build.gradle \
+                  estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java \
+                  estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DriveSettings.java \
+                  estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DriveToolsActivity.java
+          git commit -m "Generate Universal 2.0.9 Contexto Inteligente [skip ci]" || true
+          git push origin HEAD:agent/estrada-play-comunista
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Production signing readiness
+        env:
+          KEYSTORE_B64: ${{ secrets.ESTRADAPLAY_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ESTRADAPLAY_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ESTRADAPLAY_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ESTRADAPLAY_RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -n "${KEYSTORE_B64:-}" ] && [ -n "${STORE_PASSWORD:-}" ] && [ -n "${KEY_ALIAS:-}" ] && [ -n "${KEY_PASSWORD:-}" ]; then
+            echo 'SIGNING_STATUS=production-ready' >> "$GITHUB_ENV"
+          else
+            echo 'SIGNING_STATUS=development-test' >> "$GITHUB_ENV"
+          fi
+
+      - name: Build, lint and package 2.0.9
+        run: bash tools/ci_build_epc_v209_context_inteligente.sh
+
+      - name: Publish 2.0.9
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-2.0.9-contexto-inteligente-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$SOURCE_SHA" \
+            --title "Estrada Play Comunista Universal 2.0.9 - Contexto Inteligente" \
+            --notes "Server 7.0 conectado profundamente ao cockpit por uma única API autenticada: clima/chuva de rota, trânsito colaborativo, acidentes e eventos da Estrada Viva, perigos e combustível. Contexto local/offline continua como fallback e radares locais preservam prioridade. Trânsito colaborativo é opt-in, desligado por padrão, usa hash e retenção de 2h no servidor. Navegação Real 2.0.8 e segurança 2.0.7 preservadas. Sem WebView. Signing: ${SIGNING_STATUS}." \
+            Estrada-Play-Comunista-Universal-2.0.9-Contexto-Inteligente.apk \
+            Estrada-Play-Comunista-2.0.9-SERVIDOR-CONTEXTO-7.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-2.0.9-Contexto-Inteligente
+          path: |
+            Estrada-Play-Comunista-Universal-2.0.9-Contexto-Inteligente.apk
+            Estrada-Play-Comunista-2.0.9-SERVIDOR-CONTEXTO-7.zip
+          retention-days: 3
+          compression-level: 0
