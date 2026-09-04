@@ -10,6 +10,21 @@ def releaseKeyAlias = project.findProperty('ESTRADAPLAY_RELEASE_KEY_ALIAS') ?: S
 def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_PASSWORD')
 def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
+// EPC_235_HORIZONTAL_STACKOVERFLOW_GUARD
+// 2.3.5 originally selected the whole right dock as its own media child. That can
+// create a cyclic ViewGroup and Android then overflows in resetResolvedLayoutDirection().
+// Keep every Gradle build safe while the cockpit source remains compatible with
+// older branches/workflows.
+def horizontalCockpitSource = file('src/main/java/com/estradaplay/comunista/HorizontalCockpitV235.java')
+if (horizontalCockpitSource.isFile()) {
+    def sourceText = horizontalCockpitSource.getText('UTF-8')
+    def unsafeLookup = 'LinearLayout media = findLinearWithText(dock, "MÚSICA OFFLINE");'
+    def safeLookup = 'LinearLayout media = findDirectLinearWithText(dock, "MÚSICA OFFLINE");'
+    if (sourceText.contains(unsafeLookup)) {
+        horizontalCockpitSource.write(sourceText.replace(unsafeLookup, safeLookup), 'UTF-8')
+    }
+}
+
 android {
     namespace 'com.estradaplay.comunista'
     compileSdk 35
