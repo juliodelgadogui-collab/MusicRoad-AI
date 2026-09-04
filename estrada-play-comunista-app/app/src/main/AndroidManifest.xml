@@ -42,6 +42,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- COMBOIO_LINK_MAP_V237: convite compartilhado abre o app e entrega o codigo ao GateActivity. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="estradaplay" android:host="comboio" />
+            </intent-filter>
         </activity>
 
         <activity android:name=".AutomotiveActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
