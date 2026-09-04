@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: epc-horizontal-minimal-v235
+  group: epc-horizontal-minimal-v236
   cancel-in-progress: true
 
 jobs:
@@ -25,7 +25,7 @@ jobs:
           ref: agent/estrada-play-comunista
           fetch-depth: 0
 
-      - name: Apply 2.3.5 horizontal crash hotfix
+      - name: Apply 2.3.6 horizontal crash fix
         shell: bash
         run: |
           set -euo pipefail
@@ -36,9 +36,9 @@ jobs:
           s = p.read_text(encoding='utf-8')
           old = 'LinearLayout media = findLinearWithText(dock, "MÚSICA OFFLINE");'
           new = 'LinearLayout media = findDirectLinearWithText(dock, "MÚSICA OFFLINE");'
-          if old not in s:
-              raise SystemExit('hotfix target not found')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          if old in s:
+              s = s.replace(old, new, 1)
+              p.write_text(s, encoding='utf-8')
           PY
           grep -q 'LinearLayout media = findDirectLinearWithText(dock, "MÚSICA OFFLINE");' "$F"
           if grep -q 'LinearLayout media = findLinearWithText(dock, "MÚSICA OFFLINE");' "$F"; then
@@ -59,8 +59,8 @@ jobs:
           grep -q 'CHEGADA' "$J/HorizontalCockpitV235.java"
           grep -q 'RESTANTE' "$J/HorizontalCockpitV235.java"
           grep -q 'DURAÇÃO' "$J/HorizontalCockpitV235.java"
-          grep -q "versionCode 236" "$APP/app/build.gradle"
-          grep -q "versionName '2.3.5'" "$APP/app/build.gradle"
+          grep -q "versionCode 237" "$APP/app/build.gradle"
+          grep -q "versionName '2.3.6'" "$APP/app/build.gradle"
           if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then
             echo 'WebView detected'; exit 1
           fi
@@ -109,22 +109,22 @@ jobs:
           test -f "$U"
 
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/epc-horizontal-badging.txt
-          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='236' versionName='2.3.5'" /tmp/epc-horizontal-badging.txt
+          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='237' versionName='2.3.6'" /tmp/epc-horizontal-badging.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/epc-universal-badging.txt
-          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='236' versionName='2.3.5'" /tmp/epc-universal-badging.txt
+          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='237' versionName='2.3.6'" /tmp/epc-universal-badging.txt
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U"
 
-          cp "$H" Estrada-Play-Comunista-Horizontal-Minimal-2.3.5-HOTFIX1.apk
-          cp "$U" Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.5-HOTFIX1.apk
-          sha256sum Estrada-Play-Comunista-Horizontal-Minimal-2.3.5-HOTFIX1.apk Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.5-HOTFIX1.apk | tee /tmp/epc-horizontal-sha.txt
+          cp "$H" Estrada-Play-Comunista-Horizontal-2.3.6.apk
+          cp "$U" Estrada-Play-Comunista-Universal-2.3.6.apk
+          sha256sum Estrada-Play-Comunista-Horizontal-2.3.6.apk Estrada-Play-Comunista-Universal-2.3.6.apk | tee /tmp/epc-horizontal-sha.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-Minimal-Landscape-2.3.5-HOTFIX1
+          name: Estrada-Play-Comunista-2.3.6
           path: |
-            Estrada-Play-Comunista-Horizontal-Minimal-2.3.5-HOTFIX1.apk
-            Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.5-HOTFIX1.apk
+            Estrada-Play-Comunista-Horizontal-2.3.6.apk
+            Estrada-Play-Comunista-Universal-2.3.6.apk
           retention-days: 7
           compression-level: 0
