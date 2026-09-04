@@ -8,6 +8,7 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.view.View;
 
+/** Shared Estrada Play mark, recolored for the Patriota edition. */
 final class BrandMarkView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path road = new Path();
@@ -29,7 +30,7 @@ final class BrandMarkView extends View {
         float r = size * 0.24f;
 
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.rgb(185, 15, 34));
+        paint.setColor(Color.rgb(0, 156, 59));
         paint.setShadowLayer(size * 0.10f, 0f, size * 0.045f, 0x55000000);
         canvas.drawRoundRect(new RectF(left, top, left + size, top + size), r, r, paint);
         paint.clearShadowLayer();
@@ -47,7 +48,7 @@ final class BrandMarkView extends View {
         lane.lineTo(left + size * 0.60f, top + size * 0.86f);
         lane.lineTo(left + size * 0.40f, top + size * 0.86f);
         lane.close();
-        paint.setColor(Color.rgb(185, 15, 34));
+        paint.setColor(Color.rgb(0, 39, 118));
         canvas.drawPath(lane, paint);
 
         float cx = left + size * 0.265f;
@@ -63,7 +64,7 @@ final class BrandMarkView extends View {
             if (i == 0) star.moveTo(x, y); else star.lineTo(x, y);
         }
         star.close();
-        paint.setColor(Color.rgb(241, 200, 75));
+        paint.setColor(Color.rgb(255, 223, 0));
         canvas.drawPath(star, paint);
     }
 }
