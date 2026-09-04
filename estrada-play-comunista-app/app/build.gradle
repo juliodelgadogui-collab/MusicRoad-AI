@@ -55,7 +55,7 @@ android {
             ]
             buildConfigField 'String', 'FIXED_LAYOUT', '\"horizontal\"'
         }
-        teste {
+        homologacao {
             dimension 'orientation'
             applicationIdSuffix '.teste'
             versionCode 235
