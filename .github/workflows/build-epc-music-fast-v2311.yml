@@ -1,0 +1,152 @@
+name: EPC Android 2.3.11 Música Local Rápida
+permissions:
+  contents: write
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'estrada-play-comunista-app/app/build.gradle'
+      - 'estrada-play-comunista-app/app/src/main/AndroidManifest.xml'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DeviceMusicStore.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/SharedMusicPublisher.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DownloadService.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/PlayerService.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MusicPlayerActivity.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/EstradaPlayApplication.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/HorizontalCockpitV235.java'
+      - '.github/workflows/build-epc-music-fast-v2311.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: epc-android-v2311-music-fast
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Validate 2.3.11 fast local music source
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          J="$APP/app/src/main/java/com/estradaplay/comunista"
+          G="$APP/app/build.gradle"
+          M="$APP/app/src/main/AndroidManifest.xml"
+
+          grep -q "versionCode 242" "$G"
+          grep -q "versionName '2.3.11'" "$G"
+          grep -q 'EPC_2311_MUSIC_FAST_SCAN' "$G"
+          grep -q 'READ_MEDIA_AUDIO' "$M"
+          grep -q 'READ_EXTERNAL_STORAGE' "$M"
+
+          grep -q 'DEVICE_MUSIC_V2311_FAST_SCAN' "$J/DeviceMusicStore.java"
+          grep -q 'CACHE_TTL_MS = 30000L' "$J/DeviceMusicStore.java"
+          grep -q 'MediaStore.Audio.Media.SIZE + ">0 AND ("' "$J/DeviceMusicStore.java"
+          grep -q 'static void invalidate()' "$J/DeviceMusicStore.java"
+          grep -q 'merge(Context context, List<Track> appTracks, boolean forceDeviceScan)' "$J/DeviceMusicStore.java"
+
+          grep -q 'MUSIC_FAST_SCAN_V2311' "$J/MusicPlayerActivity.java"
+          grep -q 'localizando celular' "$J/MusicPlayerActivity.java"
+          grep -q 'DeviceMusicStore.invalidate();loadTracks(true)' "$J/MusicPlayerActivity.java"
+          if grep -A20 'private void loadTracks(boolean forceDeviceScan)' "$J/MusicPlayerActivity.java" | grep -q 'SharedMusicPublisher.publishAll'; then
+            echo 'Foreground music lookup must not republish/copy all downloads'; exit 1
+          fi
+
+          grep -q 'SHARED_MUSIC_PERSIST_V2310' "$J/SharedMusicPublisher.java"
+          grep -q 'SharedMusicPublisher.publishTrack' "$J/DownloadService.java"
+          grep -q 'SharedMusicPublisher.publishMissingFromApp' "$J/EstradaPlayApplication.java"
+          grep -q 'DeviceMusicStore.merge' "$J/PlayerService.java"
+          grep -q 'setDataSource(this, Uri.parse(source))' "$J/PlayerService.java"
+
+          if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then
+            echo 'WebView detected'; exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare development signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          base64 -d "$APP/signing/estradaplay-dev.keystore.b64" > "$APP/signing/estradaplay-dev.keystore"
+
+      - name: Generate embedded Portuguese voice bank
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          rm -rf /tmp/epc-v2311-voice && mkdir -p /tmp/epc-v2311-voice
+          tar -xjf "$MODEL" -C /tmp/epc-v2311-voice
+          python3 "$APP/tools/generate_voice_bank.py" --model-root /tmp/epc-v2311-voice --output "$APP/app/src/main/res/raw" --metadata-output "$APP/app/src/main/assets/estradaplay_voice"
+          test "$(find "$APP/app/src/main/res/raw" -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
+
+      - name: Unit tests and build universal plus horizontal APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          (cd "$APP" && gradle --no-daemon testUniversalDebugUnitTest testHorizontalDebugUnitTest assembleUniversalDebug assembleHorizontalDebug)
+
+          U="$APP/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
+          H="$APP/app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk"
+          test -f "$U"
+          test -f "$H"
+
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/epc-v2311-universal.txt
+          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='242' versionName='2.3.11'" /tmp/epc-v2311-universal.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/epc-v2311-horizontal.txt
+          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='242' versionName='2.3.11'" /tmp/epc-v2311-horizontal.txt
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
+
+          cp "$U" Estrada-Play-Comunista-Universal-2.3.11.apk
+          cp "$H" Estrada-Play-Comunista-Horizontal-2.3.11.apk
+          sha256sum Estrada-Play-Comunista-Universal-2.3.11.apk Estrada-Play-Comunista-Horizontal-2.3.11.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-2.3.11-Musica-Local-Rapida
+          path: |
+            Estrada-Play-Comunista-Universal-2.3.11.apk
+            Estrada-Play-Comunista-Horizontal-2.3.11.apk
+          retention-days: 7
+          compression-level: 0
+
+      - name: Publish GitHub Release for easy mobile download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG='estrada-play-comunista-android-2.3.11-musica-local-rapida'
+          TITLE='Estrada Play Comunista 2.3.11 - Música Local Rápida'
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              --notes 'Android 2.3.11 (versionCode 242). A busca das músicas do celular agora é local, filtrada e cacheada; a biblioteca do Estrada Play aparece primeiro e a varredura do aparelho não bloqueia a tela. Mantém a cópia persistente em Música/EstradaPlay. Não altera servidor nem banco de dados.'
+          fi
+          gh release upload "$TAG" \
+            Estrada-Play-Comunista-Universal-2.3.11.apk \
+            Estrada-Play-Comunista-Horizontal-2.3.11.apk \
+            --clobber
