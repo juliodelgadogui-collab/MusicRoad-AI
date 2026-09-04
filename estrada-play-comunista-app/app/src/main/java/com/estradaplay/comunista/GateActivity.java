@@ -34,10 +34,20 @@ public final class GateActivity extends ComponentActivity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        ConvoyIntegrationV237.captureInvite(this, getIntent());
         getWindow().setStatusBarColor(Color.rgb(8, 5, 7));
         getWindow().setNavigationBarColor(Color.rgb(8, 5, 7));
         showBrandIntro();
         ui.postDelayed(this::openApp, 700L);
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        ConvoyIntegrationV237.captureInvite(this, intent);
+        launched = false;
+        ui.removeCallbacksAndMessages(null);
+        ui.postDelayed(this::openApp, 120L);
     }
 
     private void showBrandIntro() {
