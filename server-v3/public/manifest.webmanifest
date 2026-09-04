@@ -1,0 +1,13 @@
+{
+  "name": "Estrada Play Web",
+  "short_name": "EstradaPlay",
+  "description": "Versão web do Estrada Play para navegação, alertas oficiais, clima e música.",
+  "start_url": "./app/",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080808",
+  "theme_color": "#090909",
+  "icons": [
+    {"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
