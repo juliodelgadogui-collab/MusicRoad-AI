@@ -6,6 +6,10 @@ RewriteEngine On
 RewriteCond %{HTTPS} !=on
 RewriteCond %{HTTP_HOST} !^localhost$ [NC]
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# EPC_CONVOY_PUBLIC_LINK_V238
+# Public link: https://www.xn--gesto-dra.store/c/7K4M2Q
+RewriteRule ^c/([A-Za-z0-9]{4,8})/?$ convoy_invite.php?code=$1 [L,QSA,NC]
 </IfModule>
 
 <FilesMatch "(\.sqlite|config\.php|\.log)$">
