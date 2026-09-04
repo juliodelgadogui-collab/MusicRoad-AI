@@ -20,6 +20,9 @@ public final class EstradaPlayApplication extends Application {
         // Contexto Vivo, Comboio or the main crash-loop guard there; native audio failure must stay local.
         if (isRadioProcess()) return;
 
+        // PATRIOTA_EDITION_V1: presentation-only layer. It does not modify radio/PTT services.
+        PatriotaBranding.install(this);
+
         UiVersionLabelFix.register(this);
         boolean deferOptionalBridges = ProcessCrashGuard.install(this);
         if (deferOptionalBridges) return;
