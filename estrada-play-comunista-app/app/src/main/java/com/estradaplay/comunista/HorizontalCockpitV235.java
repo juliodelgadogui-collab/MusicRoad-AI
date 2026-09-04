@@ -93,7 +93,7 @@ final class HorizontalCockpitV235 {
             ((ViewGroup) speed.getParent()).removeView(speed);
         }
 
-        LinearLayout media = findLinearWithText(dock, "MÚSICA OFFLINE");
+        LinearLayout media = findDirectLinearWithText(dock, "MÚSICA OFFLINE");
         if (media != null && media.getParent() instanceof ViewGroup) {
             ((ViewGroup) media.getParent()).removeView(media);
         }
