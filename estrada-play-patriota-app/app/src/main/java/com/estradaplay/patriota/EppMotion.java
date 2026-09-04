@@ -1,0 +1,8 @@
+package com.estradaplay.patriota;
+import android.view.View;
+import android.view.ViewGroup;
+final class EppMotion {
+    private EppMotion(){}
+    static void fadeIn(View v){if(v==null)return;HorizontalCockpitV235.apply(v);v.setAlpha(0.88f);v.animate().alpha(1f).setDuration(180L).start();}
+    static void stagger(ViewGroup g){if(g==null)return;int count=Math.min(g.getChildCount(),18);for(int i=0;i<count;i++){View v=g.getChildAt(i);v.setAlpha(0f);v.setTranslationY(18f);v.animate().alpha(1f).translationY(0f).setStartDelay(i*22L).setDuration(190L).start();}}
+}

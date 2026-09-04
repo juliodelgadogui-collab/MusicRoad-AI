@@ -1,0 +1,108 @@
+plugins {
+    id 'com.android.application'
+}
+
+def estradaPlayUrl = project.findProperty('ESTRADAPLAY_URL') ?: 'https://musicroad1.gestao2.store/'
+def convoyPublicUrl = project.findProperty('ESTRADAPLAY_CONVOY_PUBLIC_URL') ?: 'https://www.xn--gesto-dra.store/c/'
+def estradaPlayDevKey = file('../signing/estradaplay-dev.keystore')
+def releaseKeyPath = project.findProperty('ESTRADAPLAY_RELEASE_KEYSTORE') ?: System.getenv('ESTRADAPLAY_RELEASE_KEYSTORE')
+def releaseStorePassword = project.findProperty('ESTRADAPLAY_RELEASE_STORE_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = project.findProperty('ESTRADAPLAY_RELEASE_KEY_ALIAS') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_ALIAS')
+def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_PASSWORD')
+def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
+
+// EPP_PATRIOTA_EDITION
+// The source namespace stays compatible with the Patriota codebase; applicationId is independent
+// so both editions can be installed side-by-side without touching navigation, Comboio or PTT logic.
+android {
+    namespace 'com.estradaplay.patriota'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.estradaplay.patriota'
+        minSdk 24
+        targetSdk 35
+        versionCode 240
+        versionName '2.3.9'
+        buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
+        buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
+        buildConfigField 'String', 'EDITION', '"patriota"'
+    }
+
+    buildFeatures { buildConfig true }
+
+    flavorDimensions += 'orientation'
+    productFlavors {
+        universal {
+            dimension 'orientation'
+            applicationIdSuffix '.universal'
+            manifestPlaceholders = [
+                appLabel: 'Estrada Play Patriota',
+                appOrientation: 'fullSensor'
+            ]
+            buildConfigField 'String', 'FIXED_LAYOUT', '"universal"'
+        }
+        vertical {
+            dimension 'orientation'
+            applicationIdSuffix '.vertical'
+            manifestPlaceholders = [
+                appLabel: 'Estrada Play Patriota Vertical',
+                appOrientation: 'sensorPortrait'
+            ]
+            buildConfigField 'String', 'FIXED_LAYOUT', '"vertical"'
+        }
+        horizontal {
+            dimension 'orientation'
+            applicationIdSuffix '.horizontal'
+            manifestPlaceholders = [
+                appLabel: 'Estrada Play Patriota Horizontal',
+                appOrientation: 'sensorLandscape'
+            ]
+            buildConfigField 'String', 'FIXED_LAYOUT', '"horizontal"'
+        }
+    }
+
+    signingConfigs {
+        debug {
+            storeFile estradaPlayDevKey
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        release {
+            if (releaseSigningReady) {
+                storeFile file(releaseKeyPath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug { signingConfig signingConfigs.debug }
+        release {
+            minifyEnabled false
+            if (releaseSigningReady) signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.activity:activity:1.10.1'
+    implementation 'org.maplibre.gl:android-sdk:13.4.1'
+    implementation 'androidx.camera:camera-core:1.4.2'
+    implementation 'androidx.camera:camera-camera2:1.4.2'
+    implementation 'androidx.camera:camera-lifecycle:1.4.2'
+    implementation 'androidx.camera:camera-view:1.4.2'
+    implementation 'androidx.camera:camera-video:1.4.2'
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
+    implementation 'io.github.webrtc-sdk:android:144.7559.09'
+    testImplementation 'junit:junit:4.13.2'
+}

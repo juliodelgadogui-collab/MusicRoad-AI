@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="epp_icon_bg">#009C3B</color>
+    <color name="epp_splash_bg">#06150E</color>
+    <color name="epp_gold">#FFDF00</color>
+    <color name="epp_blue">#002776</color>
+</resources>

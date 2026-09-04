@@ -1,0 +1,63 @@
+package com.estradaplay.patriota;
+
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.graphics.*;
+import android.graphics.drawable.GradientDrawable;
+import android.location.*;
+import android.os.*;
+import android.view.*;
+import android.widget.*;
+import androidx.activity.ComponentActivity;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+/** Driver-safe local-first community road alerts. */
+public final class EstradaVivaActivity extends ComponentActivity {
+    private final int BG=Color.rgb(8,5,7),SURFACE=Color.rgb(18,9,12),SURFACE2=Color.rgb(29,14,18),BORDER=Color.rgb(78,38,44),TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(174,151,146),RED=Color.rgb(190,18,38),GREEN=Color.rgb(72,212,134),GOLD=Color.rgb(226,185,76);
+    private final Handler ui=new Handler(Looper.getMainLooper());
+    private EstradaVivaStore store; private LinearLayout page,feed; private TextView gpsText,queueText; private Location current;
+    private final Runnable redraw=new Runnable(){@Override public void run(){refreshLocation();renderFeed();ui.postDelayed(this,5000L);}};
+
+    @Override protected void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);store=new EstradaVivaStore(this);build();}
+    @Override protected void onResume(){super.onResume();ui.removeCallbacks(redraw);ui.post(redraw);}
+    @Override protected void onPause(){ui.removeCallbacks(redraw);super.onPause();}
+
+    private void build(){
+        ScrollView sv=new ScrollView(this);sv.setFillViewport(true);page=col();page.setPadding(dp(18),dp(16),dp(18),dp(28));page.setBackgroundColor(BG);sv.addView(page);setContentView(UnifiedAppShell.wrap(this,"central",sv));
+        LinearLayout head=row();head.setGravity(Gravity.CENTER_VERTICAL);Button back=btn("‹ VOLTAR",false);head.addView(back,new LinearLayout.LayoutParams(dp(94),dp(46)));back.setOnClickListener(v->finish());LinearLayout title=col();title.addView(over("ESTRADA VIVA · 1.8",RED));title.addView(text("A estrada fala com você",27,TEXT,true));title.addView(text("Alertas pequenos, temporários e compartilhados entre motoristas.",11,MUTED,false));head.addView(title,new LinearLayout.LayoutParams(0,-2,1));page.addView(head);
+
+        LinearLayout status=card();status.addView(over("POSIÇÃO ATUAL",GOLD));gpsText=text("Buscando GPS…",14,TEXT,true);status.addView(gpsText);queueText=text("Fila offline: "+store.queuedCount(),10,MUTED,false);status.addView(queueText);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,-2);sp.setMargins(0,dp(14),0,0);page.addView(status,sp);
+
+        TextView help=text("TOQUE SOMENTE QUANDO FOR SEGURO",10,RED,true);help.setLetterSpacing(.08f);LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(-1,-2);hp.setMargins(0,dp(18),0,dp(8));page.addView(help,hp);
+        addReportGrid();
+
+        LinearLayout tools=row();Button update=btn("ATUALIZAR ALERTAS",false);Button radar=btn("CONFIRMAR RADARES",false);tools.addView(update,new LinearLayout.LayoutParams(0,dp(50),1));LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(0,dp(50),1);rp.setMargins(dp(8),0,0,0);tools.addView(radar,rp);update.setOnClickListener(v->{refreshLocation();if(current!=null){store.kickRefresh(current.getLatitude(),current.getLongitude(),true);Toast.makeText(this,"Atualizando Estrada Viva…",Toast.LENGTH_SHORT).show();ui.postDelayed(this::renderFeed,1200L);}});radar.setOnClickListener(v->startActivity(new android.content.Intent(this,CollectiveRoadActivity.class)));LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,-2);tp.setMargins(0,dp(12),0,0);page.addView(tools,tp);
+
+        TextView nearby=over("ALERTAS PRÓXIMOS",GREEN);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,-2);np.setMargins(0,dp(20),0,dp(8));page.addView(nearby,np);feed=col();page.addView(feed);
+        page.addView(text("Os alertas expiram automaticamente. Se a internet cair, seu aviso fica na fila e tenta sincronizar depois.",10,MUTED,false));
+        refreshLocation();renderFeed();
+    }
+
+    private void addReportGrid(){
+        String[][] items={{"ACIDENTE","accident"},{"BURACO","pothole"},{"ANIMAL","animal"},{"OBRA","construction"},{"ALAGAMENTO","flooding"},{"TRÂNSITO","traffic"},{"OBJETO NA VIA","object"}};
+        for(int i=0;i<items.length;i+=2){LinearLayout r=row();for(int c=0;c<2;c++){int k=i+c;if(k>=items.length){r.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));continue;}Button b=btn(items[k][0],"accident".equals(items[k][1])?true:false);String type=items[k][1];LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(58),1);if(c>0)p.setMargins(dp(8),0,0,0);r.addView(b,p);b.setOnClickListener(v->report(type));}LinearLayout.LayoutParams rr=new LinearLayout.LayoutParams(-1,-2);if(i>0)rr.setMargins(0,dp(8),0,0);page.addView(r,rr);}
+    }
+
+    private void report(String type){
+        refreshLocation();if(current==null){Toast.makeText(this,"Ainda não tenho uma posição GPS válida.",Toast.LENGTH_LONG).show();return;}
+        String road=KnownRoadCatalog.selected(this);store.report(type,current.getLatitude(),current.getLongitude(),road,"");queueText.setText("Fila offline: "+store.queuedCount());Toast.makeText(this,EstradaVivaStore.typeLabel(type)+" registrado na sua posição.",Toast.LENGTH_LONG).show();ui.postDelayed(this::renderFeed,250L);
+    }
+
+    private void renderFeed(){
+        if(feed==null)return;refreshLocation();feed.removeAllViews();if(current==null){feed.addView(text("Aguardando GPS para ordenar os alertas próximos.",12,MUTED,false));return;}
+        double lat=current.getLatitude(),lon=current.getLongitude();store.kickRefresh(lat,lon);ArrayList<EstradaVivaStore.Event> events=store.cachedNearby(lat,lon,15000);
+        if(events.isEmpty()){feed.addView(text("Nenhum alerta comunitário próximo ainda.",12,MUTED,false));return;}
+        int shown=0;for(EstradaVivaStore.Event e:events){if(shown++>=18)break;LinearLayout c=card();LinearLayout top=row();TextView name=text(e.label(),15,TEXT,true);top.addView(name,new LinearLayout.LayoutParams(0,-2,1));TextView dist=text(e.distanceLabel(),12,GOLD,true);dist.setGravity(Gravity.RIGHT);top.addView(dist);c.addView(top);String meta=(e.road==null||e.road.isEmpty()?"Trecho local":e.road)+(e.confirmations>0?" · "+e.confirmations+" confirmação"+(e.confirmations==1?"":"ões"):"");c.addView(text(meta,10,MUTED,false));long at=e.occurredAt>0?e.occurredAt:e.createdAt;if(at>0)c.addView(text("Registrado "+new SimpleDateFormat("dd/MM HH:mm",Locale.getDefault()).format(new Date(at)),9,MUTED,false));if(e.note!=null&&!e.note.isEmpty())c.addView(text(e.note,10,TEXT,false));if(e.id>0){Button confirm=btn("CONFIRMAR QUE AINDA ESTÁ AQUI",false);LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(44));bp.setMargins(0,dp(8),0,0);c.addView(confirm,bp);confirm.setOnClickListener(v->{store.confirm(e.id,lat,lon);confirm.setEnabled(false);confirm.setText("CONFIRMADO");});}LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(0,0,0,dp(8));feed.addView(c,cp);}
+    }
+
+    private void refreshLocation(){current=last();if(gpsText!=null){if(current==null)gpsText.setText("GPS aguardando posição");else{String road=KnownRoadCatalog.selected(this);gpsText.setText((road.isEmpty()?"GPS ativo":road)+" · precisão "+Math.round(current.getAccuracy())+" m");}if(queueText!=null)queueText.setText("Fila offline: "+store.queuedCount());}}
+    private Location last(){if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED)return null;try{LocationManager m=(LocationManager)getSystemService(LOCATION_SERVICE);Location best=null;for(String p:new String[]{LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER}){Location x=m.getLastKnownLocation(p);if(x!=null&&(best==null||x.getTime()>best.getTime()))best=x;}return best;}catch(Throwable e){return null;}}
+
+    private LinearLayout card(){LinearLayout c=col();c.setPadding(dp(15),dp(13),dp(15),dp(13));c.setBackground(panel(SURFACE,15,BORDER));return c;}private Button btn(String v,boolean primary){Button b=new Button(this);b.setAllCaps(false);b.setText(v);b.setTextSize(10);b.setTextColor(TEXT);b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);b.setStateListAnimator(null);b.setBackground(panel(primary?RED:SURFACE2,13,primary?0:BORDER));return b;}private LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);return l;}private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}private TextView text(String v,float s,int c,boolean bold){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}private TextView over(String v,int c){TextView t=text(v,9,c,true);t.setLetterSpacing(.12f);return t;}private GradientDrawable panel(int c,int r,int stroke){GradientDrawable g=new GradientDrawable();g.setColor(c);g.setCornerRadius(dp(r));if(stroke!=0)g.setStroke(dp(1),stroke);return g;}private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}
+}
