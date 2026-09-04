@@ -9,45 +9,9 @@ $body=input_json();
 $user=native_require_json_user($body);
 $pdo=db();
 
-$pdo->exec("CREATE TABLE IF NOT EXISTS estrada_convoys (
- id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
- code VARCHAR(8) NOT NULL UNIQUE,
- owner_user_id BIGINT NULL,
- title VARCHAR(80) NULL,
- created_at DATETIME NOT NULL,
- expires_at DATETIME NOT NULL,
- INDEX idx_convoy_exp (expires_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-$pdo->exec("CREATE TABLE IF NOT EXISTS estrada_convoy_members (
- convoy_id BIGINT UNSIGNED NOT NULL,
- user_id BIGINT NULL,
- device_token VARCHAR(160) NOT NULL,
- nickname VARCHAR(60) NOT NULL,
- latitude DECIMAL(10,7) NULL,
- longitude DECIMAL(10,7) NULL,
- speed_kmh DECIMAL(7,2) NULL,
- heading DECIMAL(7,2) NULL,
- joined_at DATETIME NOT NULL,
- last_seen DATETIME NOT NULL,
- PRIMARY KEY(convoy_id,device_token),
- INDEX idx_convoy_member_seen (convoy_id,last_seen),
- INDEX idx_convoy_member_device (device_token)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-$pdo->exec("CREATE TABLE IF NOT EXISTS estrada_convoy_blocks (
- convoy_id BIGINT UNSIGNED NOT NULL,
- device_token VARCHAR(160) NOT NULL,
- blocked_at DATETIME NOT NULL,
- PRIMARY KEY(convoy_id,device_token),
- INDEX idx_convoy_blocked_at (blocked_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-function convoy_try_alter(PDO $pdo,string $sql): void { try{$pdo->exec($sql);}catch(Throwable $e){} }
-convoy_try_alter($pdo,"ALTER TABLE estrada_convoys ADD COLUMN leader_device_token VARCHAR(160) NULL AFTER owner_user_id");
-convoy_try_alter($pdo,"ALTER TABLE estrada_convoys ADD COLUMN destination_label VARCHAR(120) NULL AFTER title");
-convoy_try_alter($pdo,"ALTER TABLE estrada_convoys ADD COLUMN destination_lat DECIMAL(10,7) NULL AFTER destination_label");
-convoy_try_alter($pdo,"ALTER TABLE estrada_convoys ADD COLUMN destination_lon DECIMAL(10,7) NULL AFTER destination_lat");
-convoy_try_alter($pdo,"ALTER TABLE estrada_convoys ADD COLUMN route_points_json MEDIUMTEXT NULL AFTER destination_lon");
-convoy_try_alter($pdo,"ALTER TABLE estrada_convoys ADD COLUMN route_updated_at DATETIME NULL AFTER route_points_json");
+// EPC_CONVOY_SCHEMA_V239
+// Schema is provisioned once by database/migrations/20260904_epc_convoy_239_mariadb.sql.
+// Normal API requests must never CREATE or ALTER tables.
 
 $action=strtolower(trim((string)($body['action']??'state')));
 $device=native_device_token_from_request($body);
