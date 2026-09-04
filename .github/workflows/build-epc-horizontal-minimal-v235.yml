@@ -1,4 +1,4 @@
-name: EPC Horizontal Minimal Cockpit
+name: EPC Android 2.3.7 Comboio Link + Mapa
 permissions:
   contents: read
 on:
@@ -6,6 +6,14 @@ on:
     branches: [agent/estrada-play-comunista]
     paths:
       - 'estrada-play-comunista-app/app/build.gradle'
+      - 'estrada-play-comunista-app/app/src/main/AndroidManifest.xml'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ConvoyIntegrationV237.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ConvoyActivity.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ConvoyStore.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ConvoyLiveBridge.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/EstradaPlayApplication.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/GateActivity.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapView.java'
       - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/HorizontalCockpitV235.java'
       - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/EpcMotion.java'
       - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java'
@@ -13,7 +21,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: epc-horizontal-minimal-v236
+  group: epc-android-v237
   cancel-in-progress: true
 
 jobs:
@@ -25,7 +33,7 @@ jobs:
           ref: agent/estrada-play-comunista
           fetch-depth: 0
 
-      - name: Apply 2.3.6 horizontal crash fix
+      - name: Apply horizontal crash guard
         shell: bash
         run: |
           set -euo pipefail
@@ -37,30 +45,42 @@ jobs:
           old = 'LinearLayout media = findLinearWithText(dock, "MÚSICA OFFLINE");'
           new = 'LinearLayout media = findDirectLinearWithText(dock, "MÚSICA OFFLINE");'
           if old in s:
-              s = s.replace(old, new, 1)
-              p.write_text(s, encoding='utf-8')
+              p.write_text(s.replace(old, new, 1), encoding='utf-8')
           PY
           grep -q 'LinearLayout media = findDirectLinearWithText(dock, "MÚSICA OFFLINE");' "$F"
           if grep -q 'LinearLayout media = findLinearWithText(dock, "MÚSICA OFFLINE");' "$F"; then
             echo 'Unsafe self-parent lookup still present'; exit 1
           fi
 
-      - name: Validate horizontal minimal cockpit
+      - name: Validate 2.3.7 convoy integration
         shell: bash
         run: |
           set -euo pipefail
           APP=estrada-play-comunista-app
           J="$APP/app/src/main/java/com/estradaplay/comunista"
-          test -f "$J/HorizontalCockpitV235.java"
+          M="$APP/app/src/main/AndroidManifest.xml"
+
+          grep -q "versionCode 238" "$APP/app/build.gradle"
+          grep -q "versionName '2.3.7'" "$APP/app/build.gradle"
+
+          test -f "$J/ConvoyIntegrationV237.java"
+          grep -q 'COMBOIO_LINK_MAP_V237' "$J/ConvoyIntegrationV237.java"
+          grep -q 'estradaplay://comboio/' "$J/ConvoyIntegrationV237.java"
+          grep -q 'setConvoyMembers' "$J/ConvoyIntegrationV237.java"
+          grep -q 'ConvoyIntegrationV237.install(this)' "$J/EstradaPlayApplication.java"
+          grep -q 'ConvoyIntegrationV237.captureInvite' "$J/GateActivity.java"
+          grep -q 'setConvoyMembers' "$J/RoadMapView.java"
+          grep -q 'CONVOY_MAP_V180' "$J/RoadMapView.java"
+          grep -q 'android:scheme="estradaplay"' "$M"
+          grep -q 'android:host="comboio"' "$M"
+          grep -q 'android.intent.action.VIEW' "$M"
+          grep -q 'android.intent.category.BROWSABLE' "$M"
+
           grep -q 'HORIZONTAL_MINIMAL_V235' "$J/HorizontalCockpitV235.java"
           grep -q 'HorizontalCockpitV235.apply(v)' "$J/EpcMotion.java"
           grep -q 'MÚSICA OFFLINE' "$J/HorizontalCockpitV235.java"
           grep -q 'GPS ATIVO' "$J/HorizontalCockpitV235.java"
-          grep -q 'CHEGADA' "$J/HorizontalCockpitV235.java"
-          grep -q 'RESTANTE' "$J/HorizontalCockpitV235.java"
-          grep -q 'DURAÇÃO' "$J/HorizontalCockpitV235.java"
-          grep -q "versionCode 237" "$APP/app/build.gradle"
-          grep -q "versionName '2.3.6'" "$APP/app/build.gradle"
+
           if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then
             echo 'WebView detected'; exit 1
           fi
@@ -91,40 +111,44 @@ jobs:
           MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
           curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
           echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
-          rm -rf /tmp/epc-horizontal-voice && mkdir -p /tmp/epc-horizontal-voice
-          tar -xjf "$MODEL" -C /tmp/epc-horizontal-voice
-          python3 "$APP/tools/generate_voice_bank.py" --model-root /tmp/epc-horizontal-voice --output "$APP/app/src/main/res/raw" --metadata-output "$APP/app/src/main/assets/estradaplay_voice"
+          rm -rf /tmp/epc-v237-voice && mkdir -p /tmp/epc-v237-voice
+          tar -xjf "$MODEL" -C /tmp/epc-v237-voice
+          python3 "$APP/tools/generate_voice_bank.py" --model-root /tmp/epc-v237-voice --output "$APP/app/src/main/res/raw" --metadata-output "$APP/app/src/main/assets/estradaplay_voice"
           test "$(find "$APP/app/src/main/res/raw" -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
 
-      - name: Unit tests and build horizontal plus universal APKs
+      - name: Unit tests and build universal plus horizontal APKs
         shell: bash
         run: |
           set -euo pipefail
           APP=estrada-play-comunista-app
-          (cd "$APP" && gradle --no-daemon testHorizontalDebugUnitTest testUniversalDebugUnitTest assembleHorizontalDebug assembleUniversalDebug)
+          (cd "$APP" && gradle --no-daemon testUniversalDebugUnitTest testHorizontalDebugUnitTest assembleUniversalDebug assembleHorizontalDebug)
 
-          H="$APP/app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk"
           U="$APP/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
-          test -f "$H"
+          H="$APP/app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk"
           test -f "$U"
+          test -f "$H"
 
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/epc-horizontal-badging.txt
-          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='237' versionName='2.3.6'" /tmp/epc-horizontal-badging.txt
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/epc-universal-badging.txt
-          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='237' versionName='2.3.6'" /tmp/epc-universal-badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/epc-v237-universal-badging.txt
+          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='238' versionName='2.3.7'" /tmp/epc-v237-universal-badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/epc-v237-horizontal-badging.txt
+          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='238' versionName='2.3.7'" /tmp/epc-v237-horizontal-badging.txt
 
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree "$U" AndroidManifest.xml | tee /tmp/epc-v237-manifest.txt
+          grep -q 'estradaplay' /tmp/epc-v237-manifest.txt
+          grep -q 'comboio' /tmp/epc-v237-manifest.txt
+
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
 
-          cp "$H" Estrada-Play-Comunista-Horizontal-2.3.6.apk
-          cp "$U" Estrada-Play-Comunista-Universal-2.3.6.apk
-          sha256sum Estrada-Play-Comunista-Horizontal-2.3.6.apk Estrada-Play-Comunista-Universal-2.3.6.apk | tee /tmp/epc-horizontal-sha.txt
+          cp "$U" Estrada-Play-Comunista-Universal-2.3.7.apk
+          cp "$H" Estrada-Play-Comunista-Horizontal-2.3.7.apk
+          sha256sum Estrada-Play-Comunista-Universal-2.3.7.apk Estrada-Play-Comunista-Horizontal-2.3.7.apk | tee /tmp/epc-v237-sha.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-2.3.6
+          name: Estrada-Play-Comunista-2.3.7
           path: |
-            Estrada-Play-Comunista-Horizontal-2.3.6.apk
-            Estrada-Play-Comunista-Universal-2.3.6.apk
+            Estrada-Play-Comunista-Universal-2.3.7.apk
+            Estrada-Play-Comunista-Horizontal-2.3.7.apk
           retention-days: 7
           compression-level: 0
