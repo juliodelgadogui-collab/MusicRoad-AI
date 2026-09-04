@@ -8,3 +8,4 @@ Aplicativo Android nativo da edição Patriota.
 - Identidade: EPP — Estrada Play Patriota
 - Android nativo, sem WebView
 - Rádio/PTT preservado funcionalmente; somente identificadores de package e branding acompanham a edição Patriota
+- Migração integral de identidade concluída: fonte Android, packages, componentes e textos ativos usam a edição Patriota.
