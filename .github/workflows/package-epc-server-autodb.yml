@@ -1,0 +1,76 @@
+name: EPC Servidor 2.3.9 Auto DB
+permissions:
+  contents: read
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'api/convoy.php'
+      - '.github/workflows/package-epc-server-autodb.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: epc-server-v239-autodb
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+
+      - name: Validate automatic Comboio schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l api/convoy.php
+          grep -q 'EPC_CONVOY_AUTO_SCHEMA_V239' api/convoy.php
+          grep -q 'convoy_schema_ready' api/convoy.php
+          grep -q 'information_schema.COLUMNS' api/convoy.php
+          grep -q "GET_LOCK('epc_convoy_schema_v239'" api/convoy.php
+          grep -q 'CREATE TABLE IF NOT EXISTS estrada_convoys' api/convoy.php
+          grep -q "convoy_schema_add_column.*leader_device_token" api/convoy.php
+          if grep -Eqi 'DROP[[:space:]]+TABLE|TRUNCATE[[:space:]]+TABLE' api/convoy.php; then
+            echo 'Destructive schema operation detected'; exit 1
+          fi
+
+      - name: Package server update
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p package/api
+          cp api/convoy.php package/api/convoy.php
+          cat > package/LEIA-ME.txt <<'TXT'
+          ESTRADA PLAY 2.3.9 - COMBOIO AUTO DB
+
+          DOMINIO: musicroad1.gestao2.store
+
+          NAO IMPORTE NENHUM SQL NO PHPMYADMIN.
+
+          INSTALACAO:
+          1. Faca backup do api/convoy.php atual.
+          2. Envie api/convoy.php deste pacote para a pasta api/ do dominio musicroad1.gestao2.store.
+          3. Substitua somente o convoy.php.
+          4. Abra o app e crie/entre em um Comboio.
+
+          A primeira utilizacao autenticada verifica a estrutura do Comboio.
+          Se faltarem tabelas ou colunas do Comboio, o proprio servidor cria/adiciona
+          somente o necessario. Nao existe DROP TABLE nem TRUNCATE e nenhum dado de
+          usuarios, musicas, radares ou configuracoes e apagado por essa preparacao.
+
+          O usuario do banco configurado no servidor precisa possuir permissao CREATE
+          e ALTER somente caso a estrutura ainda esteja incompleta. Se ela ja estiver
+          completa, nenhuma alteracao estrutural e executada.
+          TXT
+          (cd package && zip -r ../Estrada-Play-Comunista-SERVIDOR-2.3.9-AUTO-DB.zip .)
+          sha256sum Estrada-Play-Comunista-SERVIDOR-2.3.9-AUTO-DB.zip | tee server-sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-Servidor-2.3.9-AutoDB
+          path: |
+            Estrada-Play-Comunista-SERVIDOR-2.3.9-AUTO-DB.zip
+            server-sha256.txt
+          retention-days: 14
