@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="epc_icon_bg">#B90F22</color>
-    <color name="epc_splash_bg">#080507</color>
-    <color name="epc_gold">#F1C84B</color>
+    <color name="epc_icon_bg">#009C3B</color>
+    <color name="epc_splash_bg">#06150E</color>
+    <color name="epc_gold">#FFDF00</color>
+    <color name="epc_blue">#002776</color>
 </resources>
