@@ -47,7 +47,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
         listBox=col();listBox.setPadding(dp(14),dp(14),dp(14),dp(14));listBox.setBackground(panel(SURFACE,18,BORDER));
         LinearLayout.LayoutParams lp=landscape?new LinearLayout.LayoutParams(0,dp(390),.58f):new LinearLayout.LayoutParams(-1,-2);if(landscape)lp.setMargins(dp(12),0,0,0);else lp.setMargins(0,dp(12),0,0);body.addView(listBox,lp);
         LinearLayout lh=row();lh.setGravity(Gravity.CENTER_VERTICAL);LinearLayout lt=col();lt.addView(over("NO APARELHO",MUTED));count=text("Carregando…",17,TEXT,true);lt.addView(count);lh.addView(lt,new LinearLayout.LayoutParams(0,-2,1));Button cleanup=small("LIMPEZA");lh.addView(cleanup,new LinearLayout.LayoutParams(dp(86),dp(42)));cleanup.setOnClickListener(v->openStorage());listBox.addView(lh);
-        TextView wait=text("Lendo as músicas do Estrada Play e, quando autorizado, as músicas do próprio celular…",12,MUTED,false);LinearLayout.LayoutParams wp=new LinearLayout.LayoutParams(-1,-2);wp.setMargins(0,dp(14),0,0);listBox.addView(wait,wp);
+        TextView wait=text("A biblioteca do Estrada Play aparece primeiro; as músicas do celular entram logo depois, sem consultar servidor.",12,MUTED,false);LinearLayout.LayoutParams wp=new LinearLayout.LayoutParams(-1,-2);wp.setMargins(0,dp(14),0,0);listBox.addView(wait,wp);
     }
 
     private LinearLayout playerCard(){
@@ -60,22 +60,26 @@ public final class MusicPlayerActivity extends ComponentActivity {
         TextView note=text("Downloads do Estrada Play também ganham uma cópia em Música/EstradaPlay. Essa cópia continua no celular mesmo se o app for removido.",10,MUTED,false);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,-2);np.setMargins(0,dp(13),0,0);p.addView(note,np);return p;
     }
 
-    // MUSIC_PERSIST_V2310: migrate old private downloads non-destructively and merge device MediaStore songs.
-    private void loadTracks(){if(io.isShutdown())return;io.execute(()->{
+    // MUSIC_FAST_SCAN_V2311: render app downloads first and scan MediaStore locally/cached afterwards.
+    // SharedMusicPublisher no longer runs in this foreground search path; persistence already runs on download/app startup.
+    private void loadTracks(){loadTracks(false);}
+    private void loadTracks(boolean forceDeviceScan){if(io.isShutdown())return;io.execute(()->{
         LibraryStore.ReconcileResult rec=library.reconcileOffline();
         List<Track> appTracks=library.downloadedTracks();
-        int shared=SharedMusicPublisher.publishAll(this,appTracks);
-        List<Track> tracks=DeviceMusicStore.merge(this,appTracks);
+        ArrayList<Track> immediate=new ArrayList<>(appTracks);
         runOnUiThread(()->{
             if(rec.recovered>0)Toast.makeText(this,rec.recovered+" música(s) offline recuperada(s).",Toast.LENGTH_LONG).show();
-            if(shared>0)Toast.makeText(this,shared+" música(s) protegida(s) em Música/EstradaPlay.",Toast.LENGTH_SHORT).show();
-            renderTracks(tracks);
+            renderTracks(immediate);
+            if(DeviceMusicStore.hasPermission(this)&&count!=null)count.setText(immediate.size()+" do Estrada Play · localizando celular…");
         });
+        if(!DeviceMusicStore.hasPermission(this))return;
+        List<Track> tracks=DeviceMusicStore.merge(this,appTracks,forceDeviceScan);
+        runOnUiThread(()->renderTracks(tracks));
     });}
 
     private void renderTracks(List<Track> tracks){if(listBox==null)return;while(listBox.getChildCount()>1)listBox.removeViewAt(1);int n=tracks==null?0:tracks.size();if(count!=null)count.setText(n+" "+(n==1?"música disponível":"músicas disponíveis"));
-        LinearLayout source=col();source.setPadding(0,dp(12),0,0);Button phone=DeviceMusicStore.hasPermission(this)?small("ATUALIZAR MÚSICAS DO CELULAR"):primary("LOCALIZAR MÚSICAS DO CELULAR");source.addView(phone,new LinearLayout.LayoutParams(-1,dp(52)));phone.setOnClickListener(v->{if(DeviceMusicStore.hasPermission(this))loadTracks();else requestDeviceAudio();});
-        TextView sourceNote=text(DeviceMusicStore.hasPermission(this)?"Acesso ao áudio autorizado. O player combina sua biblioteca do celular com as músicas do Estrada Play.":"O acesso só é solicitado quando você tocar no botão. O Estrada Play não envia essas músicas para o servidor.",10,MUTED,false);LinearLayout.LayoutParams sn=new LinearLayout.LayoutParams(-1,-2);sn.setMargins(0,dp(7),0,0);source.addView(sourceNote,sn);listBox.addView(source);
+        LinearLayout source=col();source.setPadding(0,dp(12),0,0);Button phone=DeviceMusicStore.hasPermission(this)?small("ATUALIZAR MÚSICAS DO CELULAR"):primary("LOCALIZAR MÚSICAS DO CELULAR");source.addView(phone,new LinearLayout.LayoutParams(-1,dp(52)));phone.setOnClickListener(v->{if(DeviceMusicStore.hasPermission(this)){DeviceMusicStore.invalidate();loadTracks(true);}else requestDeviceAudio();});
+        TextView sourceNote=text(DeviceMusicStore.hasPermission(this)?"Busca local rápida ativada. O resultado fica em cache por alguns segundos para não varrer o celular toda vez que abrir a tela.":"O acesso só é solicitado quando você tocar no botão. O Estrada Play não envia essas músicas para o servidor.",10,MUTED,false);LinearLayout.LayoutParams sn=new LinearLayout.LayoutParams(-1,-2);sn.setMargins(0,dp(7),0,0);source.addView(sourceNote,sn);listBox.addView(source);
         if(n==0){LinearLayout empty=col();empty.setPadding(0,dp(18),0,0);empty.addView(text("Nenhuma música reconhecida",19,TEXT,true));empty.addView(text("Você pode localizar as músicas já existentes no celular ou baixar músicas da biblioteca Estrada Play.",12,MUTED,false));Button add=small("ADICIONAR / BAIXAR MÚSICAS");LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(50));ap.setMargins(0,dp(12),0,0);empty.addView(add,ap);add.setOnClickListener(v->openDownloads());listBox.addView(empty);return;}
         ScrollView sv=new ScrollView(this);LinearLayout rows=col();sv.addView(rows,new ScrollView.LayoutParams(-1,-2));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(270));sp.setMargins(0,dp(10),0,0);listBox.addView(sv,sp);int limit=Math.min(n,240);for(int i=0;i<limit;i++){Track t=tracks.get(i);rows.addView(trackRow(t,i));if(i<limit-1){View d=new View(this);d.setBackgroundColor(BORDER);rows.addView(d,new LinearLayout.LayoutParams(-1,dp(1)));}}if(n>limit)rows.addView(text("Mostrando 240 de "+n+" faixas. Use a biblioteca do aparelho para organizar coleções muito grandes.",10,MUTED,false));}
 
@@ -84,10 +88,10 @@ public final class MusicPlayerActivity extends ComponentActivity {
     private void requestDeviceAudio(){
         if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.READ_MEDIA_AUDIO},REQ_DEVICE_AUDIO);
         else if(Build.VERSION.SDK_INT>=23)requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},REQ_DEVICE_AUDIO);
-        else loadTracks();
+        else loadTracks(true);
     }
 
-    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQ_DEVICE_AUDIO){if(DeviceMusicStore.hasPermission(this)){Toast.makeText(this,"Músicas do celular liberadas para o player.",Toast.LENGTH_SHORT).show();loadTracks();}else Toast.makeText(this,"Sem essa permissão, o player continua usando somente as músicas do Estrada Play.",Toast.LENGTH_LONG).show();}}
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQ_DEVICE_AUDIO){if(DeviceMusicStore.hasPermission(this)){Toast.makeText(this,"Músicas do celular liberadas para o player.",Toast.LENGTH_SHORT).show();DeviceMusicStore.invalidate();loadTracks(true);}else Toast.makeText(this,"Sem essa permissão, o player continua usando somente as músicas do Estrada Play.",Toast.LENGTH_LONG).show();}}
 
     private void register(){if(registered)return;IntentFilter f=new IntentFilter(PlayerService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(playerState,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(playerState,f);registered=true;}
     private void queryPlayer(){try{startService(new Intent(this,PlayerService.class).setAction(PlayerService.ACTION_QUERY_STATE));}catch(Throwable ignored){}}
