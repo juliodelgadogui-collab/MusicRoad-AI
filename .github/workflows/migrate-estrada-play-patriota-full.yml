@@ -77,7 +77,6 @@ jobs:
                   s = s.replace(a, b)
               return s
 
-          # The old edition README and the new canonical README would collide after renaming.
           legacy_readme = root / 'README-COMUNISTA.md'
           if legacy_readme.exists():
               legacy_readme.unlink()
@@ -133,7 +132,7 @@ jobs:
             echo 'Legacy identity remains in active Patriota paths'; exit 1
           fi
 
-          git add -A "$OLD" "$NEW"
+          git add -A
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Complete full Estrada Play Patriota source migration"
