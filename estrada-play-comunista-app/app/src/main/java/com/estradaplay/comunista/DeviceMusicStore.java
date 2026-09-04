@@ -8,7 +8,6 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
-import android.os.SystemClock;
 import android.provider.MediaStore;
 
 import java.io.File;
@@ -19,16 +18,15 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * DEVICE_MUSIC_V2311_FAST_SCAN
- * Reads Android MediaStore locally after explicit audio permission. The scan is
- * filtered at query level and cached briefly so reopening Music does not rescan
- * the whole phone every time. No network/server access is involved.
+ * DEVICE_MUSIC_V2312_MP3_FOLDERS
+ * Fast local lookup: only MP3 files already indexed by Android inside the
+ * Music/ and Download/ folders are queried. No full-storage traversal and no
+ * network/server access. Results stay cached until the user explicitly refreshes.
  */
 final class DeviceMusicStore {
-    private static final long CACHE_TTL_MS = 30000L;
     private static final Object SCAN_LOCK = new Object();
     private static ArrayList<Track> cached = new ArrayList<>();
-    private static long cachedAtElapsed;
+    private static boolean cacheReady;
 
     private DeviceMusicStore() {}
 
@@ -43,10 +41,14 @@ final class DeviceMusicStore {
         return true;
     }
 
+    static boolean hasCached() {
+        synchronized (SCAN_LOCK) { return cacheReady; }
+    }
+
     static void invalidate() {
         synchronized (SCAN_LOCK) {
             cached.clear();
-            cachedAtElapsed = 0L;
+            cacheReady = false;
         }
     }
 
@@ -58,20 +60,16 @@ final class DeviceMusicStore {
         ArrayList<Track> empty = new ArrayList<>();
         if (context == null || !hasPermission(context)) return empty;
 
-        long now = SystemClock.elapsedRealtime();
         synchronized (SCAN_LOCK) {
-            if (!force && !cached.isEmpty() && now - cachedAtElapsed <= CACHE_TTL_MS) {
-                return new ArrayList<>(cached);
-            }
-
-            ArrayList<Track> out = queryMediaStore(context);
+            if (!force && cacheReady) return new ArrayList<>(cached);
+            ArrayList<Track> out = queryMp3Folders(context);
             cached = new ArrayList<>(out);
-            cachedAtElapsed = SystemClock.elapsedRealtime();
+            cacheReady = true;
             return out;
         }
     }
 
-    private static ArrayList<Track> queryMediaStore(Context context) {
+    private static ArrayList<Track> queryMp3Folders(Context context) {
         ArrayList<Track> out = new ArrayList<>();
         ContentResolver resolver = context.getContentResolver();
         Uri base = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
@@ -80,59 +78,52 @@ final class DeviceMusicStore {
         projection.add(MediaStore.Audio.Media._ID);
         projection.add(MediaStore.Audio.Media.TITLE);
         projection.add(MediaStore.Audio.Media.ARTIST);
-        projection.add(MediaStore.Audio.Media.ALBUM);
         projection.add(MediaStore.Audio.Media.DISPLAY_NAME);
-        projection.add(MediaStore.Audio.Media.MIME_TYPE);
         projection.add(MediaStore.Audio.Media.SIZE);
-        projection.add(MediaStore.Audio.Media.DURATION);
-        projection.add(MediaStore.Audio.Media.IS_MUSIC);
         if (Build.VERSION.SDK_INT >= 29) projection.add(MediaStore.Audio.Media.RELATIVE_PATH);
         else projection.add(MediaStore.Audio.Media.DATA);
 
         String selection;
         String[] args;
+        String sort;
         if (Build.VERSION.SDK_INT >= 29) {
             selection = MediaStore.Audio.Media.SIZE + ">0 AND (" +
-                    MediaStore.Audio.Media.IS_MUSIC + "!=0 OR " +
+                    MediaStore.Audio.Media.MIME_TYPE + "=? OR " +
+                    MediaStore.Audio.Media.DISPLAY_NAME + " LIKE ?) AND (" +
+                    MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ? OR " +
                     MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ? OR " +
                     MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ?)";
-            args = new String[]{"Music/%", "%EstradaPlay%"};
+            args = new String[]{"audio/mpeg", "%.mp3", "Music/%", "Download/%", "Downloads/%"};
+            sort = MediaStore.Audio.Media.RELATIVE_PATH + " COLLATE NOCASE ASC, " +
+                    MediaStore.Audio.Media.DISPLAY_NAME + " COLLATE NOCASE ASC";
         } else {
             selection = MediaStore.Audio.Media.SIZE + ">0 AND (" +
-                    MediaStore.Audio.Media.IS_MUSIC + "!=0 OR " +
+                    MediaStore.Audio.Media.MIME_TYPE + "=? OR " +
+                    MediaStore.Audio.Media.DATA + " LIKE ?) AND (" +
+                    MediaStore.Audio.Media.DATA + " LIKE ? OR " +
                     MediaStore.Audio.Media.DATA + " LIKE ?)";
-            args = new String[]{"%/Music/%"};
+            args = new String[]{"audio/mpeg", "%.mp3", "%/Music/%", "%/Download/%"};
+            sort = MediaStore.Audio.Media.DATA + " COLLATE NOCASE ASC";
         }
 
-        try (Cursor c = resolver.query(base, projection.toArray(new String[0]), selection, args,
-                MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")) {
+        try (Cursor c = resolver.query(base, projection.toArray(new String[0]), selection, args, sort)) {
             if (c == null) return out;
             int id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
             int title = c.getColumnIndex(MediaStore.Audio.Media.TITLE);
             int artist = c.getColumnIndex(MediaStore.Audio.Media.ARTIST);
-            int album = c.getColumnIndex(MediaStore.Audio.Media.ALBUM);
             int name = c.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME);
-            int mime = c.getColumnIndex(MediaStore.Audio.Media.MIME_TYPE);
             int size = c.getColumnIndex(MediaStore.Audio.Media.SIZE);
-            int duration = c.getColumnIndex(MediaStore.Audio.Media.DURATION);
-            int music = c.getColumnIndex(MediaStore.Audio.Media.IS_MUSIC);
             int path = c.getColumnIndex(Build.VERSION.SDK_INT >= 29 ? MediaStore.Audio.Media.RELATIVE_PATH : MediaStore.Audio.Media.DATA);
 
             while (c.moveToNext() && out.size() < 12000) {
                 long mediaId = c.getLong(id);
-                String rawTitle = value(c, title);
                 String display = value(c, name);
+                if (!isMp3(display)) continue;
+                String rawTitle = value(c, title);
                 if (rawTitle.isEmpty()) rawTitle = stripExtension(display);
                 String rawArtist = value(c, artist);
-                String rawAlbum = value(c, album);
-                String rawMime = value(c, mime);
                 String rawPath = value(c, path);
                 long bytes = size >= 0 ? Math.max(0L, c.getLong(size)) : 0L;
-                long durationMs = duration >= 0 ? Math.max(0L, c.getLong(duration)) : 0L;
-                boolean isMusic = music >= 0 && c.getInt(music) != 0;
-                String lowerPath = rawPath.toLowerCase(Locale.ROOT).replace('\\', '/');
-                boolean inMusicFolder = lowerPath.contains("/music/") || lowerPath.startsWith("music/") || lowerPath.contains("estradaplay");
-                if (!isMusic && !inMusicFolder) continue;
                 if (bytes <= 0) continue;
 
                 Uri uri = ContentUris.withAppendedId(base, mediaId);
@@ -141,14 +132,14 @@ final class DeviceMusicStore {
                         "device_" + mediaId,
                         rawTitle,
                         rawArtist,
-                        rawAlbum,
+                        "",
                         folder,
                         folder,
-                        rawMime,
+                        "audio/mpeg",
                         "",
                         uri.toString(),
                         bytes,
-                        durationMs));
+                        0L));
             }
         } catch (Throwable ignored) {}
         return out;
@@ -184,6 +175,10 @@ final class DeviceMusicStore {
         return f.isFile() && f.length() > 0;
     }
 
+    private static boolean isMp3(String name) {
+        return name != null && name.toLowerCase(Locale.ROOT).endsWith(".mp3");
+    }
+
     private static String signature(Track t) {
         return token(t == null ? "" : t.title) + "|" + token(t == null ? "" : t.artist);
     }
@@ -193,10 +188,20 @@ final class DeviceMusicStore {
         if (Build.VERSION.SDK_INT < 29 && path.contains("/")) path = path.substring(0, path.lastIndexOf('/'));
         while (path.endsWith("/")) path = path.substring(0, path.length() - 1);
         if (path.isEmpty()) return "Músicas do celular";
+
         String lower = path.toLowerCase(Locale.ROOT);
         int music = lower.indexOf("music/");
-        if (music >= 0) path = path.substring(music + 6);
-        if (path.isEmpty() || "music".equalsIgnoreCase(path)) return "Músicas do celular";
+        if (music >= 0) {
+            String sub = path.substring(music + 6);
+            return sub.isEmpty() ? "Celular / Música" : "Celular / Música / " + sub;
+        }
+        int download = lower.indexOf("download/");
+        if (download >= 0) {
+            String sub = path.substring(download + 9);
+            return sub.isEmpty() ? "Celular / Download" : "Celular / Download / " + sub;
+        }
+        if (lower.endsWith("/music") || "music".equals(lower)) return "Celular / Música";
+        if (lower.endsWith("/download") || "download".equals(lower)) return "Celular / Download";
         return "Celular / " + path;
     }
 
