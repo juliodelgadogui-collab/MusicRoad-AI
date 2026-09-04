@@ -24,6 +24,9 @@ public final class EstradaPlayApplication extends Application {
         boolean deferOptionalBridges = ProcessCrashGuard.install(this);
         if (deferOptionalBridges) return;
 
+        // COMBOIO_LINK_MAP_V237: deep links + members projected onto the principal RoadMapActivity.
+        ConvoyIntegrationV237.install(this);
+
         IntentFilter roadState = new IntentFilter(RoadSafetyService.ACTION_STATE);
 
         try {
