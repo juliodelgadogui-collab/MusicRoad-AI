@@ -18,21 +18,102 @@ import androidx.activity.ComponentActivity;
 
 public final class DriveToolsActivity extends ComponentActivity {
     // AUTOMOTIVE_RED_GOLD_V200_CENTRAL
+    // UNIFIED_TEST_V235: test flavor groups the existing tools into five product modules.
     private final int BG=Color.rgb(6,4,5),SURFACE=Color.rgb(17,10,12),SURFACE2=Color.rgb(27,14,17),BORDER=Color.rgb(73,35,40),TEXT=Color.rgb(247,239,224),MUTED=Color.rgb(170,145,140),RED=Color.rgb(184,20,38),GREEN=Color.rgb(69,205,126),GOLD=Color.rgb(226,185,76);
     private LinearLayout page;
 
-    @Override protected void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);build();}
+    @Override protected void onCreate(Bundle b){
+        super.onCreate(b);
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
+        if(BuildConfig.UNIFIED_TEST) buildUnified(); else buildLegacy();
+    }
 
-    private void build(){
+    private void preparePage(){
         FrameLayout root=new FrameLayout(this);root.setBackgroundColor(BG);root.addView(new EpcBackdropView(this),new FrameLayout.LayoutParams(-1,-1));
         ScrollView sv=new ScrollView(this);sv.setFillViewport(true);sv.setOverScrollMode(View.OVER_SCROLL_NEVER);sv.setBackgroundColor(Color.TRANSPARENT);
         page=col();page.setPadding(dp(18),dp(14),dp(18),dp(30));sv.addView(page);root.addView(sv,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
 
         LinearLayout chrome=row();chrome.setGravity(Gravity.CENTER_VERTICAL);chrome.setPadding(dp(12),dp(9),dp(12),dp(9));chrome.setBackground(panel(Color.argb(225,30,7,13),14,Color.rgb(113,31,42)));
         TextView star=text("★",25,GOLD,true);star.setGravity(Gravity.CENTER);chrome.addView(star,new LinearLayout.LayoutParams(dp(42),dp(42)));
-        LinearLayout brand=col();brand.addView(text("EPC",24,TEXT,true));brand.addView(over("ESTRADA PLAY COMUNISTA",RED));chrome.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
-        TextView live=over("● SISTEMA ATIVO",GREEN);live.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);chrome.addView(live);page.addView(chrome);
+        LinearLayout brand=col();brand.addView(text("EPC",24,TEXT,true));brand.addView(over(BuildConfig.UNIFIED_TEST?"ESTRADA PLAY · TESTE UNIFICADO":"ESTRADA PLAY COMUNISTA",RED));chrome.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
+        TextView live=over(BuildConfig.UNIFIED_TEST?"● TESTE 2.3.4":"● SISTEMA ATIVO",BuildConfig.UNIFIED_TEST?GOLD:GREEN);live.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);chrome.addView(live);page.addView(chrome);
+    }
 
+    private void buildUnified(){
+        preparePage();
+        LinearLayout head=row();head.setGravity(Gravity.CENTER_VERTICAL);Button back=btn("‹ VOLTAR",false);head.addView(back,new LinearLayout.LayoutParams(dp(96),dp(48)));back.setOnClickListener(v->finish());
+        LinearLayout title=col();title.addView(over("CENTRAL UNIFICADA",RED));title.addView(text("Estrada Play",30,TEXT,true));title.addView(text("Menos telas. As funções existentes agora ficam organizadas por uso.",11,MUTED,false));head.addView(title,new LinearLayout.LayoutParams(0,-2,1));page.addView(head);margins(head,0,18,0,10);
+        addStatusStrip();
+
+        unifiedModule("◎","VIAGEM","Destino, planejamento, clima, offline e histórico ficam no mesmo fluxo.",GOLD,
+                new Action("PLANEJAR / ROTA",TripPlannerActivity.class,true),
+                new Action("HISTÓRICO",TripHistoryActivity.class,false),
+                new Action("FAVORITOS",RoadFavoritesActivity.class,false));
+
+        unifiedModule("▣","MEU VEÍCULO","Perfil, consumo, abastecimento, OBD2 e manutenção reunidos.",RED,
+                new Action("DADOS / ABASTECER",VehicleCostActivity.class,true),
+                new Action("OBD2",Obd2Activity.class,false),
+                new Action("MANUTENÇÃO",MaintenanceActivity.class,false));
+
+        unifiedModule("◈","ESTRADA","Navegação e segurança: mapa, SOS, serviços e relato em uma área.",GREEN,
+                new Action("ABRIR MAPA",RoadMapActivity.class,true),
+                new Action("SOS",EmergencyActivity.class,false),
+                new Action("SERVIÇOS",NearbyServicesActivity.class,false),
+                new Action("REPORTAR",RoadReportActivity.class,false));
+
+        LinearLayout music=unifiedCard("♪","MÚSICA","Player, biblioteca offline e downloads sem separar Som de Arquivo.",RED);
+        LinearLayout musicActions=row();
+        Button player=btn("ABRIR PLAYER",true);Button downloads=btn("DOWNLOADS",false);
+        musicActions.addView(player,new LinearLayout.LayoutParams(0,dp(50),1));LinearLayout.LayoutParams mdlp=new LinearLayout.LayoutParams(0,dp(50),1);mdlp.setMargins(dp(8),0,0,0);musicActions.addView(downloads,mdlp);music.addView(musicActions);margins(musicActions,0,12,0,0);
+        player.setOnClickListener(v->open(MusicPlayerActivity.class));
+        downloads.setOnClickListener(v->{Intent i=new Intent(this,MainActivity.class);i.putExtra("open","library");startActivity(i);});
+        page.addView(music);margins(music,0,10,0,0);
+
+        unifiedModule("+","MAIS","Recursos especiais ficam fora do caminho principal.",GOLD,
+                new Action("COMBOIO",ConvoyActivity.class,true),
+                new Action("DASHCAM",CameraActivity.class,false),
+                new Action("HUD",HudActivity.class,false));
+
+        TextView note=text("OCULTADOS NESTE TESTE: Rádio PTT, combustível comunitário, base coletiva, Pensamentos, diagnóstico de voz e configuração manual do servidor. O código não foi apagado; apenas saiu da navegação principal.",10,MUTED,false);
+        note.setPadding(dp(14),dp(12),dp(14),dp(12));note.setBackground(panel(Color.argb(225,17,10,12),14,BORDER));page.addView(note);margins(note,0,14,0,0);
+
+        Button settings=btn("CONFIGURAÇÕES ESSENCIAIS",false);page.addView(settings,new LinearLayout.LayoutParams(-1,dp(50)));margins(settings,0,10,0,0);settings.setOnClickListener(v->showEssentialSettings());
+        page.postDelayed(() -> EpcMotion.stagger(page),55L);
+    }
+
+    private void showEssentialSettings(){
+        page.removeAllViews();
+        LinearLayout head=row();head.setGravity(Gravity.CENTER_VERTICAL);Button back=btn("‹ CENTRAL",false);head.addView(back,new LinearLayout.LayoutParams(dp(100),dp(48)));back.setOnClickListener(v->buildUnified());
+        LinearLayout title=col();title.addView(over("AJUSTES",RED));title.addView(text("Configurações essenciais",27,TEXT,true));head.addView(title,new LinearLayout.LayoutParams(0,-2,1));page.addView(head);
+        toggle("MODO NOTURNO","Escurecer instrumentos automaticamente","auto_night",DriveSettings.autoNight(this));
+        toggle("CHUVA AUTOMÁTICA","Antecipa alertas e observa a rota","rain_auto",DriveSettings.autoRain(this));
+        toggle("PROTEGER VÍDEO EM IMPACTO","Preserva o trecho da dashcam","protect_impact_video",DriveSettings.protectImpactVideo(this));
+        Button done=btn("VOLTAR À CENTRAL",true);page.addView(done,new LinearLayout.LayoutParams(-1,dp(54)));margins(done,0,12,0,0);done.setOnClickListener(v->buildUnified());
+    }
+
+    private void unifiedModule(String icon,String title,String sub,int accent,Action... actions){
+        LinearLayout card=unifiedCard(icon,title,sub,accent);
+        int at=0;
+        while(at<actions.length){
+            LinearLayout line=row();
+            for(int c=0;c<2;c++){
+                if(at>=actions.length){line.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));continue;}
+                Action a=actions[at++];Button b=btn(a.label,a.primary);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(50),1);if(c>0)lp.setMargins(dp(8),0,0,0);line.addView(b,lp);b.setOnClickListener(v->open(a.cls));
+            }
+            card.addView(line);margins(line,0,card.getChildCount()==4?12:8,0,0);
+        }
+        page.addView(card);margins(card,0,10,0,0);
+    }
+
+    private LinearLayout unifiedCard(String icon,String title,String sub,int accent){
+        LinearLayout card=col();card.setPadding(dp(16),dp(15),dp(16),dp(15));card.setBackground(panel(Color.argb(232,17,10,12),17,BORDER));
+        LinearLayout top=row();top.setGravity(Gravity.CENTER_VERTICAL);TextView glyph=text(icon,23,accent,true);glyph.setGravity(Gravity.CENTER);glyph.setBackground(panel(Color.argb(145,80,12,24),100,Color.argb(130,184,20,38)));top.addView(glyph,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        LinearLayout meta=col();meta.addView(over("MÓDULO",accent));meta.addView(text(title,21,TEXT,true));TextView desc=text(sub,10.5f,MUTED,false);desc.setMaxLines(3);meta.addView(desc);top.addView(meta,new LinearLayout.LayoutParams(0,-2,1));margins(meta,12,0,0,0);card.addView(top);return card;
+    }
+
+    private void buildLegacy(){
+        preparePage();
         LinearLayout head=row();head.setGravity(Gravity.CENTER_VERTICAL);Button back=btn("‹ VOLTAR",false);head.addView(back,new LinearLayout.LayoutParams(dp(96),dp(48)));back.setOnClickListener(v->finish());
         LinearLayout title=col();title.addView(over("CENTRAL",RED));title.addView(text("Controles da viagem",28,TEXT,true));title.addView(text("Tudo do carro em um único painel.",11,MUTED,false));head.addView(title,new LinearLayout.LayoutParams(0,-2,1));page.addView(head);margins(head,0,18,0,10);
 
@@ -92,4 +173,5 @@ public final class DriveToolsActivity extends ComponentActivity {
     private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}
     private void margins(View v,int l,int t,int r,int b){if(v.getLayoutParams() instanceof LinearLayout.LayoutParams){LinearLayout.LayoutParams p=(LinearLayout.LayoutParams)v.getLayoutParams();p.setMargins(dp(l),dp(t),dp(r),dp(b));v.setLayoutParams(p);}}
     private static final class Tool{final String icon,title,sub;final Class<?>cls;final int accent;Tool(String i,String t,String s,Class<?>c,int a){icon=i;title=t;sub=s;cls=c;accent=a;}}
+    private static final class Action{final String label;final Class<?>cls;final boolean primary;Action(String label,Class<?>cls,boolean primary){this.label=label;this.cls=cls;this.primary=primary;}}
 }
