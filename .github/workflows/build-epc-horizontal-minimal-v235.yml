@@ -1,10 +1,12 @@
-name: EPC Android 2.3.7 Comboio Link + Mapa
+name: EPC Android 2.3.8 Comboio Link Público
 permissions:
   contents: read
 on:
   push:
     branches: [agent/estrada-play-comunista]
     paths:
+      - '.htaccess'
+      - 'convoy_invite.php'
       - 'estrada-play-comunista-app/app/build.gradle'
       - 'estrada-play-comunista-app/app/src/main/AndroidManifest.xml'
       - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/ConvoyIntegrationV237.java'
@@ -21,7 +23,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: epc-android-v237
+  group: epc-android-v238
   cancel-in-progress: true
 
 jobs:
@@ -52,7 +54,7 @@ jobs:
             echo 'Unsafe self-parent lookup still present'; exit 1
           fi
 
-      - name: Validate 2.3.7 convoy integration
+      - name: Validate 2.3.8 public convoy integration
         shell: bash
         run: |
           set -euo pipefail
@@ -60,12 +62,18 @@ jobs:
           J="$APP/app/src/main/java/com/estradaplay/comunista"
           M="$APP/app/src/main/AndroidManifest.xml"
 
-          grep -q "versionCode 238" "$APP/app/build.gradle"
-          grep -q "versionName '2.3.7'" "$APP/app/build.gradle"
+          grep -q "versionCode 239" "$APP/app/build.gradle"
+          grep -q "versionName '2.3.8'" "$APP/app/build.gradle"
+          grep -q 'https://www.xn--gesto-dra.store/c/' "$APP/app/build.gradle"
+          grep -q 'EPC_CONVOY_PUBLIC_LINK_V238' "$APP/app/build.gradle"
+
+          test -f convoy_invite.php
+          grep -q 'EPC_CONVOY_PUBLIC_LINK_V238' convoy_invite.php
+          grep -q 'estradaplay://comboio/' convoy_invite.php
+          grep -q '^RewriteRule \^c/' .htaccess
 
           test -f "$J/ConvoyIntegrationV237.java"
           grep -q 'COMBOIO_LINK_MAP_V237' "$J/ConvoyIntegrationV237.java"
-          grep -q 'estradaplay://comboio/' "$J/ConvoyIntegrationV237.java"
           grep -q 'setConvoyMembers' "$J/ConvoyIntegrationV237.java"
           grep -q 'ConvoyIntegrationV237.install(this)' "$J/EstradaPlayApplication.java"
           grep -q 'ConvoyIntegrationV237.captureInvite' "$J/GateActivity.java"
@@ -111,9 +119,9 @@ jobs:
           MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
           curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
           echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
-          rm -rf /tmp/epc-v237-voice && mkdir -p /tmp/epc-v237-voice
-          tar -xjf "$MODEL" -C /tmp/epc-v237-voice
-          python3 "$APP/tools/generate_voice_bank.py" --model-root /tmp/epc-v237-voice --output "$APP/app/src/main/res/raw" --metadata-output "$APP/app/src/main/assets/estradaplay_voice"
+          rm -rf /tmp/epc-v238-voice && mkdir -p /tmp/epc-v238-voice
+          tar -xjf "$MODEL" -C /tmp/epc-v238-voice
+          python3 "$APP/tools/generate_voice_bank.py" --model-root /tmp/epc-v238-voice --output "$APP/app/src/main/res/raw" --metadata-output "$APP/app/src/main/assets/estradaplay_voice"
           test "$(find "$APP/app/src/main/res/raw" -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
 
       - name: Unit tests and build universal plus horizontal APKs
@@ -128,27 +136,30 @@ jobs:
           test -f "$U"
           test -f "$H"
 
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/epc-v237-universal-badging.txt
-          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='238' versionName='2.3.7'" /tmp/epc-v237-universal-badging.txt
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/epc-v237-horizontal-badging.txt
-          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='238' versionName='2.3.7'" /tmp/epc-v237-horizontal-badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/epc-v238-universal-badging.txt
+          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='239' versionName='2.3.8'" /tmp/epc-v238-universal-badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/epc-v238-horizontal-badging.txt
+          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='239' versionName='2.3.8'" /tmp/epc-v238-horizontal-badging.txt
 
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree "$U" AndroidManifest.xml | tee /tmp/epc-v237-manifest.txt
-          grep -q 'estradaplay' /tmp/epc-v237-manifest.txt
-          grep -q 'comboio' /tmp/epc-v237-manifest.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree "$U" AndroidManifest.xml | tee /tmp/epc-v238-manifest.txt
+          grep -q 'estradaplay' /tmp/epc-v238-manifest.txt
+          grep -q 'comboio' /tmp/epc-v238-manifest.txt
+
+          grep -a -q 'https://www.xn--gesto-dra.store/c/' "$U"
+          grep -a -q 'https://www.xn--gesto-dra.store/c/' "$H"
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
 
-          cp "$U" Estrada-Play-Comunista-Universal-2.3.7.apk
-          cp "$H" Estrada-Play-Comunista-Horizontal-2.3.7.apk
-          sha256sum Estrada-Play-Comunista-Universal-2.3.7.apk Estrada-Play-Comunista-Horizontal-2.3.7.apk | tee /tmp/epc-v237-sha.txt
+          cp "$U" Estrada-Play-Comunista-Universal-2.3.8.apk
+          cp "$H" Estrada-Play-Comunista-Horizontal-2.3.8.apk
+          sha256sum Estrada-Play-Comunista-Universal-2.3.8.apk Estrada-Play-Comunista-Horizontal-2.3.8.apk | tee /tmp/epc-v238-sha.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-2.3.7
+          name: Estrada-Play-Comunista-2.3.8
           path: |
-            Estrada-Play-Comunista-Universal-2.3.7.apk
-            Estrada-Play-Comunista-Horizontal-2.3.7.apk
+            Estrada-Play-Comunista-Universal-2.3.8.apk
+            Estrada-Play-Comunista-Horizontal-2.3.8.apk
           retention-days: 7
           compression-level: 0
