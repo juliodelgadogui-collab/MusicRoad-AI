@@ -21,18 +21,20 @@ import org.json.JSONObject;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * COMBOIO_LINK_MAP_V237
+ * COMBOIO_LINK_MAP_V237 / EPC_CONVOY_PUBLIC_SOURCE_V239
  *
  * Integra o Comboio ao app principal sem duplicar GPS:
- * - compartilha um deep link estradaplay://comboio/CODIGO;
+ * - compartilha o link publico configurado em BuildConfig.CONVOY_PUBLIC_URL;
+ * - aceita o retorno estradaplay://comboio/CODIGO e links web do dominio publico;
  * - guarda convites recebidos ate a sessao estar pronta;
- * - entra automaticamente no comboio ao abrir o link;
+ * - entra automaticamente no comboio ao abrir o convite;
  * - projeta os membros do comboio no RoadMapView principal usando o snapshot
  *   produzido pelo ConvoyLiveBridge/RoadSafetyService existente.
  */
@@ -102,7 +104,11 @@ final class ConvoyIntegrationV237 implements Application.ActivityLifecycleCallba
 
     static String inviteLink(String rawCode) {
         String code = ConvoyStore.normalize(rawCode);
-        return code.isEmpty() ? "" : "estradaplay://comboio/" + Uri.encode(code);
+        if (code.isEmpty()) return "";
+        String base = BuildConfig.CONVOY_PUBLIC_URL == null ? "" : BuildConfig.CONVOY_PUBLIC_URL.trim();
+        if (base.isEmpty()) return "estradaplay://comboio/" + Uri.encode(code);
+        if (!base.endsWith("/")) base += "/";
+        return base + Uri.encode(code);
     }
 
     private static String extractCode(Intent intent) {
@@ -114,22 +120,45 @@ final class ConvoyIntegrationV237 implements Application.ActivityLifecycleCallba
                 if ("estradaplay".equals(scheme) && "comboio".equals(host)) {
                     String code = data.getQueryParameter("code");
                     if (code == null || code.trim().isEmpty()) {
-                        java.util.List<String> segments = data.getPathSegments();
+                        List<String> segments = data.getPathSegments();
                         if (segments != null && !segments.isEmpty()) code = segments.get(0);
                     }
                     return ConvoyStore.normalize(code);
                 }
-                // Preparado para um futuro link web do servidor, sem depender dele para funcionar agora.
-                if (("http".equals(scheme) || "https".equals(scheme)) && host.contains("gestao2.store")) {
-                    String code = data.getQueryParameter("comboio");
+
+                if ("http".equals(scheme) || "https".equals(scheme)) {
+                    String code = "";
+                    List<String> segments = data.getPathSegments();
+                    if (isConfiguredPublicHost(host) && segments != null && segments.size() >= 2
+                            && "c".equalsIgnoreCase(segments.get(0))) {
+                        code = segments.get(1);
+                    }
+                    if (code == null || code.trim().isEmpty()) code = data.getQueryParameter("comboio");
                     if (code == null || code.trim().isEmpty()) code = data.getQueryParameter("code");
-                    if (code != null && !code.trim().isEmpty()) return ConvoyStore.normalize(code);
+                    if (code != null && !code.trim().isEmpty()
+                            && (isConfiguredPublicHost(host) || host.contains("gestao2.store"))) {
+                        return ConvoyStore.normalize(code);
+                    }
                 }
             }
             String extra = intent.getStringExtra("convoy_code");
             return ConvoyStore.normalize(extra);
         } catch (Throwable ignored) {
             return "";
+        }
+    }
+
+    private static boolean isConfiguredPublicHost(String host) {
+        if (host == null || host.isEmpty()) return false;
+        try {
+            String configured = lower(Uri.parse(BuildConfig.CONVOY_PUBLIC_URL).getHost());
+            if (configured.isEmpty()) return false;
+            if (host.equals(configured)) return true;
+            String a = host.startsWith("www.") ? host.substring(4) : host;
+            String b = configured.startsWith("www.") ? configured.substring(4) : configured;
+            return a.equals(b);
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
