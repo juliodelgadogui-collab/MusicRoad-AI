@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -76,9 +77,10 @@ public final class PlayerService extends Service {
         return START_NOT_STICKY;
     }
 
+    // DEVICE_MUSIC_V2310: queue combines EPC offline downloads and the phone's MediaStore songs.
     private ArrayList<Track> loadQueue(String folder) {
         ArrayList<Track> loaded = new ArrayList<>();
-        List<Track> all = store.downloadedTracks();
+        List<Track> all = DeviceMusicStore.merge(this, store.downloadedTracks());
         String f = folder == null ? "" : folder.trim();
         for (Track t : all) {
             if (f.isEmpty() || "__ALL__".equals(f) || f.equals(LibraryStore.folderKey(t))) loaded.add(t);
@@ -98,19 +100,20 @@ public final class PlayerService extends Service {
         releasePlayer();
         Track t = current();
         if (t == null) { broadcast("", false, "Fila vazia"); stopSelf(); return; }
-        File f = t.localPath.isEmpty() ? null : new File(t.localPath);
-        if (f == null || !f.isFile() || f.length() <= 0) { next(); return; }
+        String source = t.localPath == null ? "" : t.localPath.trim();
+        if (!DeviceMusicStore.readable(this, source)) { next(); return; }
         try {
             player = new MediaPlayer();
             player.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
-            player.setDataSource(f.getAbsolutePath());
+            if (source.startsWith("content://")) player.setDataSource(this, Uri.parse(source));
+            else player.setDataSource(new File(source).getAbsolutePath());
             player.setOnPreparedListener(mp -> {
                 prepared = true;
                 requestFocus();
                 applyVolume();
                 mp.start();
                 startForeground(NOTIFICATION_ID, notification(t, true));
-                broadcast(t.title, true, "OFFLINE");
+                broadcast(t.title, true, source.startsWith("content://") ? "NO CELULAR" : "OFFLINE");
             });
             player.setOnCompletionListener(mp -> next());
             player.setOnErrorListener((mp, what, extra) -> { next(); return true; });
@@ -132,7 +135,7 @@ public final class PlayerService extends Service {
                 if (t != null) { updateNotification(notification(t, false)); broadcast(t.title, false, "Pausado"); }
             } else {
                 requestFocus(); applyVolume(); player.start();
-                if (t != null) { updateNotification(notification(t, true)); broadcast(t.title, true, "OFFLINE"); }
+                if (t != null) { updateNotification(notification(t, true)); broadcast(t.title, true, "LOCAL"); }
             }
         } catch (Exception ignored) {}
     }
@@ -166,7 +169,7 @@ public final class PlayerService extends Service {
         Track t = current();
         boolean playing = false;
         try { playing = player != null && prepared && player.isPlaying(); } catch (Throwable ignored) {}
-        broadcast(t == null ? "" : t.title, playing, t == null ? "PRONTO" : (playing ? "OFFLINE" : "PAUSADO"));
+        broadcast(t == null ? "" : t.title, playing, t == null ? "PRONTO" : (playing ? "LOCAL" : "PAUSADO"));
     }
 
     private void broadcast(String title, boolean playing, String state) {
@@ -183,7 +186,7 @@ public final class PlayerService extends Service {
     private void createChannel() {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationChannel ch = new NotificationChannel(CHANNEL, "Reprodução", NotificationManager.IMPORTANCE_LOW);
-        ch.setDescription("Música offline do EstradaPlay");
+        ch.setDescription("Música local do EstradaPlay e do aparelho");
         getSystemService(NotificationManager.class).createNotificationChannel(ch);
     }
 
@@ -191,7 +194,7 @@ public final class PlayerService extends Service {
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         b.setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentTitle(t == null ? "Estrada Play Comunista" : t.title)
-                .setContentText(t == null ? "Música offline" : t.artist + (playing ? " · Tocando offline" : " · Pausado"))
+                .setContentText(t == null ? "Música local" : t.artist + (playing ? " · Tocando no aparelho" : " · Pausado"))
                 .setOngoing(playing)
                 .setOnlyAlertOnce(true);
         return b.build();
