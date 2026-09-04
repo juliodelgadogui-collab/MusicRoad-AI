@@ -4,8 +4,7 @@ on:
   push:
     branches: [agent/estrada-play-patriota]
     paths:
-      - 'estrada-play-comunista-app/**'
-      - '.github/workflows/build-estrada-play-patriota.yml'
+      - 'estrada-play-patriota-app/**'
   workflow_dispatch:
 
 concurrency:
@@ -20,25 +19,32 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify Patriota isolation
+      - name: Verify full Patriota identity
         shell: bash
         run: |
           set -euo pipefail
-          APP=estrada-play-comunista-app
-          J="$APP/app/src/main/java/com/estradaplay/comunista"
+          APP=estrada-play-patriota-app
+          J="$APP/app/src/main/java/com/estradaplay/patriota"
+          test ! -e estrada-play-comunista-app
+          grep -q "namespace 'com.estradaplay.patriota'" "$APP/app/build.gradle"
           grep -q "applicationId 'com.estradaplay.patriota'" "$APP/app/build.gradle"
           grep -q "appLabel: 'Estrada Play Patriota'" "$APP/app/build.gradle"
           grep -q 'versionCode 240' "$APP/app/build.gradle"
           grep -q "versionName '2.3.9'" "$APP/app/build.gradle"
-          test -f "$J/PatriotaBranding.java"
-          grep -q 'PatriotaBranding.install(this)' "$J/EstradaPlayApplication.java"
+          test -f "$J/PatriotaCopilot.java"
+          test -f "$J/EppBackdropView.java"
+          test -f "$J/EppMotion.java"
+          test ! -e "$J/PatriotaBranding.java"
+          grep -q '^package com.estradaplay.patriota;' "$J/RoadRadioService.java"
           grep -q 'android:process=":radio"' "$APP/app/src/main/AndroidManifest.xml"
+          if grep -R -I -n -E 'package com\.estradaplay\.comunista|Estrada Play Comunista|COMUNISTA|Comunista|CommunistCopilot|COMMUNIST|Camarada|camarada|revolução' "$APP"; then
+            echo 'Legacy communist identity detected in active Patriota app'; exit 1
+          fi
+          if find "$APP" -iname '*comunista*' -o -iname '*communist*' | grep -q .; then
+            echo 'Legacy communist name detected in active Patriota paths'; exit 1
+          fi
           if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then
             echo 'WebView detected'; exit 1
-          fi
-          git fetch origin agent/estrada-play-comunista:refs/remotes/origin/agent/estrada-play-comunista
-          if git diff --name-only origin/agent/estrada-play-comunista...HEAD | grep -E '/RoadRadio(Activity|RtcPolicy|Service)\.java$'; then
-            echo 'Patriota branch must not modify RoadRadio files'; exit 1
           fi
 
       - uses: actions/setup-java@v4
@@ -58,7 +64,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APP=estrada-play-comunista-app
+          APP=estrada-play-patriota-app
           if [ -f "$APP/signing/estradaplay-dev.keystore.b64" ]; then
             base64 -d "$APP/signing/estradaplay-dev.keystore.b64" > "$APP/signing/estradaplay-dev.keystore"
           fi
@@ -67,7 +73,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd estrada-play-comunista-app
+          cd estrada-play-patriota-app
           gradle --no-daemon testUniversalDebugUnitTest
           gradle --no-daemon assembleUniversalDebug
 
@@ -75,7 +81,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK=estrada-play-comunista-app/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+          APK=estrada-play-patriota-app/app/build/outputs/apk/universal/debug/app-universal-debug.apk
           test -f "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/patriota-badging.txt
           grep -q "package: name='com.estradaplay.patriota.universal' versionCode='240' versionName='2.3.9'" /tmp/patriota-badging.txt
