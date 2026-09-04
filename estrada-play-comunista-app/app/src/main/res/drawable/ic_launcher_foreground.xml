@@ -4,7 +4,10 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- White highway keeps the Estrada Play family identity. -->
     <path android:fillColor="#FFFFFF" android:pathData="M54,15 L83,94 L25,94 Z" />
-    <path android:fillColor="#B90F22" android:pathData="M54,34 L64,94 L44,94 Z" />
-    <path android:fillColor="#F1C84B" android:pathData="M28,16 L31.2,22.4 L38.2,23.4 L33.1,28.3 L34.3,35.2 L28,31.9 L21.7,35.2 L22.9,28.3 L17.8,23.4 L24.8,22.4 Z" />
+    <!-- Brazil blue lane distinguishes the Patriota edition. -->
+    <path android:fillColor="#002776" android:pathData="M54,34 L64,94 L44,94 Z" />
+    <!-- Yellow star accent over the green adaptive-icon background. -->
+    <path android:fillColor="#FFDF00" android:pathData="M28,16 L31.2,22.4 L38.2,23.4 L33.1,28.3 L34.3,35.2 L28,31.9 L21.7,35.2 L22.9,28.3 L17.8,23.4 L24.8,22.4 Z" />
 </vector>
