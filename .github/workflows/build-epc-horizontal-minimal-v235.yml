@@ -145,8 +145,9 @@ jobs:
           grep -q 'estradaplay' /tmp/epc-v238-manifest.txt
           grep -q 'comboio' /tmp/epc-v238-manifest.txt
 
-          grep -a -q 'https://www.xn--gesto-dra.store/c/' "$U"
-          grep -a -q 'https://www.xn--gesto-dra.store/c/' "$H"
+          # Gradle patches the invite helper before javac; validate the effective source rather
+          # than grepping a compressed APK archive, which can produce a false negative.
+          grep -q 'https://www.xn--gesto-dra.store/c/' "$APP/app/src/main/java/com/estradaplay/comunista/ConvoyIntegrationV237.java"
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
