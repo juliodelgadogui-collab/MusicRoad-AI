@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.SystemClock;
 import android.provider.MediaStore;
 
 import java.io.File;
@@ -18,11 +19,17 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * DEVICE_MUSIC_V2310
- * Reads the Android MediaStore after an explicit audio permission grant and exposes
- * the phone's own songs to the native Estrada Play player. No server and no WebView.
+ * DEVICE_MUSIC_V2311_FAST_SCAN
+ * Reads Android MediaStore locally after explicit audio permission. The scan is
+ * filtered at query level and cached briefly so reopening Music does not rescan
+ * the whole phone every time. No network/server access is involved.
  */
 final class DeviceMusicStore {
+    private static final long CACHE_TTL_MS = 30000L;
+    private static final Object SCAN_LOCK = new Object();
+    private static ArrayList<Track> cached = new ArrayList<>();
+    private static long cachedAtElapsed;
+
     private DeviceMusicStore() {}
 
     static boolean hasPermission(Context context) {
@@ -36,11 +43,39 @@ final class DeviceMusicStore {
         return true;
     }
 
+    static void invalidate() {
+        synchronized (SCAN_LOCK) {
+            cached.clear();
+            cachedAtElapsed = 0L;
+        }
+    }
+
     static ArrayList<Track> scan(Context context) {
+        return scan(context, false);
+    }
+
+    static ArrayList<Track> scan(Context context, boolean force) {
+        ArrayList<Track> empty = new ArrayList<>();
+        if (context == null || !hasPermission(context)) return empty;
+
+        long now = SystemClock.elapsedRealtime();
+        synchronized (SCAN_LOCK) {
+            if (!force && !cached.isEmpty() && now - cachedAtElapsed <= CACHE_TTL_MS) {
+                return new ArrayList<>(cached);
+            }
+
+            ArrayList<Track> out = queryMediaStore(context);
+            cached = new ArrayList<>(out);
+            cachedAtElapsed = SystemClock.elapsedRealtime();
+            return out;
+        }
+    }
+
+    private static ArrayList<Track> queryMediaStore(Context context) {
         ArrayList<Track> out = new ArrayList<>();
-        if (context == null || !hasPermission(context)) return out;
         ContentResolver resolver = context.getContentResolver();
         Uri base = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+
         ArrayList<String> projection = new ArrayList<>();
         projection.add(MediaStore.Audio.Media._ID);
         projection.add(MediaStore.Audio.Media.TITLE);
@@ -54,7 +89,22 @@ final class DeviceMusicStore {
         if (Build.VERSION.SDK_INT >= 29) projection.add(MediaStore.Audio.Media.RELATIVE_PATH);
         else projection.add(MediaStore.Audio.Media.DATA);
 
-        try (Cursor c = resolver.query(base, projection.toArray(new String[0]), null, null,
+        String selection;
+        String[] args;
+        if (Build.VERSION.SDK_INT >= 29) {
+            selection = MediaStore.Audio.Media.SIZE + ">0 AND (" +
+                    MediaStore.Audio.Media.IS_MUSIC + "!=0 OR " +
+                    MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ? OR " +
+                    MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ?)";
+            args = new String[]{"Music/%", "%EstradaPlay%"};
+        } else {
+            selection = MediaStore.Audio.Media.SIZE + ">0 AND (" +
+                    MediaStore.Audio.Media.IS_MUSIC + "!=0 OR " +
+                    MediaStore.Audio.Media.DATA + " LIKE ?)";
+            args = new String[]{"%/Music/%"};
+        }
+
+        try (Cursor c = resolver.query(base, projection.toArray(new String[0]), selection, args,
                 MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")) {
             if (c == null) return out;
             int id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
@@ -67,6 +117,7 @@ final class DeviceMusicStore {
             int duration = c.getColumnIndex(MediaStore.Audio.Media.DURATION);
             int music = c.getColumnIndex(MediaStore.Audio.Media.IS_MUSIC);
             int path = c.getColumnIndex(Build.VERSION.SDK_INT >= 29 ? MediaStore.Audio.Media.RELATIVE_PATH : MediaStore.Audio.Media.DATA);
+
             while (c.moveToNext() && out.size() < 12000) {
                 long mediaId = c.getLong(id);
                 String rawTitle = value(c, title);
@@ -104,12 +155,16 @@ final class DeviceMusicStore {
     }
 
     static ArrayList<Track> merge(Context context, List<Track> appTracks) {
+        return merge(context, appTracks, false);
+    }
+
+    static ArrayList<Track> merge(Context context, List<Track> appTracks, boolean forceDeviceScan) {
         LinkedHashMap<String, Track> result = new LinkedHashMap<>();
         if (appTracks != null) {
             for (Track t : appTracks) if (t != null && readable(context, t.localPath)) result.put(signature(t), t);
         }
         if (hasPermission(context)) {
-            for (Track t : scan(context)) {
+            for (Track t : scan(context, forceDeviceScan)) {
                 String signature = signature(t);
                 if (!result.containsKey(signature)) result.put(signature, t);
             }
