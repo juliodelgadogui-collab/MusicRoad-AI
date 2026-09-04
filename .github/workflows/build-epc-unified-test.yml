@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           APP=estrada-play-comunista-app
           J="$APP/app/src/main/java/com/estradaplay/comunista"
-          grep -q "teste {" "$APP/app/build.gradle"
+          grep -q "homologacao {" "$APP/app/build.gradle"
           grep -q "applicationIdSuffix '.teste'" "$APP/app/build.gradle"
           grep -q "versionCode 235" "$APP/app/build.gradle"
           grep -q "versionNameSuffix '-teste-unificado'" "$APP/app/build.gradle"
@@ -77,8 +77,8 @@ jobs:
         run: |
           set -euo pipefail
           APP=estrada-play-comunista-app
-          (cd "$APP" && gradle --no-daemon testTesteDebugUnitTest assembleTesteDebug)
-          A="$APP/app/build/outputs/apk/teste/debug/app-teste-debug.apk"
+          (cd "$APP" && gradle --no-daemon testHomologacaoDebugUnitTest assembleHomologacaoDebug)
+          A="$APP/app/build/outputs/apk/homologacao/debug/app-homologacao-debug.apk"
           test -f "$A"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$A" | tee /tmp/epc-test-badging.txt
           grep -q "package: name='com.estradaplay.comunista.teste' versionCode='235' versionName='2.3.4-teste-unificado'" /tmp/epc-test-badging.txt
