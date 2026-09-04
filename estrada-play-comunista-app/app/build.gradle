@@ -3,6 +3,7 @@ plugins {
 }
 
 def estradaPlayUrl = project.findProperty('ESTRADAPLAY_URL') ?: 'https://musicroad1.gestao2.store/'
+def convoyPublicUrl = project.findProperty('ESTRADAPLAY_CONVOY_PUBLIC_URL') ?: 'https://www.xn--gesto-dra.store/c/'
 def estradaPlayDevKey = file('../signing/estradaplay-dev.keystore')
 def releaseKeyPath = project.findProperty('ESTRADAPLAY_RELEASE_KEYSTORE') ?: System.getenv('ESTRADAPLAY_RELEASE_KEYSTORE')
 def releaseStorePassword = project.findProperty('ESTRADAPLAY_RELEASE_STORE_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_STORE_PASSWORD')
@@ -10,34 +11,8 @@ def releaseKeyAlias = project.findProperty('ESTRADAPLAY_RELEASE_KEY_ALIAS') ?: S
 def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_PASSWORD')
 def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
-// EPC_236_HORIZONTAL_STACKOVERFLOW_GUARD
-// 2.3.5 originally selected the whole right dock as its own media child. That can
-// create a cyclic ViewGroup and Android then overflows in resetResolvedLayoutDirection().
-// Keep every Gradle build safe while the cockpit source remains compatible with
-// older branches/workflows.
-def horizontalCockpitSource = file('src/main/java/com/estradaplay/comunista/HorizontalCockpitV235.java')
-if (horizontalCockpitSource.isFile()) {
-    def sourceText = horizontalCockpitSource.getText('UTF-8')
-    def unsafeLookup = 'LinearLayout media = findLinearWithText(dock, "MÚSICA OFFLINE");'
-    def safeLookup = 'LinearLayout media = findDirectLinearWithText(dock, "MÚSICA OFFLINE");'
-    if (sourceText.contains(unsafeLookup)) {
-        horizontalCockpitSource.write(sourceText.replace(unsafeLookup, safeLookup), 'UTF-8')
-    }
-}
-
-// EPC_CONVOY_PUBLIC_LINK_V238
-// The internal API hostname stays private. Shared convoy invitations use the
-// public domain, which redirects the user back into the installed Android app.
-def convoyIntegrationSource = file('src/main/java/com/estradaplay/comunista/ConvoyIntegrationV237.java')
-if (convoyIntegrationSource.isFile()) {
-    def sourceText = convoyIntegrationSource.getText('UTF-8')
-    def directInvite = 'return code.isEmpty() ? "" : "estradaplay://comboio/" + Uri.encode(code);'
-    def publicInvite = 'return code.isEmpty() ? "" : "https://www.xn--gesto-dra.store/c/" + Uri.encode(code);'
-    if (sourceText.contains(directInvite)) {
-        convoyIntegrationSource.write(sourceText.replace(directInvite, publicInvite), 'UTF-8')
-    }
-}
-
+// EPC_239_SOURCE_OF_TRUTH
+// Build configuration only: source files are never rewritten by Gradle.
 android {
     namespace 'com.estradaplay.comunista'
     compileSdk 35
@@ -46,9 +21,10 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 35
-        versionCode 239
-        versionName '2.3.8'
+        versionCode 240
+        versionName '2.3.9'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
+        buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
     }
 
     buildFeatures { buildConfig true }
