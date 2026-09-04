@@ -5,6 +5,7 @@ on:
   push:
     branches: [agent/estrada-play-comunista]
     paths:
+      - 'estrada-play-comunista-app/app/build.gradle'
       - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/HorizontalCockpitV235.java'
       - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/EpcMotion.java'
       - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java'
@@ -38,6 +39,8 @@ jobs:
           grep -q 'CHEGADA' "$J/HorizontalCockpitV235.java"
           grep -q 'RESTANTE' "$J/HorizontalCockpitV235.java"
           grep -q 'DURAÇÃO' "$J/HorizontalCockpitV235.java"
+          grep -q "versionCode 235" "$APP/app/build.gradle"
+          grep -q "versionName '2.3.5'" "$APP/app/build.gradle"
           if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then
             echo 'WebView detected'; exit 1
           fi
@@ -86,22 +89,22 @@ jobs:
           test -f "$U"
 
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/epc-horizontal-badging.txt
-          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='234' versionName='2.3.4'" /tmp/epc-horizontal-badging.txt
+          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='235' versionName='2.3.5'" /tmp/epc-horizontal-badging.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/epc-universal-badging.txt
-          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='234' versionName='2.3.4'" /tmp/epc-universal-badging.txt
+          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='235' versionName='2.3.5'" /tmp/epc-universal-badging.txt
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U"
 
-          cp "$H" Estrada-Play-Comunista-Horizontal-Minimal-2.3.4.apk
-          cp "$U" Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.4.apk
-          sha256sum Estrada-Play-Comunista-Horizontal-Minimal-2.3.4.apk Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.4.apk | tee /tmp/epc-horizontal-sha.txt
+          cp "$H" Estrada-Play-Comunista-Horizontal-Minimal-2.3.5.apk
+          cp "$U" Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.5.apk
+          sha256sum Estrada-Play-Comunista-Horizontal-Minimal-2.3.5.apk Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.5.apk | tee /tmp/epc-horizontal-sha.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-Minimal-Landscape-2.3.4
+          name: Estrada-Play-Comunista-Minimal-Landscape-2.3.5
           path: |
-            Estrada-Play-Comunista-Horizontal-Minimal-2.3.4.apk
-            Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.4.apk
+            Estrada-Play-Comunista-Horizontal-Minimal-2.3.5.apk
+            Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.5.apk
           retention-days: 7
           compression-level: 0
