@@ -1,4 +1,4 @@
-name: EPC Android 2.3.9 Comboio Consolidado
+name: EPC Android 2.3.9 Comboio Auto DB
 permissions:
   contents: read
 on:
@@ -88,16 +88,18 @@ jobs:
           grep -q 'estradaplay://comboio/' convoy_invite.php
           grep -q '^RewriteRule \^c/' .htaccess
 
+          # Manual SQL remains only as a recovery/reference option. Normal deployment
+          # now needs no phpMyAdmin import: convoy.php prepares missing structures itself.
           test -f "$MIG"
           grep -q 'EPC_CONVOY_SCHEMA_V239' "$MIG"
-          grep -q 'CREATE TABLE IF NOT EXISTS estrada_convoys' "$MIG"
-          grep -q 'CREATE TABLE IF NOT EXISTS estrada_convoy_members' "$MIG"
-          grep -q 'CREATE TABLE IF NOT EXISTS estrada_convoy_blocks' "$MIG"
-          grep -q 'leader_device_token' "$MIG"
-          grep -q 'route_points_json' "$MIG"
-          grep -q 'EPC_CONVOY_SCHEMA_V239' api/convoy.php
-          if grep -Eq 'CREATE[[:space:]]+TABLE|ALTER[[:space:]]+TABLE' api/convoy.php; then
-            echo 'Runtime DDL detected in api/convoy.php'; exit 1
+          grep -q 'EPC_CONVOY_AUTO_SCHEMA_V239' api/convoy.php
+          grep -q 'convoy_schema_ready' api/convoy.php
+          grep -q 'information_schema.COLUMNS' api/convoy.php
+          grep -q "GET_LOCK('epc_convoy_schema_v239'" api/convoy.php
+          grep -q 'CREATE TABLE IF NOT EXISTS estrada_convoys' api/convoy.php
+          grep -q "convoy_schema_add_column.*leader_device_token" api/convoy.php
+          if grep -Eqi 'DROP[[:space:]]+TABLE|TRUNCATE[[:space:]]+TABLE' api/convoy.php; then
+            echo 'Destructive schema operation detected'; exit 1
           fi
           php -l api/convoy.php
           php -l convoy_invite.php
