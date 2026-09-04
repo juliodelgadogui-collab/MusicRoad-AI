@@ -24,6 +24,13 @@ public final class EstradaPlayApplication extends Application {
         boolean deferOptionalBridges = ProcessCrashGuard.install(this);
         if (deferOptionalBridges) return;
 
+        // MUSIC_PERSIST_V2310: copy old private downloads to user-visible Music/EstradaPlay.
+        // Runs off the UI thread, is copy-first/non-destructive and is a no-op below Android 10.
+        new Thread(() -> {
+            try { SharedMusicPublisher.publishMissingFromApp(EstradaPlayApplication.this); }
+            catch (Throwable ignored) {}
+        }, "epc-shared-music").start();
+
         // COMBOIO_LINK_MAP_V237: deep links + members projected onto the principal RoadMapActivity.
         ConvoyIntegrationV237.install(this);
 
