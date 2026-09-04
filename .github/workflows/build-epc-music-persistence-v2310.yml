@@ -1,6 +1,6 @@
 name: EPC Android 2.3.10 Música Persistente
 permissions:
-  contents: read
+  contents: write
 on:
   push:
     branches: [agent/estrada-play-comunista]
@@ -134,3 +134,22 @@ jobs:
             Estrada-Play-Comunista-Horizontal-2.3.10.apk
           retention-days: 7
           compression-level: 0
+
+      - name: Publish GitHub Release for easy mobile download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG='estrada-play-comunista-android-2.3.10-musica-persistente'
+          TITLE='Estrada Play Comunista 2.3.10 - Música Persistente'
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              --notes 'Android 2.3.10 (versionCode 241). Músicas baixadas passam a ter cópia visível em Música/EstradaPlay e o app pode localizar/reproduzir músicas do próprio celular mediante permissão. Inclui APK Universal e Horizontal. Não altera servidor nem banco de dados.'
+          fi
+          gh release upload "$TAG" \
+            Estrada-Play-Comunista-Universal-2.3.10.apk \
+            Estrada-Play-Comunista-Horizontal-2.3.10.apk \
+            --clobber
