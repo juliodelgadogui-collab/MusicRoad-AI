@@ -59,7 +59,7 @@ public final class PlayerService extends Service {
             String folder = intent.getStringExtra(EXTRA_FOLDER);
             startForeground(NOTIFICATION_ID, notification(null, false));
             io.execute(() -> {
-                ArrayList<Track> loaded = loadQueue(folder);
+                ArrayList<Track> loaded = loadQueue(folder, key);
                 main.post(() -> {
                     queue.clear();
                     queue.addAll(loaded);
@@ -77,10 +77,15 @@ public final class PlayerService extends Service {
         return START_NOT_STICKY;
     }
 
-    // DEVICE_MUSIC_V2310: queue combines EPC offline downloads and the phone's MediaStore songs.
-    private ArrayList<Track> loadQueue(String folder) {
+    // DEVICE_MUSIC_V2312: do not trigger a phone scan just to play an Estrada Play download.
+    // Phone MP3s are merged only after the user has already indexed them, or when a device track is requested.
+    private ArrayList<Track> loadQueue(String folder, String requestedKey) {
         ArrayList<Track> loaded = new ArrayList<>();
-        List<Track> all = DeviceMusicStore.merge(this, store.downloadedTracks());
+        List<Track> appTracks = store.downloadedTracks();
+        boolean deviceTrackRequested = requestedKey != null && requestedKey.startsWith("device_");
+        List<Track> all = (DeviceMusicStore.hasCached() || deviceTrackRequested)
+                ? DeviceMusicStore.merge(this, appTracks)
+                : appTracks;
         String f = folder == null ? "" : folder.trim();
         for (Track t : all) {
             if (f.isEmpty() || "__ALL__".equals(f) || f.equals(LibraryStore.folderKey(t))) loaded.add(t);
