@@ -80,7 +80,12 @@ public final class DownloadService extends Service {
     private void download(Track track) throws Exception {
         if (track == null || track.remoteSource.isEmpty()) throw new Exception("Fonte ausente");
         File target = store.targetFile(track);
-        if (target.isFile() && target.length() > 0) { store.saveDownloaded(track, target); return; }
+        if (target.isFile() && target.length() > 0) {
+            store.saveDownloaded(track, target);
+            // MUSIC_PERSIST_V2310: shared copy remains visible in Music/EstradaPlay after uninstall.
+            SharedMusicPublisher.publishTrack(this, track, target);
+            return;
+        }
         File dir = target.getParentFile();
         if (dir == null || (!dir.exists() && !dir.mkdirs())) throw new Exception("Pasta indisponível");
         File part = new File(dir, target.getName() + ".part");
@@ -122,6 +127,8 @@ public final class DownloadService extends Service {
         }
         if (!target.isFile() || target.length() <= 0) throw new Exception("Arquivo incompleto");
         store.saveDownloaded(track, target);
+        // Never remove the private source automatically: publish is copy-first and non-destructive.
+        SharedMusicPublisher.publishTrack(this, track, target);
     }
 
     private void fetchToFile(String source, File part) throws Exception {
