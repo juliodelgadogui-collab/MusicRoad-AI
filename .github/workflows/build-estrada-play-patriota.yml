@@ -1,0 +1,91 @@
+name: Estrada Play Patriota Universal
+
+on:
+  push:
+    branches: [agent/estrada-play-patriota]
+    paths:
+      - 'estrada-play-comunista-app/**'
+      - '.github/workflows/build-estrada-play-patriota.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estrada-play-patriota-universal
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Patriota isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          J="$APP/app/src/main/java/com/estradaplay/comunista"
+          grep -q "applicationId 'com.estradaplay.patriota'" "$APP/app/build.gradle"
+          grep -q "appLabel: 'Estrada Play Patriota'" "$APP/app/build.gradle"
+          grep -q 'versionCode 240' "$APP/app/build.gradle"
+          grep -q "versionName '2.3.9'" "$APP/app/build.gradle"
+          test -f "$J/PatriotaBranding.java"
+          grep -q 'PatriotaBranding.install(this)' "$J/EstradaPlayApplication.java"
+          grep -q 'android:process=":radio"' "$APP/app/src/main/AndroidManifest.xml"
+          if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then
+            echo 'WebView detected'; exit 1
+          fi
+          git fetch origin agent/estrada-play-comunista:refs/remotes/origin/agent/estrada-play-comunista
+          if git diff --name-only origin/agent/estrada-play-comunista...HEAD | grep -E '/RoadRadio(Activity|RtcPolicy|Service)\.java$'; then
+            echo 'Patriota branch must not modify RoadRadio files'; exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare development signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          if [ -f "$APP/signing/estradaplay-dev.keystore.b64" ]; then
+            base64 -d "$APP/signing/estradaplay-dev.keystore.b64" > "$APP/signing/estradaplay-dev.keystore"
+          fi
+
+      - name: Unit tests and Universal APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd estrada-play-comunista-app
+          gradle --no-daemon testUniversalDebugUnitTest
+          gradle --no-daemon assembleUniversalDebug
+
+      - name: Validate Patriota APK identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=estrada-play-comunista-app/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+          test -f "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/patriota-badging.txt
+          grep -q "package: name='com.estradaplay.patriota.universal' versionCode='240' versionName='2.3.9'" /tmp/patriota-badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
+          cp "$APK" Estrada-Play-Patriota-Universal-2.3.9.apk
+          sha256sum Estrada-Play-Patriota-Universal-2.3.9.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Patriota-Universal-2.3.9
+          path: Estrada-Play-Patriota-Universal-2.3.9.apk
+          retention-days: 7
+          compression-level: 0
