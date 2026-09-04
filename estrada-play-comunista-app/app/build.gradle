@@ -20,7 +20,7 @@ android {
         targetSdk 35
         versionCode 234
         versionName '2.3.4'
-        buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
+        buildConfigField 'String', 'SERVER_URL', '\"' + estradaPlayUrl.replace('\"', '\\\"') + '\"'
     }
 
     buildFeatures { buildConfig true }
@@ -34,7 +34,7 @@ android {
                 appLabel: 'Estrada Play Comunista',
                 appOrientation: 'fullSensor'
             ]
-            buildConfigField 'String', 'FIXED_LAYOUT', '"universal"'
+            buildConfigField 'String', 'FIXED_LAYOUT', '\"universal\"'
         }
         vertical {
             dimension 'orientation'
@@ -43,7 +43,7 @@ android {
                 appLabel: 'Estrada Play Comunista Vertical',
                 appOrientation: 'sensorPortrait'
             ]
-            buildConfigField 'String', 'FIXED_LAYOUT', '"vertical"'
+            buildConfigField 'String', 'FIXED_LAYOUT', '\"vertical\"'
         }
         horizontal {
             dimension 'orientation'
@@ -52,7 +52,19 @@ android {
                 appLabel: 'Estrada Play Comunista Horizontal',
                 appOrientation: 'sensorLandscape'
             ]
-            buildConfigField 'String', 'FIXED_LAYOUT', '"horizontal"'
+            buildConfigField 'String', 'FIXED_LAYOUT', '\"horizontal\"'
+        }
+        teste {
+            dimension 'orientation'
+            applicationIdSuffix '.teste'
+            versionCode 235
+            versionNameSuffix '-teste-unificado'
+            manifestPlaceholders = [
+                appLabel: 'Estrada Play Comunista Teste',
+                appOrientation: 'fullSensor'
+            ]
+            buildConfigField 'String', 'FIXED_LAYOUT', '\"universal\"'
+            buildConfigField 'boolean', 'UNIFIED_TEST', 'true'
         }
     }
 
