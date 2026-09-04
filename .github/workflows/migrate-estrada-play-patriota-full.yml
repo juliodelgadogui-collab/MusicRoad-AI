@@ -77,6 +77,11 @@ jobs:
                   s = s.replace(a, b)
               return s
 
+          # The old edition README and the new canonical README would collide after renaming.
+          legacy_readme = root / 'README-COMUNISTA.md'
+          if legacy_readme.exists():
+              legacy_readme.unlink()
+
           for p in list(root.rglob('*')):
               if not p.is_file():
                   continue
@@ -124,7 +129,7 @@ jobs:
           if grep -R -I -n -E 'package com\.estradaplay\.comunista|Estrada Play Comunista|COMUNISTA|Comunista|CommunistCopilot|COMMUNIST|Camarada|camarada|revolução' "$NEW"; then
             echo 'Legacy identity remains in active Patriota source'; exit 1
           fi
-          if find "$NEW" -iname '*comunista*' -o -iname '*communist*' | grep -q .; then
+          if find "$NEW" \( -iname '*comunista*' -o -iname '*communist*' \) | grep -q .; then
             echo 'Legacy identity remains in active Patriota paths'; exit 1
           fi
 
