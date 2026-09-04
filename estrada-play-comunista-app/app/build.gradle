@@ -25,6 +25,19 @@ if (horizontalCockpitSource.isFile()) {
     }
 }
 
+// EPC_CONVOY_PUBLIC_LINK_V238
+// The internal API hostname stays private. Shared convoy invitations use the
+// public domain, which redirects the user back into the installed Android app.
+def convoyIntegrationSource = file('src/main/java/com/estradaplay/comunista/ConvoyIntegrationV237.java')
+if (convoyIntegrationSource.isFile()) {
+    def sourceText = convoyIntegrationSource.getText('UTF-8')
+    def directInvite = 'return code.isEmpty() ? "" : "estradaplay://comboio/" + Uri.encode(code);'
+    def publicInvite = 'return code.isEmpty() ? "" : "https://www.xn--gesto-dra.store/c/" + Uri.encode(code);'
+    if (sourceText.contains(directInvite)) {
+        convoyIntegrationSource.write(sourceText.replace(directInvite, publicInvite), 'UTF-8')
+    }
+}
+
 android {
     namespace 'com.estradaplay.comunista'
     compileSdk 35
@@ -33,8 +46,8 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 35
-        versionCode 238
-        versionName '2.3.7'
+        versionCode 239
+        versionName '2.3.8'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
     }
 
