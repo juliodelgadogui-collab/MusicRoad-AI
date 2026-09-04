@@ -10,8 +10,8 @@ import android.graphics.Shader;
 import android.view.View;
 
 /**
- * AUTOMOTIVE_RED_GOLD_V200
- * Lightweight native backdrop for the EPC automotive identity.
+ * PATRIOTA_GREEN_BLUE_V1
+ * Lightweight native automotive backdrop for the Estrada Play Patriota identity.
  * No bitmap, no WebView and no decorative asset download at runtime.
  */
 final class EpcBackdropView extends View {
@@ -32,19 +32,19 @@ final class EpcBackdropView extends View {
         if (w <= 0 || h <= 0) return;
 
         paint.setShader(new LinearGradient(0, 0, w, h,
-                new int[]{Color.rgb(5, 4, 5), Color.rgb(13, 6, 8), Color.rgb(4, 4, 5)},
+                new int[]{Color.rgb(4, 12, 8), Color.rgb(6, 28, 17), Color.rgb(4, 8, 13)},
                 new float[]{0f, .52f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawRect(0, 0, w, h, paint);
         paint.setShader(null);
 
-        // Deep red diagonal architectural planes.
+        // Deep green architectural planes.
         path.reset();
         path.moveTo(0, h * .08f);
         path.lineTo(w * .34f, 0);
         path.lineTo(w * .12f, h * .34f);
         path.lineTo(0, h * .27f);
         path.close();
-        paint.setColor(Color.argb(150, 116, 9, 24));
+        paint.setColor(Color.argb(150, 0, 92, 46));
         canvas.drawPath(path, paint);
 
         path.reset();
@@ -53,19 +53,19 @@ final class EpcBackdropView extends View {
         path.lineTo(w * .58f, h);
         path.lineTo(w, h);
         path.close();
-        paint.setColor(Color.argb(58, 117, 10, 25));
+        paint.setColor(Color.argb(62, 0, 39, 118));
         canvas.drawPath(path, paint);
 
-        // Fine red construction lines.
-        line.setColor(Color.argb(70, 211, 39, 54));
+        // Fine blue construction lines.
+        line.setColor(Color.argb(78, 30, 92, 180));
         for (int i = -2; i < 6; i++) {
             float x = w * (i * .22f);
             canvas.drawLine(x, h, x + w * .72f, 0, line);
         }
 
-        // Road-like glow entering the composition from below.
+        // Green road-like glow entering the composition from below.
         paint.setShader(new LinearGradient(w * .48f, h, w * .57f, h * .38f,
-                new int[]{Color.argb(0, 255, 42, 48), Color.argb(155, 201, 25, 39), Color.argb(0, 201, 25, 39)},
+                new int[]{Color.argb(0, 0, 156, 59), Color.argb(160, 0, 156, 59), Color.argb(0, 0, 156, 59)},
                 null, Shader.TileMode.CLAMP));
         path.reset();
         path.moveTo(w * .42f, h);
@@ -76,7 +76,6 @@ final class EpcBackdropView extends View {
         canvas.drawPath(path, paint);
         paint.setShader(null);
 
-        // Small gold star accent, deliberately subtle.
         drawStar(canvas, w * .11f, h * .24f, Math.max(dp(8), w * .018f));
     }
 
@@ -90,7 +89,7 @@ final class EpcBackdropView extends View {
             if (i == 0) s.moveTo(x, y); else s.lineTo(x, y);
         }
         s.close();
-        paint.setColor(Color.argb(210, 226, 185, 76));
+        paint.setColor(Color.argb(225, 255, 223, 0));
         canvas.drawPath(s, paint);
     }
 
