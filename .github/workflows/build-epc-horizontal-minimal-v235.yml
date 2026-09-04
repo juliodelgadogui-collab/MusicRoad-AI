@@ -73,23 +73,35 @@ jobs:
           python3 "$APP/tools/generate_voice_bank.py" --model-root /tmp/epc-horizontal-voice --output "$APP/app/src/main/res/raw" --metadata-output "$APP/app/src/main/assets/estradaplay_voice"
           test "$(find "$APP/app/src/main/res/raw" -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
 
-      - name: Unit tests and build horizontal APK
+      - name: Unit tests and build horizontal plus universal APKs
         shell: bash
         run: |
           set -euo pipefail
           APP=estrada-play-comunista-app
-          (cd "$APP" && gradle --no-daemon testHorizontalDebugUnitTest assembleHorizontalDebug)
-          A="$APP/app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk"
-          test -f "$A"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$A" | tee /tmp/epc-horizontal-badging.txt
+          (cd "$APP" && gradle --no-daemon testHorizontalDebugUnitTest testUniversalDebugUnitTest assembleHorizontalDebug assembleUniversalDebug)
+
+          H="$APP/app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk"
+          U="$APP/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
+          test -f "$H"
+          test -f "$U"
+
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/epc-horizontal-badging.txt
           grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='234' versionName='2.3.4'" /tmp/epc-horizontal-badging.txt
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$A"
-          cp "$A" Estrada-Play-Comunista-Horizontal-Minimal-2.3.4.apk
-          sha256sum Estrada-Play-Comunista-Horizontal-Minimal-2.3.4.apk | tee /tmp/epc-horizontal-sha.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/epc-universal-badging.txt
+          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='234' versionName='2.3.4'" /tmp/epc-universal-badging.txt
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U"
+
+          cp "$H" Estrada-Play-Comunista-Horizontal-Minimal-2.3.4.apk
+          cp "$U" Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.4.apk
+          sha256sum Estrada-Play-Comunista-Horizontal-Minimal-2.3.4.apk Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.4.apk | tee /tmp/epc-horizontal-sha.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-Horizontal-Minimal-2.3.4
-          path: Estrada-Play-Comunista-Horizontal-Minimal-2.3.4.apk
+          name: Estrada-Play-Comunista-Minimal-Landscape-2.3.4
+          path: |
+            Estrada-Play-Comunista-Horizontal-Minimal-2.3.4.apk
+            Estrada-Play-Comunista-Universal-Minimal-Landscape-2.3.4.apk
           retention-days: 7
           compression-level: 0
