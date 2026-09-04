@@ -9,9 +9,95 @@ $body=input_json();
 $user=native_require_json_user($body);
 $pdo=db();
 
-// EPC_CONVOY_SCHEMA_V239
-// Schema is provisioned once by database/migrations/20260904_epc_convoy_239_mariadb.sql.
-// Normal API requests must never CREATE or ALTER tables.
+// EPC_CONVOY_AUTO_SCHEMA_V239
+// No manual SQL import is required. On authenticated use, the API checks the
+// expected schema and only creates/adds missing Comboio structures. Once ready,
+// normal requests perform no DDL.
+function convoy_schema_ready(PDO $pdo): bool {
+    $sql="SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND ("
+        ."(TABLE_NAME='estrada_convoys' AND COLUMN_NAME IN ('id','code','owner_user_id','leader_device_token','title','destination_label','destination_lat','destination_lon','route_points_json','route_updated_at','created_at','expires_at')) OR "
+        ."(TABLE_NAME='estrada_convoy_members' AND COLUMN_NAME IN ('convoy_id','user_id','device_token','nickname','latitude','longitude','speed_kmh','heading','joined_at','last_seen')) OR "
+        ."(TABLE_NAME='estrada_convoy_blocks' AND COLUMN_NAME IN ('convoy_id','device_token','blocked_at'))"
+        .")";
+    return (int)$pdo->query($sql)->fetchColumn()===25;
+}
+function convoy_schema_has_column(PDO $pdo,string $table,string $column): bool {
+    $q=$pdo->prepare('SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=? LIMIT 1');
+    $q->execute([$table,$column]);
+    return (bool)$q->fetchColumn();
+}
+function convoy_schema_add_column(PDO $pdo,string $table,string $column,string $definition): void {
+    if(convoy_schema_has_column($pdo,$table,$column))return;
+    $allowed=['estrada_convoys'];
+    if(!in_array($table,$allowed,true))throw new RuntimeException('Tabela de migração inválida.');
+    $pdo->exec('ALTER TABLE `'.$table.'` ADD COLUMN `'.$column.'` '.$definition);
+}
+function convoy_ensure_schema(PDO $pdo): void {
+    if(convoy_schema_ready($pdo))return;
+    $lock=false;
+    try{
+        $q=$pdo->query("SELECT GET_LOCK('epc_convoy_schema_v239',10)");
+        $lock=((int)$q->fetchColumn()===1);
+        if(!$lock)throw new RuntimeException('Tempo esgotado aguardando preparação do Comboio.');
+        if(convoy_schema_ready($pdo))return;
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS estrada_convoys (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ code VARCHAR(8) NOT NULL UNIQUE,
+ owner_user_id BIGINT NULL,
+ leader_device_token VARCHAR(160) NULL,
+ title VARCHAR(80) NULL,
+ destination_label VARCHAR(120) NULL,
+ destination_lat DECIMAL(10,7) NULL,
+ destination_lon DECIMAL(10,7) NULL,
+ route_points_json MEDIUMTEXT NULL,
+ route_updated_at DATETIME NULL,
+ created_at DATETIME NOT NULL,
+ expires_at DATETIME NOT NULL,
+ INDEX idx_convoy_exp (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS estrada_convoy_members (
+ convoy_id BIGINT UNSIGNED NOT NULL,
+ user_id BIGINT NULL,
+ device_token VARCHAR(160) NOT NULL,
+ nickname VARCHAR(60) NOT NULL,
+ latitude DECIMAL(10,7) NULL,
+ longitude DECIMAL(10,7) NULL,
+ speed_kmh DECIMAL(7,2) NULL,
+ heading DECIMAL(7,2) NULL,
+ joined_at DATETIME NOT NULL,
+ last_seen DATETIME NOT NULL,
+ PRIMARY KEY(convoy_id,device_token),
+ INDEX idx_convoy_member_seen (convoy_id,last_seen),
+ INDEX idx_convoy_member_device (device_token)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS estrada_convoy_blocks (
+ convoy_id BIGINT UNSIGNED NOT NULL,
+ device_token VARCHAR(160) NOT NULL,
+ blocked_at DATETIME NOT NULL,
+ PRIMARY KEY(convoy_id,device_token),
+ INDEX idx_convoy_blocked_at (blocked_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        // Compatibility with the older 2.3.x Comboio table, without deleting data.
+        convoy_schema_add_column($pdo,'estrada_convoys','leader_device_token','VARCHAR(160) NULL AFTER `owner_user_id`');
+        convoy_schema_add_column($pdo,'estrada_convoys','destination_label','VARCHAR(120) NULL AFTER `title`');
+        convoy_schema_add_column($pdo,'estrada_convoys','destination_lat','DECIMAL(10,7) NULL AFTER `destination_label`');
+        convoy_schema_add_column($pdo,'estrada_convoys','destination_lon','DECIMAL(10,7) NULL AFTER `destination_lat`');
+        convoy_schema_add_column($pdo,'estrada_convoys','route_points_json','MEDIUMTEXT NULL AFTER `destination_lon`');
+        convoy_schema_add_column($pdo,'estrada_convoys','route_updated_at','DATETIME NULL AFTER `route_points_json`');
+
+        if(!convoy_schema_ready($pdo))throw new RuntimeException('Estrutura do Comboio permaneceu incompleta.');
+    } finally {
+        if($lock){try{$pdo->query("SELECT RELEASE_LOCK('epc_convoy_schema_v239')");}catch(Throwable $ignored){}}
+    }
+}
+try{
+    convoy_ensure_schema($pdo);
+}catch(Throwable $e){
+    error_log('EPC convoy auto-schema: '.$e->getMessage());
+    json_response(['ok'=>false,'error'=>'Não consegui preparar o Comboio automaticamente. Verifique a permissão do banco usada pelo servidor.'],503);
+}
 
 $action=strtolower(trim((string)($body['action']??'state')));
 $device=native_device_token_from_request($body);
