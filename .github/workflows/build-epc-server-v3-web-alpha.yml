@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           find server-v3 -type f -name '*.php' -print0 | xargs -0 -n1 php -l
           grep -q 'EPC_SERVER_V3_ALPHA1' server-v3/bootstrap.php
-          grep -q 'Estrada Play Web' server-v3/README.md
+          grep -q 'Versão web do aplicativo' server-v3/README.md
           grep -q "road_data_mode" server-v3/api/v8/radars.php
 
       - name: Validate web shell
