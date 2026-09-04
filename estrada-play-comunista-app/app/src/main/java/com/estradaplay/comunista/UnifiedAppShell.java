@@ -12,27 +12,21 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 
-/**
- * UNIFIED_APP_SHELL_V172
- * One visual/navigation shell for the Universal app. Secondary screens keep their
- * existing business logic, but no longer look like unrelated Android applications.
- * Landscape uses the same permanent left rail as the cockpit; portrait uses the
- * same compact top identity + sector rail. There is deliberately no bottom nav.
- */
+/** Unified navigation shell with the Estrada Play Patriota visual identity. */
 final class UnifiedAppShell {
-    private static final int BG=Color.rgb(8,5,7);
-    private static final int PANEL=Color.rgb(18,9,12);
-    private static final int SURFACE=Color.rgb(28,14,18);
-    private static final int BORDER=Color.rgb(79,39,45);
-    private static final int TEXT=Color.rgb(246,238,224);
-    private static final int MUTED=Color.rgb(174,151,146);
-    private static final int RED=Color.rgb(190,18,38);
-    private static final int GOLD=Color.rgb(226,185,76);
+    private static final int BG=Color.rgb(6,20,13);
+    private static final int PANEL=Color.rgb(9,31,21);
+    private static final int SURFACE=Color.rgb(13,43,30);
+    private static final int BORDER=Color.rgb(45,91,68);
+    private static final int TEXT=Color.rgb(246,244,226);
+    private static final int MUTED=Color.rgb(159,184,167);
+    // Kept as RED internally for compatibility with the original shell; it is the Patriota green accent.
+    private static final int RED=Color.rgb(0,156,59);
+    private static final int GOLD=Color.rgb(255,223,0);
     private static final int GREEN=Color.rgb(72,212,134);
 
     private UnifiedAppShell() {}
@@ -57,7 +51,7 @@ final class UnifiedAppShell {
         rail.setGravity(Gravity.CENTER_HORIZONTAL);
         rail.setPadding(dp(a,8),dp(a,10),dp(a,8),dp(a,10));
         rail.setBackground(box(PANEL,22,BORDER));
-        TextView brand = text(a,"EPC",22,TEXT,true);
+        TextView brand = text(a,"EPP",22,TEXT,true);
         brand.setGravity(Gravity.CENTER);
         brand.setBackground(box(RED,16,0));
         rail.addView(brand,new LinearLayout.LayoutParams(-1,dp(a,62)));
@@ -85,13 +79,11 @@ final class UnifiedAppShell {
     private static View portrait(Activity a, String active, View content) {
         LinearLayout root=new LinearLayout(a);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);
         LinearLayout head=new LinearLayout(a);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(dp(a,14),dp(a,8),dp(a,12),dp(a,8));head.setBackground(box(PANEL,0,BORDER));
-        TextView mark=text(a,"EPC",17,Color.WHITE,true);mark.setGravity(Gravity.CENTER);mark.setBackground(box(RED,12,0));head.addView(mark,new LinearLayout.LayoutParams(dp(a,48),dp(a,42)));
-        LinearLayout words=new LinearLayout(a);words.setOrientation(LinearLayout.VERTICAL);words.addView(over(a,"ESTRADA PLAY",RED));words.addView(text(a,title(active),16,TEXT,true));LinearLayout.LayoutParams wp=new LinearLayout.LayoutParams(0,-2,1);wp.setMargins(dp(a,10),0,0,0);head.addView(words,wp);
+        TextView mark=text(a,"EPP",17,Color.WHITE,true);mark.setGravity(Gravity.CENTER);mark.setBackground(box(RED,12,0));head.addView(mark,new LinearLayout.LayoutParams(dp(a,48),dp(a,42)));
+        LinearLayout words=new LinearLayout(a);words.setOrientation(LinearLayout.VERTICAL);words.addView(over(a,"ESTRADA PLAY",GOLD));words.addView(text(a,title(active),16,TEXT,true));LinearLayout.LayoutParams wp=new LinearLayout.LayoutParams(0,-2,1);wp.setMargins(dp(a,10),0,0,0);head.addView(words,wp);
         TextView state=over(a,"● SISTEMA ATIVO",GREEN);state.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);head.addView(state);
         root.addView(head,new LinearLayout.LayoutParams(-1,dp(a,62)));
 
-        // PORTRAIT_NAV_FIT_V174: all five sectors remain visible at once.
-        // A scrollable rail made CENTRAL disappear off-screen and looked like another app.
         LinearLayout row=new LinearLayout(a);row.setOrientation(LinearLayout.HORIZONTAL);row.setPadding(dp(a,7),dp(a,6),dp(a,7),dp(a,6));row.setBackgroundColor(BG);
         addNavChipFit(a,row,"ESTRADA","road",active,RoadMapActivity.class);
         addNavChipFit(a,row,"MÚSICA","music",active,MusicPlayerActivity.class);
@@ -107,19 +99,15 @@ final class UnifiedAppShell {
     private static void addNav(Activity a,LinearLayout rail,String label,String key,String active,Class<?> cls){
         TextView v=navText(a,label,key.equals(active));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,0,1f);p.setMargins(0,dp(a,3),0,dp(a,3));rail.addView(v,p);v.setOnClickListener(x->go(a,key,active,cls));
     }
-    private static View navChip(Activity a,String label,String key,String active,Class<?> cls){
-        TextView v=navText(a,label,key.equals(active));v.setMinWidth(dp(a,92));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(a,40));p.setMargins(0,0,dp(a,7),0);v.setLayoutParams(p);v.setOnClickListener(x->go(a,key,active,cls));return v;
-    }
     private static void addNavChipFit(Activity a,LinearLayout row,String label,String key,String active,Class<?> cls){
         TextView v=navText(a,label,key.equals(active));v.setTextSize(8.2f);v.setMinWidth(0);v.setSingleLine(true);
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(a,40),1f);p.setMargins(dp(a,2),0,dp(a,2),0);row.addView(v,p);
         v.setOnClickListener(x->go(a,key,active,cls));
     }
-    private static TextView navText(Activity a,String label,boolean selected){TextView v=text(a,label,9,selected?Color.WHITE:MUTED,true);v.setGravity(Gravity.CENTER);v.setLetterSpacing(.07f);v.setBackground(box(selected?Color.rgb(79,10,23):SURFACE,13,selected?RED:BORDER));v.setClickable(true);v.setFocusable(true);return v;}
+    private static TextView navText(Activity a,String label,boolean selected){TextView v=text(a,label,9,selected?Color.WHITE:MUTED,true);v.setGravity(Gravity.CENTER);v.setLetterSpacing(.07f);v.setBackground(box(selected?Color.rgb(4,70,35):SURFACE,13,selected?RED:BORDER));v.setClickable(true);v.setFocusable(true);return v;}
     private static void go(Activity a,String key,String active,Class<?> cls){if(key.equals(active))return;Intent i=new Intent(a,cls);i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT|Intent.FLAG_ACTIVITY_SINGLE_TOP);a.startActivity(i);}
     private static String title(String s){if("road".equals(s))return "Estrada";if("music".equals(s))return "Música";if("radio".equals(s))return "Rádio";if("trip".equals(s))return "Viagem";return "Central";}
 
-    // Gives legacy secondary controls the same material language without changing logic.
     private static void polish(View v){
         if(v instanceof Button){Button b=(Button)v;b.setAllCaps(false);b.setStateListAnimator(null);b.setTextColor(TEXT);b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);String s=String.valueOf(b.getText()).toUpperCase();boolean primary=s.contains("SALVAR")||s.contains("REGISTRAR")||s.contains("ATIVAR")||s.contains("INICIAR")||s.contains("CONECTAR")||s.contains("FALAR");b.setBackground(box(primary?RED:SURFACE,13,primary?0:BORDER));}
         else if(v instanceof EditText){EditText e=(EditText)v;e.setTextColor(TEXT);e.setHintTextColor(MUTED);e.setPadding(dp(e.getContext(),14),0,dp(e.getContext(),14),0);e.setBackground(box(SURFACE,12,BORDER));}
