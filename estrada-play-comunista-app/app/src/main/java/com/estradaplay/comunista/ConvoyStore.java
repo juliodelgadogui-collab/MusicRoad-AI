@@ -61,7 +61,21 @@ final class ConvoyStore {
     private JSONObject post(JSONObject d) throws Exception {ApiClient.Response r=api.post("api/convoy.php",d);JSONObject j=r.json();if(!r.ok()&&!j.has("ok"))j.put("ok",false);return j;}
     private void handleMembershipFailure(JSONObject j){if(j==null||j.optBoolean("ok",false))return;String e=j.optString("error","").toLowerCase(Locale.ROOT);if(e.contains("não faz parte")||e.contains("nao faz parte")||e.contains("removido")||e.contains("expirado")||e.contains("entre novamente"))clear();}
     private JSONObject base(String action,Location l){JSONObject d=new JSONObject();try{d.put("action",action);d.put("nickname",nickname());if(l!=null){d.put("lat",l.getLatitude());d.put("lon",l.getLongitude());d.put("speed_kmh",l.hasSpeed()?Math.max(0,l.getSpeed()*3.6):0);if(l.hasBearing())d.put("heading",l.getBearing());}}catch(Throwable ignored){}return d;}
-    private String nickname(){String t=DeviceIdentity.token(app);String suffix=t==null||t.length()<4?"0000":t.substring(t.length()-4).toUpperCase(Locale.ROOT);return"MOTORISTA-"+suffix;}
+
+    // EPC_CONVOY_ACCOUNT_NAME_V239: show the signed-in driver's name on maps; never expose email.
+    private String nickname(){
+        try{
+            String raw=app.getSharedPreferences("estradaplay_ui_v1",Context.MODE_PRIVATE).getString("account","{}");
+            JSONObject account=new JSONObject(raw==null?"{}":raw);
+            JSONObject user=account.optJSONObject("user");
+            if(user!=null){
+                String n=clean(user.optString("name",""));
+                if(n.isEmpty())n=clean(user.optString("username",""));
+                if(!n.isEmpty())return n.length()>36?n.substring(0,36):n;
+            }
+        }catch(Throwable ignored){}
+        String t=DeviceIdentity.token(app);String suffix=t==null||t.length()<4?"0000":t.substring(t.length()-4).toUpperCase(Locale.ROOT);return"MOTORISTA-"+suffix;
+    }
 
     private static JSONArray compactRoutePoints(RouteEngine.Route route){JSONArray out=new JSONArray();if(route==null||route.geoJson==null||route.geoJson.trim().isEmpty())return out;try{JSONObject collection=new JSONObject(route.geoJson);JSONArray features=collection.optJSONArray("features");JSONObject feature=features==null?null:features.optJSONObject(0);JSONObject geometry=feature==null?null:feature.optJSONObject("geometry");JSONArray coords=geometry==null?null:geometry.optJSONArray("coordinates");if(coords==null||coords.length()<2)return out;int wanted=Math.min(48,coords.length());for(int i=0;i<wanted;i++){int index=wanted==1?0:(int)Math.round((i/(double)(wanted-1))*(coords.length()-1));JSONArray p=coords.optJSONArray(Math.min(coords.length()-1,index));if(p==null||p.length()<2)continue;JSONObject q=new JSONObject();q.put("lat",p.optDouble(1));q.put("lon",p.optDouble(0));out.put(q);}}catch(Exception ignored){}return out;}
     private static double nullableDouble(JSONObject o,String key){return o==null||o.isNull(key)?Double.NaN:o.optDouble(key,Double.NaN);}
