@@ -11,20 +11,22 @@ def releaseKeyAlias = project.findProperty('ESTRADAPLAY_RELEASE_KEY_ALIAS') ?: S
 def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_PASSWORD')
 def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
-// EPC_239_SOURCE_OF_TRUTH
-// Build configuration only: source files are never rewritten by Gradle.
+// EPP_PATRIOTA_EDITION
+// The source namespace stays compatible with the Comunista codebase; applicationId is independent
+// so both editions can be installed side-by-side without touching navigation, Comboio or PTT logic.
 android {
     namespace 'com.estradaplay.comunista'
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.estradaplay.comunista'
+        applicationId 'com.estradaplay.patriota'
         minSdk 24
         targetSdk 35
         versionCode 240
         versionName '2.3.9'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
+        buildConfigField 'String', 'EDITION', '"patriota"'
     }
 
     buildFeatures { buildConfig true }
@@ -35,7 +37,7 @@ android {
             dimension 'orientation'
             applicationIdSuffix '.universal'
             manifestPlaceholders = [
-                appLabel: 'Estrada Play Comunista',
+                appLabel: 'Estrada Play Patriota',
                 appOrientation: 'fullSensor'
             ]
             buildConfigField 'String', 'FIXED_LAYOUT', '"universal"'
@@ -44,7 +46,7 @@ android {
             dimension 'orientation'
             applicationIdSuffix '.vertical'
             manifestPlaceholders = [
-                appLabel: 'Estrada Play Comunista Vertical',
+                appLabel: 'Estrada Play Patriota Vertical',
                 appOrientation: 'sensorPortrait'
             ]
             buildConfigField 'String', 'FIXED_LAYOUT', '"vertical"'
@@ -53,7 +55,7 @@ android {
             dimension 'orientation'
             applicationIdSuffix '.horizontal'
             manifestPlaceholders = [
-                appLabel: 'Estrada Play Comunista Horizontal',
+                appLabel: 'Estrada Play Patriota Horizontal',
                 appOrientation: 'sensorLandscape'
             ]
             buildConfigField 'String', 'FIXED_LAYOUT', '"horizontal"'
