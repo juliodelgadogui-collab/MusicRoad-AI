@@ -1,5 +1,5 @@
-// EstradaPlay 2.5.1 toolchain
+// Estrada Play Comunista 3.0.0 toolchain
 plugins {
-    // ANDROID16_TARGET_V251: API 36 requires AGP 8.9.1+; 8.10.1 keeps the build on the stable AGP 8.x line.
+    // ANDROID16_TARGET_V300: API 36 on stable AGP 8.x line.
     id 'com.android.application' version '8.10.1' apply false
 }
