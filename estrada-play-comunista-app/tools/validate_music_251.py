@@ -28,6 +28,7 @@ activity = JAVA / "MusicPlayerActivity.java"
 integrity = JAVA / "MusicLibraryIntegrityV247.java"
 application = JAVA / "EstradaPlayApplication.java"
 download = JAVA / "DownloadService.java"
+system_bars = JAVA / "SystemBarsCompatV251.java"
 
 for marker in (
     "PLAYER_EXACT_QUEUE_V245",
@@ -71,9 +72,20 @@ for marker in (
 ):
     require(download, marker)
 
+for marker in (
+    "ANDROID15_SAFE_INSETS_V251",
+    "Build.VERSION.SDK_INT < 35",
+    "WindowInsets.Type.systemBars()",
+    "WindowInsets.Type.displayCutout()",
+    "setOnApplyWindowInsetsListener",
+    "requestApplyInsets()",
+):
+    require(system_bars, marker)
+
 require(MANIFEST, 'android.permission.FOREGROUND_SERVICE_DATA_SYNC')
 require(MANIFEST, 'android:foregroundServiceType="dataSync"')
 require(application, "MusicLibraryIntegrityV247.repair(this)")
+require(application, "SystemBarsCompatV251.register(this)")
 
 for path in JAVA.rglob("*.java"):
     try:
@@ -97,4 +109,5 @@ print(" - fila persiste identidade da fonte local")
 print(" - fila persistida não remapeia uma fonte ausente para outra cópia")
 print(" - biblioteca repara entradas locais obsoletas")
 print(" - download dataSync encerra com segurança no timeout do Android 15")
+print(" - interface respeita barras/cutout no Android 15 targetSdk 35")
 print(" - sem WebView")
