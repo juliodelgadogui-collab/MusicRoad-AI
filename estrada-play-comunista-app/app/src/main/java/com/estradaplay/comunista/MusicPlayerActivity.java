@@ -83,6 +83,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
     // MUSIC_COMPACT_PLAYER_V2318: the player is a compact control strip so the library owns most of the screen.
     // MUSIC_DOWNLOAD_ENTRY_V240: download management is visible again without changing the player/library layout.
     // MUSIC_EXACT_QUEUE_V245: play/next/previous follow exactly what is visible after search/folder filtering.
+    // MUSIC_EXACT_SELECTED_SOURCE_V246: every tap sends the exact Track object shown on screen to PlayerService.
     // There is no ScrollView wrapped around the song list, so swipe/drag stays smooth even with thousands of tracks.
     private void build(){
         FrameLayout frame=new FrameLayout(this);
@@ -376,7 +377,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
         String queueFolder=ALL_FOLDERS.equals(selectedFolder)?"__ALL__":selectedFolder;
         ArrayList<Track> visible=adapter==null?new ArrayList<>():adapter.visibleTracks();
         String queueToken=PlayerService.stageQueue(this,visible);
-        command(PlayerService.ACTION_PLAY_TRACK,t.key(),queueFolder,queueToken);
+        command(PlayerService.ACTION_PLAY_TRACK,t.key(),queueFolder,queueToken,t.toStored().toString());
     }
 
     private void focusSearch(){
@@ -548,12 +549,14 @@ public final class MusicPlayerActivity extends ComponentActivity {
         }
     }
     private void queryPlayer(){try{startService(new Intent(this,PlayerService.class).setAction(PlayerService.ACTION_QUERY_STATE));}catch(Throwable ignored){}}
-    private void command(String action,String key,String folder){command(action,key,folder,null);}
-    private void command(String action,String key,String folder,String queueToken){try{
+    private void command(String action,String key,String folder){command(action,key,folder,null,null);}
+    private void command(String action,String key,String folder,String queueToken){command(action,key,folder,queueToken,null);}
+    private void command(String action,String key,String folder,String queueToken,String exactTrackJson){try{
         Intent i=new Intent(this,PlayerService.class).setAction(action);
         if(key!=null)i.putExtra(PlayerService.EXTRA_KEY,key);
         if(folder!=null)i.putExtra(PlayerService.EXTRA_FOLDER,folder);
         if(queueToken!=null&&!queueToken.trim().isEmpty())i.putExtra(PlayerService.EXTRA_QUEUE_TOKEN,queueToken);
+        if(exactTrackJson!=null&&!exactTrackJson.trim().isEmpty())i.putExtra(PlayerService.EXTRA_TRACK_JSON,exactTrackJson);
         if(Build.VERSION.SDK_INT>=26&&PlayerService.ACTION_PLAY_TRACK.equals(action))startForegroundService(i);else startService(i);
     }catch(Throwable e){Toast.makeText(this,"Não consegui iniciar o player agora.",Toast.LENGTH_SHORT).show();}}
     private void openDownloads(){Intent i=new Intent(this,MainActivity.class);i.putExtra("open","library");startActivity(i);}
