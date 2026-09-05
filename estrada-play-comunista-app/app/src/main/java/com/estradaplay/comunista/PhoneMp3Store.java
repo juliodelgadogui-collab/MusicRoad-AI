@@ -18,6 +18,7 @@ import android.provider.MediaStore;
 import java.io.File;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -28,14 +29,15 @@ import java.util.concurrent.Executors;
  * PHONE_MP3_V2315_PERSISTENT_INDEX
  * PHONE_MP3_SAFE_REFRESH_V242
  * PHONE_MP3_INCREMENTAL_REFRESH_V244
+ * PHONE_MP3_SHARED_DEDUPE_V245
  * The Music screen never scans storage. It opens a tiny local SQLite index.
  * MediaStore is touched only on first permission, explicit refresh or after
  * Android reports that the audio collection changed. No server is involved.
  *
  * 2.4.2 made full refresh fail-safe. 2.4.4 additionally handles precise
- * MediaStore item notifications one row at a time: adding, editing or removing
- * one MP3 no longer requires rebuilding the whole phone index. Generic provider
- * notifications still fall back to the existing safe background full refresh.
+ * MediaStore item notifications one row at a time. 2.4.5 also recognizes the
+ * public Music/EstradaPlay copy of an app download by title+size, so the same
+ * downloaded file does not appear twice when Android indexes that shared copy.
  */
 final class PhoneMp3Store {
     private static final Object LOCK = new Object();
@@ -294,13 +296,26 @@ final class PhoneMp3Store {
 
     static ArrayList<Track> mergeCached(Context context, List<Track> appTracks) {
         LinkedHashMap<String, Track> result = new LinkedHashMap<>();
+        HashSet<String> appSignatures = new HashSet<>();
+        HashSet<String> appFingerprints = new HashSet<>();
         if (appTracks != null) {
-            for (Track t : appTracks) if (t != null) result.put(signature(t), t);
+            for (Track t : appTracks) {
+                if (t == null) continue;
+                String sig = signature(t);
+                if (!sig.isEmpty()) appSignatures.add(sig);
+                String fp = duplicateFingerprint(t);
+                if (!fp.isEmpty()) appFingerprints.add(fp);
+                if (!result.containsKey(sig)) result.put(sig, t);
+            }
         }
         if (hasPermission(context)) {
             for (Track t : cached(context)) {
-                String key = signature(t);
-                if (!result.containsKey(key)) result.put(key, t);
+                if (t == null) continue;
+                String sig = signature(t);
+                String fp = duplicateFingerprint(t);
+                if (appSignatures.contains(sig)) continue;
+                if (!fp.isEmpty() && appFingerprints.contains(fp)) continue;
+                if (!result.containsKey(sig)) result.put(sig, t);
             }
         }
         return new ArrayList<>(result.values());
@@ -388,6 +403,13 @@ final class PhoneMp3Store {
     private static String signature(Track t) {
         if (t == null) return "";
         return token(t.title) + "|" + token(t.artist);
+    }
+
+    private static String duplicateFingerprint(Track t) {
+        if (t == null || t.size <= 0) return "";
+        String title = token(t.title);
+        if (title.isEmpty()) return "";
+        return title + "|" + t.size;
     }
 
     private static String token(String raw) {
