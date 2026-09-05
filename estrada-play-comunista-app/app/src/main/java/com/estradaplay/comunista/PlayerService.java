@@ -57,7 +57,7 @@ public final class PlayerService extends Service {
             String folder = intent.getStringExtra(EXTRA_FOLDER);
             startForeground(NOTIFICATION_ID, notification(null, false));
             io.execute(() -> {
-                ArrayList<Track> loaded = loadQueue(folder, key);
+                ArrayList<Track> loaded = loadQueue(folder);
                 main.post(() -> {
                     queue.clear();
                     queue.addAll(loaded);
@@ -75,14 +75,13 @@ public final class PlayerService extends Service {
         return START_NOT_STICKY;
     }
 
-    // PLAYER_FAST_MP3_V2314: never reconcile or walk folders before playback.
-    // Estrada Play downloads come from the saved local index; phone MP3s come from the cached Android index.
-    private ArrayList<Track> loadQueue(String folder, String requestedKey) {
+    // PLAYER_LOCAL_INDEX_V2315: playback never asks MediaStore to rebuild anything.
+    // Queue comes from the saved Estrada Play index + persistent phone MP3 SQLite index.
+    private ArrayList<Track> loadQueue(String folder) {
         ArrayList<Track> loaded = new ArrayList<>();
         List<Track> appTracks = FastMusicLibrary.downloadedTracks(this);
-        boolean phoneTrackRequested = requestedKey != null && requestedKey.startsWith("phone_");
-        List<Track> all = (PhoneMp3Store.hasCached() || phoneTrackRequested)
-                ? PhoneMp3Store.merge(this, appTracks, false)
+        List<Track> all = PhoneMp3Store.hasPermission(this)
+                ? PhoneMp3Store.mergeCached(this, appTracks)
                 : appTracks;
         String f = folder == null ? "" : folder.trim();
         for (Track t : all) {
@@ -104,7 +103,11 @@ public final class PlayerService extends Service {
         Track t = current();
         if (t == null) { broadcast("", false, "Fila vazia"); stopSelf(); return; }
         String source = t.localPath == null ? "" : t.localPath.trim();
-        if (!PhoneMp3Store.readable(this, source)) { next(); return; }
+        if (!PhoneMp3Store.readable(this, source)) {
+            if (source.startsWith("content://")) PhoneMp3Store.invalidate(this);
+            next();
+            return;
+        }
         try {
             player = new MediaPlayer();
             player.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
@@ -217,7 +220,6 @@ public final class PlayerService extends Service {
         }
     }
 
-    // STABILITY_V152_TASK_REMOVED: no music service survives a closed app task.
     @Override public void onTaskRemoved(Intent rootIntent) {
         stopSelf();
         super.onTaskRemoved(rootIntent);
