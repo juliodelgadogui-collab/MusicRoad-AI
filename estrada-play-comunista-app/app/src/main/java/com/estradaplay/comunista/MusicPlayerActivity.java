@@ -36,6 +36,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
     private boolean registered,downloadRegistered;
     private String selectedFolder = ALL_FOLDERS;
     private String searchQuery = "";
+    private long lastFailureRefreshMs;
 
     private final BroadcastReceiver playerState=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){
         String t=i.getStringExtra("title"),a=i.getStringExtra("artist"),s=i.getStringExtra("state");
@@ -43,6 +44,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
         if(title!=null)title.setText(t==null||t.trim().isEmpty()?"Escolha uma música":t.trim());
         if(artist!=null)artist.setText(a==null||a.trim().isEmpty()?"Biblioteca local":a.trim());
         if(state!=null){state.setText(playing?"● TOCANDO":(s==null||s.isEmpty()?"PRONTO":s.toUpperCase(Locale.ROOT)));state.setTextColor(playing?GREEN:MUTED);}
+        if(!playing&&isPlaybackSourceFailure(s))refreshLibraryAfterPlaybackFailure();
     }};
 
     // MUSIC_AUTO_LIBRARY_V245: a completed EstradaPlay download refreshes the local
@@ -84,6 +86,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
     // MUSIC_DOWNLOAD_ENTRY_V240: download management is visible again without changing the player/library layout.
     // MUSIC_EXACT_QUEUE_V245: play/next/previous follow exactly what is visible after search/folder filtering.
     // MUSIC_EXACT_SELECTED_SOURCE_V246: every tap sends the exact Track object shown on screen to PlayerService.
+    // MUSIC_FAILURE_AUTO_REFRESH_V250: a failed selected source repairs/reloads the local library automatically.
     // There is no ScrollView wrapped around the song list, so swipe/drag stays smooth even with thousands of tracks.
     private void build(){
         FrameLayout frame=new FrameLayout(this);
@@ -280,6 +283,21 @@ public final class MusicPlayerActivity extends ComponentActivity {
             if(timeout&&count!=null)count.setText(fresh.size()+" músicas · índice anterior mantido");
         });
     });}
+
+    private void refreshLibraryAfterPlaybackFailure(){
+        long now=SystemClock.elapsedRealtime();
+        if(now-lastFailureRefreshMs<700L||io.isShutdown())return;
+        lastFailureRefreshMs=now;
+        io.execute(()->{
+            try{MusicLibraryIntegrityV247.repair(this);}catch(Throwable ignored){}
+            runOnUiThread(()->loadTracks(false));
+        });
+    }
+
+    private static boolean isPlaybackSourceFailure(String raw){
+        String v=fold(raw);
+        return v.contains("selecionada indisponivel")||v.contains("nao foi possivel tocar esta musica");
+    }
 
     private void renderTracks(List<Track> tracks){
         allTracks.clear();
