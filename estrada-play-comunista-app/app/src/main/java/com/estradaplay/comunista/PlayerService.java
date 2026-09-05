@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.AudioAttributes;
@@ -19,9 +20,14 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 
+import org.json.JSONArray;
+
 import java.io.File;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -36,6 +42,7 @@ public final class PlayerService extends Service {
     static final String ACTION_QUERY_STATE = "com.estradaplay.comunista.PLAYER_QUERY_STATE";
     static final String EXTRA_KEY = "track_key";
     static final String EXTRA_FOLDER = "folder";
+    static final String EXTRA_QUEUE_TOKEN = "queue_token";
     private static final String CHANNEL = "estradaplay_player";
     private static final int NOTIFICATION_ID = 4501;
 
@@ -45,10 +52,15 @@ public final class PlayerService extends Service {
     private static final String KEY_TRACK = "track_key";
     private static final String KEY_FOLDER = "folder";
     private static final String KEY_POSITION = "position_ms";
+    private static final String KEY_QUEUE = "queue_json_v245";
+    private static final String KEY_STAGED_QUEUE = "staged_queue_json_v245";
+    private static final String KEY_STAGED_TOKEN = "staged_queue_token_v245";
     private static final long CHECKPOINT_MS = 5000L;
 
     // PLAYER_MEDIA_SESSION_V243: Bluetooth/headset/car controls and the Android media
     // notification use the same local queue as the in-app player. No UI layout changes.
+    // PLAYER_EXACT_QUEUE_V245: the visible search/folder result becomes the real queue,
+    // survives service/app recreation and drops missing/corrupt files without looping forever.
     private final ArrayList<Track> queue = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -78,6 +90,33 @@ public final class PlayerService extends Service {
         }
     };
 
+    /**
+     * Stages a potentially large visible queue in same-process SharedPreferences instead
+     * of putting thousands of track keys in an Intent/Binder transaction. The returned
+     * token makes sure only the matching PLAY_TRACK command can consume that queue.
+     */
+    static String stageQueue(Context context, List<Track> tracks) {
+        if (context == null) return "";
+        JSONArray a = new JSONArray();
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        if (tracks != null) {
+            for (Track t : tracks) {
+                if (t == null) continue;
+                String key = t.key();
+                if (key == null || key.trim().isEmpty() || !seen.add(key)) continue;
+                a.put(key);
+                if (seen.size() >= 10000) break;
+            }
+        }
+        String raw = a.toString();
+        String token = Long.toHexString(System.nanoTime()) + "-" + Integer.toHexString(raw.hashCode());
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_STAGED_TOKEN, token)
+                .putString(KEY_STAGED_QUEUE, raw)
+                .apply();
+        return token;
+    }
+
     @Override public void onCreate() {
         super.onCreate();
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
@@ -93,9 +132,10 @@ public final class PlayerService extends Service {
         if (ACTION_PLAY_TRACK.equals(action)) {
             String key = intent.getStringExtra(EXTRA_KEY);
             String requestedFolder = normalizeFolder(intent.getStringExtra(EXTRA_FOLDER));
+            ArrayList<String> requestedKeys = readStagedQueue(intent.getStringExtra(EXTRA_QUEUE_TOKEN));
             startForeground(NOTIFICATION_ID, notification(null, false));
             io.execute(() -> {
-                ArrayList<Track> loaded = loadQueue(requestedFolder);
+                ArrayList<Track> loaded = loadQueue(requestedFolder, requestedKeys);
                 main.post(() -> {
                     saveSnapshot();
                     currentFolder = requestedFolder;
@@ -104,6 +144,7 @@ public final class PlayerService extends Service {
                     index = findIndex(key);
                     if (index < 0 && !queue.isEmpty()) index = 0;
                     pendingSeekMs = 0;
+                    saveSnapshot();
                     prepareCurrent(true, 0, false);
                 });
             });
@@ -121,17 +162,73 @@ public final class PlayerService extends Service {
 
     // PLAYER_LOCAL_INDEX_V2315: playback never asks MediaStore to rebuild anything.
     // Queue comes from the saved Estrada Play index + persistent phone MP3 SQLite index.
-    private ArrayList<Track> loadQueue(String folder) {
+    private ArrayList<Track> loadQueue(String folder) { return loadQueue(folder, null); }
+
+    private ArrayList<Track> loadQueue(String folder, List<String> preferredKeys) {
+        ArrayList<Track> all = loadLocalTracks();
+        if (preferredKeys != null && !preferredKeys.isEmpty()) {
+            Map<String, Track> byKey = new LinkedHashMap<>();
+            for (Track t : all) if (t != null && !byKey.containsKey(t.key())) byKey.put(t.key(), t);
+            ArrayList<Track> exact = new ArrayList<>();
+            LinkedHashSet<String> seen = new LinkedHashSet<>();
+            for (String key : preferredKeys) {
+                if (key == null || !seen.add(key)) continue;
+                Track t = byKey.get(key);
+                if (t != null) exact.add(t);
+            }
+            if (!exact.isEmpty()) return exact;
+        }
+
         ArrayList<Track> loaded = new ArrayList<>();
-        List<Track> appTracks = FastMusicLibrary.downloadedTracks(this);
-        List<Track> all = PhoneMp3Store.hasPermission(this)
-                ? PhoneMp3Store.mergeCached(this, appTracks)
-                : appTracks;
         String f = normalizeFolder(folder);
         for (Track t : all) {
             if ("__ALL__".equals(f) || f.equals(LibraryStore.folderKey(t))) loaded.add(t);
         }
         return loaded;
+    }
+
+    private ArrayList<Track> loadLocalTracks() {
+        List<Track> appTracks = FastMusicLibrary.downloadedTracks(this);
+        List<Track> all = PhoneMp3Store.hasPermission(this)
+                ? PhoneMp3Store.mergeCached(this, appTracks)
+                : appTracks;
+        return new ArrayList<>(all);
+    }
+
+    private ArrayList<String> readStagedQueue(String token) {
+        ArrayList<String> out = new ArrayList<>();
+        if (prefs == null || token == null || token.trim().isEmpty()) return out;
+        String expected = prefs.getString(KEY_STAGED_TOKEN, "");
+        if (!token.equals(expected)) return out;
+        String raw = prefs.getString(KEY_STAGED_QUEUE, "[]");
+        prefs.edit().remove(KEY_STAGED_TOKEN).remove(KEY_STAGED_QUEUE).apply();
+        return parseQueueKeys(raw);
+    }
+
+    private static ArrayList<String> parseQueueKeys(String raw) {
+        ArrayList<String> out = new ArrayList<>();
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        try {
+            JSONArray a = new JSONArray(raw == null ? "[]" : raw);
+            for (int i = 0; i < a.length() && out.size() < 10000; i++) {
+                String key = a.optString(i, "").trim();
+                if (!key.isEmpty() && seen.add(key)) out.add(key);
+            }
+        } catch (Throwable ignored) {}
+        return out;
+    }
+
+    private String queueJson() {
+        JSONArray a = new JSONArray();
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        for (Track t : queue) {
+            if (t == null) continue;
+            String key = t.key();
+            if (key == null || key.trim().isEmpty() || !seen.add(key)) continue;
+            a.put(key);
+            if (seen.size() >= 10000) break;
+        }
+        return a.toString();
     }
 
     private String normalizeFolder(String folder) {
@@ -143,6 +240,22 @@ public final class PlayerService extends Service {
         if (key == null) return -1;
         for (int i = 0; i < queue.size(); i++) if (key.equals(queue.get(i).key())) return i;
         return -1;
+    }
+
+    private int findRestoreIndex(String key, List<String> oldOrder) {
+        int direct = findIndex(key);
+        if (direct >= 0) return direct;
+        if (oldOrder != null && !oldOrder.isEmpty()) {
+            int start = oldOrder.indexOf(key);
+            if (start >= 0) {
+                for (int n = 1; n <= oldOrder.size(); n++) {
+                    String candidate = oldOrder.get((start + n) % oldOrder.size());
+                    int found = findIndex(candidate);
+                    if (found >= 0) return found;
+                }
+            }
+        }
+        return queue.isEmpty() ? -1 : 0;
     }
 
     private Track current() { return index >= 0 && index < queue.size() ? queue.get(index) : null; }
@@ -165,13 +278,14 @@ public final class PlayerService extends Service {
         String key = prefs.getString(KEY_TRACK, "");
         String folder = normalizeFolder(prefs.getString(KEY_FOLDER, "__ALL__"));
         int position = Math.max(0, prefs.getInt(KEY_POSITION, 0));
+        ArrayList<String> savedKeys = parseQueueKeys(prefs.getString(KEY_QUEUE, "[]"));
         if (key == null || key.trim().isEmpty()) {
             broadcast("", false, "PRONTO");
             return;
         }
         restoring = true;
         io.execute(() -> {
-            ArrayList<Track> loaded = loadQueue(folder);
+            ArrayList<Track> loaded = loadQueue(folder, savedKeys);
             main.post(() -> {
                 restoring = false;
                 boolean shouldAutoPlay = autoPlay || playAfterRestore;
@@ -179,15 +293,16 @@ public final class PlayerService extends Service {
                 queue.clear();
                 queue.addAll(loaded);
                 currentFolder = folder;
-                index = findIndex(key);
+                index = findRestoreIndex(key, savedKeys);
                 if (index < 0) {
                     clearSnapshot();
                     queue.clear();
-                    broadcast("", false, "Última música indisponível");
+                    broadcast("", false, "Última fila indisponível");
                     return;
                 }
-                pendingSeekMs = position;
-                prepareCurrent(shouldAutoPlay, position, true);
+                pendingSeekMs = key.equals(current().key()) ? position : 0;
+                saveSnapshot();
+                prepareCurrent(shouldAutoPlay, pendingSeekMs, true);
             });
         });
     }
@@ -199,11 +314,8 @@ public final class PlayerService extends Service {
         String source = t.localPath == null ? "" : t.localPath.trim();
         if (!PhoneMp3Store.readable(this, source)) {
             if (source.startsWith("content://")) PhoneMp3Store.invalidate(this);
-            if (restoringSession) {
-                clearSnapshot();
-                queue.clear(); index = -1;
-                broadcast("", false, "Última música indisponível");
-            } else next();
+            main.post(() -> skipCurrentUnavailable(autoPlay,
+                    restoringSession ? "Última música indisponível" : "Pulando arquivo indisponível"));
             return;
         }
         try {
@@ -235,17 +347,37 @@ public final class PlayerService extends Service {
                 saveSnapshot();
             });
             player.setOnCompletionListener(mp -> next());
-            player.setOnErrorListener((mp, what, extra) -> { next(); return true; });
+            player.setOnErrorListener((mp, what, extra) -> {
+                main.post(() -> skipCurrentUnavailable(true, "Pulando arquivo inválido"));
+                return true;
+            });
             if (autoPlay) startForeground(NOTIFICATION_ID, notification(t, false));
             broadcast(t.title, false, restoringSession ? "Restaurando" : "Carregando local");
             player.prepareAsync();
         } catch (Exception e) {
-            broadcast(t.title, false, "Arquivo local inválido");
-            if (restoringSession) {
-                clearSnapshot();
-                queue.clear(); index = -1;
-            } else next();
+            main.post(() -> skipCurrentUnavailable(autoPlay, "Pulando arquivo inválido"));
         }
+    }
+
+    private void skipCurrentUnavailable(boolean autoPlay, String emptyState) {
+        releasePlayerOnly();
+        Track broken = current();
+        if (broken != null && broken.localPath != null && broken.localPath.startsWith("content://")) {
+            PhoneMp3Store.invalidate(this);
+        }
+        if (index >= 0 && index < queue.size()) queue.remove(index);
+        if (queue.isEmpty()) {
+            index = -1;
+            clearSnapshot();
+            updateNotification(notification(null, false));
+            broadcast("", false, emptyState == null || emptyState.isEmpty() ? "Fila vazia" : emptyState);
+            if (autoPlay) stopSelf();
+            return;
+        }
+        if (index < 0 || index >= queue.size()) index = 0;
+        pendingSeekMs = 0;
+        saveSnapshot();
+        main.post(() -> prepareCurrent(autoPlay, 0, false));
     }
 
     private void toggle() {
@@ -299,6 +431,7 @@ public final class PlayerService extends Service {
         saveSnapshot();
         index = (index + 1) % queue.size();
         pendingSeekMs = 0;
+        saveSnapshot();
         prepareCurrent(true, 0, false);
     }
 
@@ -319,6 +452,7 @@ public final class PlayerService extends Service {
         saveSnapshot();
         index = (index - 1 + queue.size()) % queue.size();
         pendingSeekMs = 0;
+        saveSnapshot();
         prepareCurrent(true, 0, false);
     }
 
@@ -357,12 +491,15 @@ public final class PlayerService extends Service {
                 .putString(KEY_TRACK, t.key())
                 .putString(KEY_FOLDER, normalizeFolder(currentFolder))
                 .putInt(KEY_POSITION, position)
+                .putString(KEY_QUEUE, queueJson())
                 .apply();
     }
 
     private void clearSnapshot() {
         pendingSeekMs = 0;
-        if (prefs != null) prefs.edit().remove(KEY_TRACK).remove(KEY_FOLDER).remove(KEY_POSITION).apply();
+        if (prefs != null) prefs.edit()
+                .remove(KEY_TRACK).remove(KEY_FOLDER).remove(KEY_POSITION).remove(KEY_QUEUE)
+                .remove(KEY_STAGED_TOKEN).remove(KEY_STAGED_QUEUE).apply();
     }
 
     private void applyVolume() {
@@ -424,6 +561,8 @@ public final class PlayerService extends Service {
         i.putExtra("playing", playing);
         i.putExtra("state", state == null ? "" : state);
         i.putExtra("track_key", t == null ? "" : t.key());
+        i.putExtra("queue_size", queue.size());
+        i.putExtra("queue_index", index);
         sendBroadcast(i);
     }
 
