@@ -12,7 +12,6 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -21,8 +20,7 @@ import android.widget.TextView;
  * UNIFIED_APP_SHELL_V172
  * One visual/navigation shell for the Universal app. Secondary screens keep their
  * existing business logic, but no longer look like unrelated Android applications.
- * Landscape uses the same permanent left rail as the cockpit; portrait uses the
- * same compact top identity + sector rail. There is deliberately no bottom nav.
+ * There is deliberately no bottom navigation.
  */
 final class UnifiedAppShell {
     private static final int BG=Color.rgb(8,5,7);
@@ -43,8 +41,13 @@ final class UnifiedAppShell {
         a.getWindow().setNavigationBarColor(BG);
         polish(content);
         String active = section == null ? "central" : section.toLowerCase();
-        boolean landscape = a.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
-        return landscape ? landscape(a, active, content) : portrait(a, active, content);
+
+        // ANDROID16_ADAPTIVE_V280: choose navigation from the current window width instead
+        // of the physical screen orientation. This behaves correctly on tablets, desktop/freeform
+        // windows and automotive displays that can be resized without a configuration "landscape" flip.
+        Configuration cfg = a.getResources().getConfiguration();
+        boolean wideWindow = cfg.screenWidthDp >= 600;
+        return wideWindow ? landscape(a, active, content) : portrait(a, active, content);
     }
 
     private static View landscape(Activity a, String active, View content) {
@@ -91,7 +94,6 @@ final class UnifiedAppShell {
         root.addView(head,new LinearLayout.LayoutParams(-1,dp(a,62)));
 
         // PORTRAIT_NAV_FIT_V174: all five sectors remain visible at once.
-        // A scrollable rail made CENTRAL disappear off-screen and looked like another app.
         LinearLayout row=new LinearLayout(a);row.setOrientation(LinearLayout.HORIZONTAL);row.setPadding(dp(a,7),dp(a,6),dp(a,7),dp(a,6));row.setBackgroundColor(BG);
         addNavChipFit(a,row,"ESTRADA","road",active,RoadMapActivity.class);
         addNavChipFit(a,row,"MÚSICA","music",active,MusicPlayerActivity.class);
@@ -106,9 +108,6 @@ final class UnifiedAppShell {
 
     private static void addNav(Activity a,LinearLayout rail,String label,String key,String active,Class<?> cls){
         TextView v=navText(a,label,key.equals(active));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,0,1f);p.setMargins(0,dp(a,3),0,dp(a,3));rail.addView(v,p);v.setOnClickListener(x->go(a,key,active,cls));
-    }
-    private static View navChip(Activity a,String label,String key,String active,Class<?> cls){
-        TextView v=navText(a,label,key.equals(active));v.setMinWidth(dp(a,92));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(a,40));p.setMargins(0,0,dp(a,7),0);v.setLayoutParams(p);v.setOnClickListener(x->go(a,key,active,cls));return v;
     }
     private static void addNavChipFit(Activity a,LinearLayout row,String label,String key,String active,Class<?> cls){
         TextView v=navText(a,label,key.equals(active));v.setTextSize(8.2f);v.setMinWidth(0);v.setSingleLine(true);
