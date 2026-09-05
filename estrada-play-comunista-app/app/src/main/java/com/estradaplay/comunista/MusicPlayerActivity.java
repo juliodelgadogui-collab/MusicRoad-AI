@@ -71,6 +71,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
     }
 
     // MUSIC_LIBRARY_UX_V2316: one real scrollable ListView, local search and folder grouping.
+    // MUSIC_COMPACT_PLAYER_V2318: the player is a compact control strip so the library owns most of the screen.
     // There is no ScrollView wrapped around the song list, so swipe/drag stays smooth even with thousands of tracks.
     private void build(){
         FrameLayout frame=new FrameLayout(this);
@@ -98,49 +99,52 @@ public final class MusicPlayerActivity extends ComponentActivity {
         boolean landscape=getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;
         LinearLayout body=landscape?row():col();
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,0,1);
-        bp.setMargins(0,dp(12),0,0);
+        bp.setMargins(0,dp(8),0,0);
         root.addView(body,bp);
 
         LinearLayout player=playerCard();
         if(landscape){
-            LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(0,-1,.40f);
+            LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(0,-1,.30f);
             body.addView(player,pp);
         }else{
-            body.addView(player,new LinearLayout.LayoutParams(-1,dp(245)));
+            body.addView(player,new LinearLayout.LayoutParams(-1,dp(150)));
         }
 
         LinearLayout library=libraryCard();
         if(landscape){
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,.60f);
-            lp.setMargins(dp(12),0,0,0);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,.70f);
+            lp.setMargins(dp(10),0,0,0);
             body.addView(library,lp);
         }else{
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,0,1);
-            lp.setMargins(0,dp(10),0,0);
+            lp.setMargins(0,dp(8),0,0);
             body.addView(library,lp);
         }
     }
 
     private LinearLayout playerCard(){
         LinearLayout p=col();
-        p.setPadding(dp(20),dp(18),dp(20),dp(16));
-        p.setBackground(panel(SURFACE2,20,RED));
+        p.setPadding(dp(14),dp(10),dp(14),dp(10));
+        p.setBackground(panel(SURFACE2,18,RED));
         LinearLayout top=row();
         top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView mark=text("♪",30,GOLD,true);
+        TextView mark=text("♪",23,GOLD,true);
         mark.setGravity(Gravity.CENTER);
-        mark.setBackground(panel(Color.rgb(50,19,25),16,Color.rgb(113,47,55)));
-        top.addView(mark,new LinearLayout.LayoutParams(dp(64),dp(64)));
+        mark.setBackground(panel(Color.rgb(50,19,25),14,Color.rgb(113,47,55)));
+        top.addView(mark,new LinearLayout.LayoutParams(dp(46),dp(46)));
         LinearLayout meta=col();
         state=over("PRONTO",MUTED);
         meta.addView(state);
-        title=text("Escolha uma música",22,TEXT,true);
-        title.setMaxLines(2);
+        title=text("Escolha uma música",18,TEXT,true);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         meta.addView(title);
-        artist=text("Biblioteca local",12,MUTED,false);
+        artist=text("Biblioteca local",10,MUTED,false);
+        artist.setSingleLine(true);
+        artist.setEllipsize(android.text.TextUtils.TruncateAt.END);
         meta.addView(artist);
         top.addView(meta,new LinearLayout.LayoutParams(0,-2,1));
-        margins(meta,dp(14),0,0,0);
+        margins(meta,dp(10),0,0,0);
         p.addView(top);
 
         View spacer=new View(this);
@@ -149,20 +153,15 @@ public final class MusicPlayerActivity extends ComponentActivity {
         LinearLayout controls=row();
         controls.setGravity(Gravity.CENTER);
         Button prev=control("‹‹",false),play=control("▶ Ⅱ",true),next=control("››",false);
-        controls.addView(prev,new LinearLayout.LayoutParams(dp(64),dp(56)));
-        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(96),dp(56));
-        cp.setMargins(dp(10),0,dp(10),0);
+        controls.addView(prev,new LinearLayout.LayoutParams(dp(52),dp(42)));
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(78),dp(42));
+        cp.setMargins(dp(8),0,dp(8),0);
         controls.addView(play,cp);
-        controls.addView(next,new LinearLayout.LayoutParams(dp(64),dp(56)));
+        controls.addView(next,new LinearLayout.LayoutParams(dp(52),dp(42)));
         p.addView(controls);
         prev.setOnClickListener(v->command(PlayerService.ACTION_PREVIOUS,null,null));
         play.setOnClickListener(v->command(PlayerService.ACTION_TOGGLE,null,null));
         next.setOnClickListener(v->command(PlayerService.ACTION_NEXT,null,null));
-
-        TextView note=text("Biblioteca 100% local: busca e pastas usam o índice salvo no aparelho; tocar abre apenas o MP3 escolhido.",10,MUTED,false);
-        LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,-2);
-        np.setMargins(0,dp(12),0,0);
-        p.addView(note,np);
         return p;
     }
 
