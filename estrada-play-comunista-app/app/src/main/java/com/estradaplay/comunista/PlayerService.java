@@ -65,6 +65,8 @@ public final class PlayerService extends Service {
     // survives service/app recreation and drops missing/corrupt files without looping forever.
     // PLAYER_EXACT_SELECTED_SOURCE_V246: PLAY_TRACK carries the exact Track shown/tapped
     // in the UI, so a duplicated/stale key can no longer redirect playback to another file.
+    // PLAYER_SELECTED_FAILSAFE_V248: an explicit tap never silently falls through to another
+    // queue item when the selected source is missing or cannot be decoded.
     private final ArrayList<Track> queue = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -152,7 +154,7 @@ public final class PlayerService extends Service {
                     if (index < 0 && !queue.isEmpty()) index = 0;
                     pendingSeekMs = 0;
                     saveSnapshot();
-                    prepareCurrent(true, 0, false);
+                    prepareCurrent(true, 0, false, true);
                 });
             });
         } else if (ACTION_TOGGLE.equals(action)) toggle();
@@ -375,14 +377,22 @@ public final class PlayerService extends Service {
     }
 
     private void prepareCurrent(boolean autoPlay, int seekMs, boolean restoringSession) {
+        prepareCurrent(autoPlay, seekMs, restoringSession, false);
+    }
+
+    private void prepareCurrent(boolean autoPlay, int seekMs, boolean restoringSession, boolean explicitSelection) {
         releasePlayerOnly();
         Track t = current();
         if (t == null) { broadcast("", false, "Fila vazia"); if (autoPlay) stopSelf(); return; }
         String source = t.localPath == null ? "" : t.localPath.trim();
         if (!PhoneMp3Store.readable(this, source)) {
             if (source.startsWith("content://")) PhoneMp3Store.invalidate(this);
-            main.post(() -> skipCurrentUnavailable(autoPlay,
-                    restoringSession ? "Última música indisponível" : "Pulando arquivo indisponível"));
+            if (explicitSelection) {
+                main.post(() -> failExplicitSelection(t, "Música selecionada indisponível"));
+            } else {
+                main.post(() -> skipCurrentUnavailable(autoPlay,
+                        restoringSession ? "Última música indisponível" : "Pulando arquivo indisponível"));
+            }
             return;
         }
         try {
@@ -402,7 +412,13 @@ public final class PlayerService extends Service {
                 requestFocus();
                 applyVolume();
                 if (autoPlay) {
-                    mp.start();
+                    try {
+                        mp.start();
+                    } catch (Throwable startError) {
+                        if (explicitSelection) main.post(() -> failExplicitSelection(t, "Não foi possível tocar esta música"));
+                        else main.post(() -> skipCurrentUnavailable(true, "Pulando arquivo inválido"));
+                        return;
+                    }
                     resumeOnFocus = false;
                     startForeground(NOTIFICATION_ID, notification(t, true));
                     scheduleCheckpoint();
@@ -415,15 +431,31 @@ public final class PlayerService extends Service {
             });
             player.setOnCompletionListener(mp -> next());
             player.setOnErrorListener((mp, what, extra) -> {
-                main.post(() -> skipCurrentUnavailable(true, "Pulando arquivo inválido"));
+                if (explicitSelection) main.post(() -> failExplicitSelection(t, "Não foi possível tocar esta música"));
+                else main.post(() -> skipCurrentUnavailable(true, "Pulando arquivo inválido"));
                 return true;
             });
             if (autoPlay) startForeground(NOTIFICATION_ID, notification(t, false));
             broadcast(t.title, false, restoringSession ? "Restaurando" : "Carregando local");
             player.prepareAsync();
         } catch (Exception e) {
-            main.post(() -> skipCurrentUnavailable(autoPlay, "Pulando arquivo inválido"));
+            if (explicitSelection) main.post(() -> failExplicitSelection(t, "Não foi possível tocar esta música"));
+            else main.post(() -> skipCurrentUnavailable(autoPlay, "Pulando arquivo inválido"));
         }
+    }
+
+    private void failExplicitSelection(Track selected, String state) {
+        releasePlayerOnly();
+        Track broken = selected == null ? current() : selected;
+        if (broken != null && broken.localPath != null && broken.localPath.startsWith("content://")) {
+            PhoneMp3Store.invalidate(this);
+        }
+        if (index >= 0 && index < queue.size()) queue.remove(index);
+        index = -1;
+        clearSnapshot();
+        try { stopForeground(true); } catch (Throwable ignored) {}
+        String title = broken == null ? "" : broken.title;
+        broadcast(title, false, state == null || state.trim().isEmpty() ? "Música indisponível" : state);
     }
 
     private void skipCurrentUnavailable(boolean autoPlay, String emptyState) {
