@@ -11,16 +11,12 @@ permissions:
   contents: read
   actions: write
 
-concurrency:
-  group: cleanup-old-actions-runs
-  cancel-in-progress: false
-
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-      - name: Delete old workflow runs safely
+      - name: Delete old runs in small batches
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -29,91 +25,48 @@ jobs:
         shell: bash
         run: |
           set -u
-          echo "Current cleanup run: $CURRENT_RUN_ID"
-          echo "Preserving EPC 2.4.5 run: $KEEP_RUN_ID"
-
           deleted=0
-          pass=0
+          cycles=0
 
-          get_ids() {
-            local attempt out
-            for attempt in $(seq 1 20); do
-              if out=$(gh api "/repos/$REPO/actions/runs?per_page=100" --jq '.workflow_runs[].id' 2>/tmp/gh-get.err); then
-                printf '%s\n' "$out"
-                return 0
-              fi
-              echo "List attempt $attempt was rate-limited or failed; retrying" >&2
-              cat /tmp/gh-get.err >&2 || true
-              sleep $((attempt * 3))
-            done
-            return 1
-          }
+          while (( cycles < 60 )); do
+            cycles=$((cycles + 1))
+            echo "Cycle $cycles"
 
-          delete_run() {
-            local id="$1" attempt
-            for attempt in $(seq 1 12); do
-              if gh api --method DELETE "/repos/$REPO/actions/runs/$id" >/dev/null 2>/tmp/gh-del.err; then
-                return 0
-              fi
-              echo "Delete $id attempt $attempt failed; backing off" >&2
-              cat /tmp/gh-del.err >&2 || true
-              sleep $((attempt * 2))
-            done
-            return 1
-          }
+            json=""
+            if ! json=$(gh api "/repos/$REPO/actions/runs?per_page=100" 2>&1); then
+              echo "$json"
+              echo "GitHub temporarily refused listing; cooling down"
+              sleep 60
+              continue
+            fi
 
-          while true; do
-            pass=$((pass + 1))
-            echo "Cleanup pass $pass"
+            mapfile -t ids < <(printf '%s' "$json" | jq -r '.workflow_runs[].id' | head -n 40)
+            batch=0
 
-            ids_text=$(get_ids) || {
-              echo "Could not list runs after retries" >&2
-              exit 1
-            }
-
-            mapfile -t ids <<< "$ids_text"
-            deletable=()
             for id in "${ids[@]}"; do
-              [[ -z "$id" ]] && continue
-              if [[ "$id" != "$CURRENT_RUN_ID" && "$id" != "$KEEP_RUN_ID" ]]; then
-                deletable+=("$id")
-              fi
-            done
+              [[ "$id" == "$CURRENT_RUN_ID" ]] && continue
+              [[ "$id" == "$KEEP_RUN_ID" ]] && continue
+              (( batch >= 20 )) && break
 
-            if (( ${#deletable[@]} == 0 )); then
-              break
-            fi
-
-            batch_count=0
-            for id in "${deletable[@]}"; do
-              echo "Deleting run $id"
-              if delete_run "$id"; then
+              echo "Deleting $id"
+              if gh api --method DELETE "/repos/$REPO/actions/runs/$id" >/dev/null 2>&1; then
                 deleted=$((deleted + 1))
+                batch=$((batch + 1))
               else
-                echo "Giving up on run $id after retries" >&2
+                echo "Could not delete $id on this cycle"
               fi
-
-              batch_count=$((batch_count + 1))
-              sleep 0.6
-              if (( batch_count % 20 == 0 )); then
-                echo "Cooling down after 20 deletions"
-                sleep 8
-              fi
+              sleep 1
             done
 
-            if (( pass >= 30 )); then
-              echo "Safety stop after 30 passes" >&2
-              exit 1
-            fi
-          done
+            echo "Deleted in cycle: $batch; total this run: $deleted"
 
-          remaining="unknown"
-          for attempt in $(seq 1 10); do
-            if remaining=$(gh api "/repos/$REPO/actions/runs?per_page=1" --jq '.total_count' 2>/dev/null); then
+            if (( batch == 0 )); then
+              echo "Nothing else deletable in first page"
               break
             fi
-            sleep $((attempt * 2))
+
+            sleep 20
           done
 
-          echo "Deleted runs in this execution: $deleted"
-          echo "Remaining runs reported by GitHub: $remaining"
+          remaining=$(gh api "/repos/$REPO/actions/runs?per_page=1" --jq '.total_count' 2>/dev/null || echo unknown)
+          echo "Cleanup finished. Deleted: $deleted. Remaining: $remaining"
