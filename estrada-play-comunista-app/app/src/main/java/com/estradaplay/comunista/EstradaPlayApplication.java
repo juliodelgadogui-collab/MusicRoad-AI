@@ -31,6 +31,17 @@ public final class EstradaPlayApplication extends Application {
             catch (Throwable ignored) {}
         }, "epc-shared-music").start();
 
+        // MUSIC_LOCAL_INDEX_V2315: only watch for audio-library changes. This never scans files.
+        // The saved SQLite index opens instantly; if it is old, Music refreshes it later in background.
+        try {
+            PhoneMp3Store.installObserver(this);
+            if (PhoneMp3Store.hasPermission(this)) {
+                PhoneMp3Index index = PhoneMp3Index.get(this);
+                long age = System.currentTimeMillis() - index.updatedAt();
+                if (!index.isReady() || age > 6L * 60L * 60L * 1000L) index.markDirty();
+            }
+        } catch (Throwable ignored) {}
+
         // COMBOIO_LINK_MAP_V237: deep links + members projected onto the principal RoadMapActivity.
         ConvoyIntegrationV237.install(this);
 
