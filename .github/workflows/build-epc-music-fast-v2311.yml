@@ -1,9 +1,0 @@
-name: EPC Android 2.3.11 Música Local Rápida (arquivado)
-on:
-  workflow_dispatch:
-
-jobs:
-  archived:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo '2.3.11 foi substituída pela 2.3.12 MP3 por Pastas.'

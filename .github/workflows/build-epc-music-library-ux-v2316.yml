@@ -1,9 +1,0 @@
-name: EPC Android 2.3.16 Biblioteca de Música - manutenção
-on:
-  workflow_dispatch:
-
-jobs:
-  paused:
-    runs-on: ubuntu-22.04
-    steps:
-      - run: echo "Workflow 2.3.16 encerrado; use o workflow da versão atual."
