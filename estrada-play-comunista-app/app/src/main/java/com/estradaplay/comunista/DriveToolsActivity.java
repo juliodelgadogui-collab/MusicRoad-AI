@@ -63,6 +63,8 @@ public final class DriveToolsActivity extends ComponentActivity {
                 new Tool("★","PENSAMENTOS","Camada cultural opcional",ThoughtsActivity.class,GOLD)});
 
         section("SISTEMA");
+        // SYSTEM_DIAGNOSTICS_V270: local health snapshot is reachable without leaving the cockpit family.
+        grid(new Tool[]{new Tool("✓","DIAGNÓSTICO","Versão, permissões e prontidão local",SystemDiagnosticsActivity.class,GREEN)});
         toggle("MODO NOTURNO","Escurecer instrumentos automaticamente","auto_night",DriveSettings.autoNight(this));
         toggle("CHUVA AUTOMÁTICA","Antecipa alertas e observa a rota","rain_auto",DriveSettings.autoRain(this));
         toggle("PROTEGER VÍDEO EM IMPACTO","Preserva o trecho da dashcam","protect_impact_video",DriveSettings.protectImpactVideo(this));
