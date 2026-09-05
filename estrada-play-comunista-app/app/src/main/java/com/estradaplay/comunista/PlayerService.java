@@ -37,7 +37,6 @@ public final class PlayerService extends Service {
     private final ArrayList<Track> queue = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
-    private LibraryStore store;
     private MediaPlayer player;
     private int index = -1;
     private boolean prepared;
@@ -45,7 +44,6 @@ public final class PlayerService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
-        store = new LibraryStore(this);
         createChannel();
     }
 
@@ -77,14 +75,14 @@ public final class PlayerService extends Service {
         return START_NOT_STICKY;
     }
 
-    // DEVICE_MUSIC_V2313: Estrada Play downloads never trigger a folder scan.
-    // The selected MP3 folder is merged only after it is cached, or when a tree track is requested.
+    // PLAYER_FAST_MP3_V2314: never reconcile or walk folders before playback.
+    // Estrada Play downloads come from the saved local index; phone MP3s come from the cached Android index.
     private ArrayList<Track> loadQueue(String folder, String requestedKey) {
         ArrayList<Track> loaded = new ArrayList<>();
-        List<Track> appTracks = store.downloadedTracks();
-        boolean folderTrackRequested = requestedKey != null && requestedKey.startsWith("tree_");
-        List<Track> all = (DeviceMusicStore.hasCached() || folderTrackRequested)
-                ? DeviceMusicStore.merge(this, appTracks)
+        List<Track> appTracks = FastMusicLibrary.downloadedTracks(this);
+        boolean phoneTrackRequested = requestedKey != null && requestedKey.startsWith("phone_");
+        List<Track> all = (PhoneMp3Store.hasCached() || phoneTrackRequested)
+                ? PhoneMp3Store.merge(this, appTracks, false)
                 : appTracks;
         String f = folder == null ? "" : folder.trim();
         for (Track t : all) {
@@ -106,7 +104,7 @@ public final class PlayerService extends Service {
         Track t = current();
         if (t == null) { broadcast("", false, "Fila vazia"); stopSelf(); return; }
         String source = t.localPath == null ? "" : t.localPath.trim();
-        if (!DeviceMusicStore.readable(this, source)) { next(); return; }
+        if (!PhoneMp3Store.readable(this, source)) { next(); return; }
         try {
             player = new MediaPlayer();
             player.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
