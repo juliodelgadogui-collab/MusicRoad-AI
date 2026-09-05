@@ -51,6 +51,7 @@ public final class PlayerService extends Service {
     private int index = -1;
     private boolean prepared;
     private boolean restoring;
+    private boolean playAfterRestore;
     private float alertDuck = 1f;
     private String currentFolder = "__ALL__";
     private int pendingSeekMs;
@@ -133,8 +134,18 @@ public final class PlayerService extends Service {
     private Track current() { return index >= 0 && index < queue.size() ? queue.get(index) : null; }
 
     private void restoreSession(boolean autoPlay) {
-        if (restoring || current() != null) {
-            if (autoPlay) toggle(); else broadcastCurrent();
+        if (restoring) {
+            if (autoPlay) playAfterRestore = true;
+            return;
+        }
+        if (current() != null) {
+            if (!autoPlay) {
+                broadcastCurrent();
+            } else if (player != null && prepared) {
+                toggle();
+            } else {
+                prepareCurrent(true, pendingSeekMs, false);
+            }
             return;
         }
         String key = prefs.getString(KEY_TRACK, "");
@@ -149,6 +160,8 @@ public final class PlayerService extends Service {
             ArrayList<Track> loaded = loadQueue(folder);
             main.post(() -> {
                 restoring = false;
+                boolean shouldAutoPlay = autoPlay || playAfterRestore;
+                playAfterRestore = false;
                 queue.clear();
                 queue.addAll(loaded);
                 currentFolder = folder;
@@ -160,7 +173,7 @@ public final class PlayerService extends Service {
                     return;
                 }
                 pendingSeekMs = position;
-                prepareCurrent(autoPlay, position, true);
+                prepareCurrent(shouldAutoPlay, position, true);
             });
         });
     }
