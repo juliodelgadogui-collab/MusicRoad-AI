@@ -1,6 +1,10 @@
 name: Limpeza automática de Artifacts
 
 on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - '.github/workflows/cleanup-actions-artifacts.yml'
   workflow_dispatch:
     inputs:
       max_age_hours:
