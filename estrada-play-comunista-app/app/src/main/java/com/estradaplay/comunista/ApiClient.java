@@ -18,6 +18,7 @@ import java.util.Map;
 final class ApiClient {
     private static final String PREFS = "estradaplay_session_v1";
     private static final String KEY_COOKIE = "cookie";
+    private static final int MAX_REDIRECTS = 3;
     private final Context app;
     private final SharedPreferences prefs;
     private final SecureDeviceCredential credential;
@@ -67,6 +68,14 @@ final class ApiClient {
 
     private Response requestInternal(String method, String path, JSONObject data, int connectTimeout, int readTimeout,
                                      int maxChars, boolean allowRefresh, boolean refreshCall) throws Exception {
+        return requestInternal(method, path, data, connectTimeout, readTimeout, maxChars, allowRefresh, refreshCall, 0);
+    }
+
+    // API_REDIRECT_GUARD_V300: authenticated requests never rely on HttpURLConnection automatic
+    // redirects. Same-origin GET redirects are followed explicitly; external GETs may redirect only
+    // to HTTPS. This prevents trusted headers/cookies from being carried to an unexpected origin.
+    private Response requestInternal(String method, String path, JSONObject data, int connectTimeout, int readTimeout,
+                                     int maxChars, boolean allowRefresh, boolean refreshCall, int redirectDepth) throws Exception {
         String target = path.startsWith("http://") || path.startsWith("https://") ? path : absolute(path);
         boolean trusted = isTrustedTarget(target);
         boolean credentialAction = isCredentialAction(target);
@@ -80,53 +89,74 @@ final class ApiClient {
             try { data.put("device_secret", credential.secret()); } catch (Exception ignored) {}
         }
 
-        HttpURLConnection c = (HttpURLConnection) new URL(target).openConnection();
-        c.setInstanceFollowRedirects("GET".equals(method));
-        c.setConnectTimeout(connectTimeout);
-        c.setReadTimeout(readTimeout);
-        c.setRequestMethod(method);
-        c.setRequestProperty("Accept", "application/json");
-        c.setRequestProperty("Accept-Encoding", "gzip");
-        c.setRequestProperty("User-Agent", "EstradaPlay/" + BuildConfig.VERSION_NAME + " Android");
+        HttpURLConnection c = null;
+        Response response;
+        try {
+            c = (HttpURLConnection) new URL(target).openConnection();
+            c.setInstanceFollowRedirects(false);
+            c.setConnectTimeout(connectTimeout);
+            c.setReadTimeout(readTimeout);
+            c.setRequestMethod(method);
+            c.setRequestProperty("Accept", "application/json");
+            c.setRequestProperty("Accept-Encoding", "gzip");
+            c.setRequestProperty("User-Agent", "EstradaPlay/" + BuildConfig.VERSION_NAME + " Android");
 
-        if (trusted) {
-            c.setRequestProperty("X-MusicRoad-Native", "1");
-            c.setRequestProperty("X-EstradaPlay-Device", DeviceIdentity.token(app));
-            c.setRequestProperty("X-EstradaPlay-Device-Label", DeviceIdentity.label());
+            if (trusted) {
+                c.setRequestProperty("X-MusicRoad-Native", "1");
+                c.setRequestProperty("X-EstradaPlay-Device", DeviceIdentity.token(app));
+                c.setRequestProperty("X-EstradaPlay-Device-Label", DeviceIdentity.label());
 
-            if (credentialAction || refreshCall) {
-                c.setRequestProperty("X-EstradaPlay-Device-Secret", credential.secret());
+                if (credentialAction || refreshCall) {
+                    c.setRequestProperty("X-EstradaPlay-Device-Secret", credential.secret());
+                }
+
+                String access = credentialAction || refreshCall ? "" : credential.accessToken();
+                if (!access.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + access);
+
+                // SESSION_HOST_COMPAT_V233: keep the same-origin PHP session cookie alongside Bearer.
+                String cookie = cookie();
+                if (cookie != null && !cookie.trim().isEmpty()) {
+                    c.setRequestProperty("Cookie", cookie.trim());
+                }
             }
 
-            String access = credentialAction || refreshCall ? "" : credential.accessToken();
-            if (!access.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + access);
-
-            // SESSION_HOST_COMPAT_V233: keep the same-origin PHP session cookie alongside Bearer.
-            String cookie = cookie();
-            if (cookie != null && !cookie.trim().isEmpty()) {
-                c.setRequestProperty("Cookie", cookie.trim());
+            if (data != null) {
+                byte[] bytes = data.toString().getBytes(StandardCharsets.UTF_8);
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                c.setFixedLengthStreamingMode(bytes.length);
+                try (OutputStream out = c.getOutputStream()) { out.write(bytes); }
             }
+
+            int code = c.getResponseCode();
+            if (trusted) captureCookies(c.getHeaderFields());
+
+            if ("GET".equals(method) && isRedirect(code) && redirectDepth < MAX_REDIRECTS) {
+                String location = c.getHeaderField("Location");
+                if (location != null && !location.trim().isEmpty()) {
+                    String redirected = new URL(new URL(target), location.trim()).toString();
+                    boolean safe = trusted ? isTrustedTarget(redirected) : isHttpsTarget(redirected);
+                    if (safe) {
+                        return requestInternal(method, redirected, null, connectTimeout, readTimeout, maxChars,
+                                allowRefresh, refreshCall, redirectDepth + 1);
+                    }
+                }
+            }
+
+            InputStream raw = code >= 200 && code < 400 ? c.getInputStream() : c.getErrorStream();
+            InputStream in = raw;
+            String encoding = c.getContentEncoding();
+            if (raw != null && encoding != null && encoding.toLowerCase().contains("gzip")) in = new java.util.zip.GZIPInputStream(raw);
+            String body = read(in, maxChars);
+            response = new Response(code, body);
+        } finally {
+            // API_CONNECTION_CLEANUP_V300: also runs when getResponseCode/read/gzip throws.
+            if (c != null) try { c.disconnect(); } catch (Throwable ignored) {}
         }
 
-        if (data != null) {
-            byte[] bytes = data.toString().getBytes(StandardCharsets.UTF_8);
-            c.setDoOutput(true);
-            c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            c.setFixedLengthStreamingMode(bytes.length);
-            try (OutputStream out = c.getOutputStream()) { out.write(bytes); }
-        }
-        int code = c.getResponseCode();
-        if (trusted) captureCookies(c.getHeaderFields());
-        InputStream raw = code >= 200 && code < 400 ? c.getInputStream() : c.getErrorStream();
-        InputStream in = raw;
-        String encoding = c.getContentEncoding();
-        if (raw != null && encoding != null && encoding.toLowerCase().contains("gzip")) in = new java.util.zip.GZIPInputStream(raw);
-        String body = read(in, maxChars);
-        c.disconnect();
-        Response response = new Response(code, body);
         if (trusted) captureAuth(response);
 
-        if (code == 401 && allowRefresh && trusted && !credentialAction) {
+        if (response.code == 401 && allowRefresh && trusted && !credentialAction) {
             if (refreshIfPossible()) {
                 return requestInternal(method, path, data, connectTimeout, readTimeout, maxChars, false, false);
             }
@@ -223,6 +253,15 @@ final class ApiClient {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private static boolean isHttpsTarget(String target) {
+        try { return "https".equalsIgnoreCase(new URL(target).getProtocol()); }
+        catch (Exception e) { return false; }
+    }
+
+    private static boolean isRedirect(int code) {
+        return code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
     }
 
     private boolean isCredentialAction(String target) {
