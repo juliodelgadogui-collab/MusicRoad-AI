@@ -2,7 +2,6 @@ package com.estradaplay.comunista;
 
 import android.Manifest;
 import android.content.*;
-import android.content.pm.PackageManager;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.os.*;
@@ -14,8 +13,8 @@ import java.util.concurrent.*;
 
 /** Dedicated music surface. Opening Music never redirects to the download manager. */
 public final class MusicPlayerActivity extends ComponentActivity {
-    private static final int REQ_DEVICE_AUDIO=4314;
-    private static final String PERM_PREFS="epc_music_permission_v2314";
+    private static final int REQ_DEVICE_AUDIO=4315;
+    private static final String PERM_PREFS="epc_music_permission_v2315";
     private final int BG=Color.rgb(8,5,7),SURFACE=Color.rgb(18,9,12),SURFACE2=Color.rgb(29,14,18),BORDER=Color.rgb(76,38,44);
     private final int TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(174,151,146),RED=Color.rgb(190,18,38),GREEN=Color.rgb(72,212,134),GOLD=Color.rgb(226,185,76);
     private final ExecutorService io=Executors.newSingleThreadExecutor();
@@ -29,7 +28,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
         if(state!=null){state.setText(playing?"● TOCANDO":(s==null||s.isEmpty()?"PRONTO":s.toUpperCase(Locale.ROOT)));state.setTextColor(playing?GREEN:MUTED);}
     }};
 
-    @Override protected void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);build();loadTracks(false);register();queryPlayer();maybeAskAudioPermissionOnce();}
+    @Override protected void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);PhoneMp3Store.installObserver(this);build();loadTracks(false);register();queryPlayer();maybeAskAudioPermissionOnce();}
     @Override public void onConfigurationChanged(android.content.res.Configuration c){super.onConfigurationChanged(c);build();loadTracks(false);queryPlayer();}
     @Override protected void onDestroy(){if(registered)try{unregisterReceiver(playerState);}catch(Throwable ignored){}io.shutdownNow();super.onDestroy();}
 
@@ -46,7 +45,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
         LinearLayout player=playerCard();LinearLayout.LayoutParams pp=landscape?new LinearLayout.LayoutParams(0,dp(390),.42f):new LinearLayout.LayoutParams(-1,dp(350));body.addView(player,pp);
         listBox=col();listBox.setPadding(dp(14),dp(14),dp(14),dp(14));listBox.setBackground(panel(SURFACE,18,BORDER));
         LinearLayout.LayoutParams lp=landscape?new LinearLayout.LayoutParams(0,dp(390),.58f):new LinearLayout.LayoutParams(-1,-2);if(landscape)lp.setMargins(dp(12),0,0,0);else lp.setMargins(0,dp(12),0,0);body.addView(listBox,lp);
-        LinearLayout lh=row();lh.setGravity(Gravity.CENTER_VERTICAL);LinearLayout lt=col();lt.addView(over("NO APARELHO",MUTED));count=text("Abrindo biblioteca…",17,TEXT,true);lt.addView(count);lh.addView(lt,new LinearLayout.LayoutParams(0,-2,1));Button cleanup=small("LIMPEZA");lh.addView(cleanup,new LinearLayout.LayoutParams(dp(86),dp(42)));cleanup.setOnClickListener(v->openStorage());listBox.addView(lh);
+        LinearLayout lh=row();lh.setGravity(Gravity.CENTER_VERTICAL);LinearLayout lt=col();lt.addView(over("NO APARELHO",MUTED));count=text("Biblioteca local",17,TEXT,true);lt.addView(count);lh.addView(lt,new LinearLayout.LayoutParams(0,-2,1));Button cleanup=small("LIMPEZA");lh.addView(cleanup,new LinearLayout.LayoutParams(dp(86),dp(42)));cleanup.setOnClickListener(v->openStorage());listBox.addView(lh);
     }
 
     private LinearLayout playerCard(){
@@ -56,45 +55,46 @@ public final class MusicPlayerActivity extends ComponentActivity {
         View spacer=new View(this);p.addView(spacer,new LinearLayout.LayoutParams(1,0,1));
         LinearLayout controls=row();controls.setGravity(Gravity.CENTER);Button prev=control("‹‹",false),play=control("▶ Ⅱ",true),next=control("››",false);controls.addView(prev,new LinearLayout.LayoutParams(dp(64),dp(56)));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(96),dp(56));cp.setMargins(dp(10),0,dp(10),0);controls.addView(play,cp);controls.addView(next,new LinearLayout.LayoutParams(dp(64),dp(56)));p.addView(controls);
         prev.setOnClickListener(v->command(PlayerService.ACTION_PREVIOUS,null,null));play.setOnClickListener(v->command(PlayerService.ACTION_TOGGLE,null,null));next.setOnClickListener(v->command(PlayerService.ACTION_NEXT,null,null));
-        TextView note=text("Downloads do Estrada Play também ganham uma cópia em Música/EstradaPlay. Essa cópia continua no celular mesmo se o app for removido.",10,MUTED,false);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,-2);np.setMargins(0,dp(13),0,0);p.addView(note,np);return p;
+        TextView note=text("A biblioteca do celular fica indexada localmente no aparelho. Abrir Música não faz busca no servidor nem varre armazenamento.",10,MUTED,false);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,-2);np.setMargins(0,dp(13),0,0);p.addView(note,np);return p;
     }
 
-    // MUSIC_PERMISSION_INDEX_V2314: show the saved Estrada Play index immediately, then ask Android
-    // for audio permission and query only MP3 rows from the system audio index. No reconcile/recursive scan.
-    private void loadTracks(boolean forcePhoneScan){if(io.isShutdown())return;io.execute(()->{
+    // MUSIC_LOCAL_INDEX_V2315: render the persistent local DB first. A MediaStore refresh,
+    // when needed, happens only after the list is already visible and never blocks this screen.
+    private void loadTracks(boolean forceRefresh){if(io.isShutdown())return;io.execute(()->{
         List<Track> appTracks=FastMusicLibrary.downloadedTracks(this);
-        ArrayList<Track> immediate=new ArrayList<>(appTracks);
-        runOnUiThread(()->{
-            renderTracks(immediate);
-            if(PhoneMp3Store.hasPermission(this)&&count!=null)count.setText(immediate.size()+" do Estrada Play · procurando MP3…");
-        });
+        List<Track> cached=PhoneMp3Store.mergeCached(this,appTracks);
+        runOnUiThread(()->renderTracks(cached));
+
         if(!PhoneMp3Store.hasPermission(this))return;
-        List<Track> tracks=PhoneMp3Store.merge(this,appTracks,forcePhoneScan);
+        if(!forceRefresh&&!PhoneMp3Store.needsRefresh(this))return;
+
+        runOnUiThread(()->{if(count!=null)count.setText(cached.size()+" músicas · atualizando índice em segundo plano");});
+        List<Track> fresh=PhoneMp3Store.mergeFresh(this,appTracks);
         boolean timeout=PhoneMp3Store.lastTimedOut();
         runOnUiThread(()->{
-            renderTracks(tracks);
-            if(timeout&&count!=null)count.setText(tracks.size()+" músicas · busca do Android interrompida");
+            renderTracks(fresh);
+            if(timeout&&count!=null)count.setText(fresh.size()+" músicas · índice anterior mantido");
         });
     });}
 
     private void renderTracks(List<Track> tracks){if(listBox==null)return;while(listBox.getChildCount()>1)listBox.removeViewAt(1);int n=tracks==null?0:tracks.size();if(count!=null)count.setText(n+" "+(n==1?"música disponível":"músicas disponíveis"));
         boolean allowed=PhoneMp3Store.hasPermission(this);
         LinearLayout source=col();source.setPadding(0,dp(12),0,0);
-        Button phone=allowed?small("ATUALIZAR MP3 DO CELULAR"):primary("PERMITIR ACESSO ÀS MÚSICAS");source.addView(phone,new LinearLayout.LayoutParams(-1,dp(52)));phone.setOnClickListener(v->{if(PhoneMp3Store.hasPermission(this)){PhoneMp3Store.invalidate();loadTracks(true);}else requestDeviceAudio();});
-        TextView sourceNote=text(allowed?"Busca rápida no índice de áudio do Android: somente arquivos .mp3, em qualquer pasta. Não varre o armazenamento e não usa servidor.":"O Android precisa autorizar o Estrada Play a ler as músicas do aparelho. Depois disso, buscamos somente MP3.",10,MUTED,false);LinearLayout.LayoutParams sn=new LinearLayout.LayoutParams(-1,-2);sn.setMargins(0,dp(7),0,0);source.addView(sourceNote,sn);listBox.addView(source);
-        if(n==0){LinearLayout empty=col();empty.setPadding(0,dp(18),0,0);empty.addView(text(allowed?"Nenhum MP3 encontrado":"Autorize as músicas do celular",19,TEXT,true));empty.addView(text(allowed?"Se seus MP3 acabaram de ser copiados para o celular, toque em ATUALIZAR MP3 DO CELULAR.":"Toque em PERMITIR ACESSO ÀS MÚSICAS para o Android liberar a biblioteca de áudio.",12,MUTED,false));Button add=small("ADICIONAR / BAIXAR MÚSICAS");LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(50));ap.setMargins(0,dp(12),0,0);empty.addView(add,ap);add.setOnClickListener(v->openDownloads());listBox.addView(empty);return;}
+        Button phone=allowed?small("ATUALIZAR ÍNDICE MP3"):primary("PERMITIR ACESSO ÀS MÚSICAS");source.addView(phone,new LinearLayout.LayoutParams(-1,dp(52)));phone.setOnClickListener(v->{if(PhoneMp3Store.hasPermission(this)){PhoneMp3Store.invalidate(this);loadTracks(true);}else requestDeviceAudio();});
+        TextView sourceNote=text(allowed?"A lista abre pelo banco local do Estrada Play. Só o botão Atualizar, a primeira autorização ou uma mudança detectada no Android refaz o índice de MP3.":"Autorize Músicas e áudio uma vez. Depois a biblioteca fica salva localmente e abre sem servidor.",10,MUTED,false);LinearLayout.LayoutParams sn=new LinearLayout.LayoutParams(-1,-2);sn.setMargins(0,dp(7),0,0);source.addView(sourceNote,sn);listBox.addView(source);
+        if(n==0){LinearLayout empty=col();empty.setPadding(0,dp(18),0,0);empty.addView(text(allowed?"Nenhum MP3 indexado":"Autorize as músicas do celular",19,TEXT,true));empty.addView(text(allowed?"O primeiro índice é criado em segundo plano. Você também pode tocar em ATUALIZAR ÍNDICE MP3.":"Toque em PERMITIR ACESSO ÀS MÚSICAS para o Android liberar a biblioteca de áudio.",12,MUTED,false));Button add=small("ADICIONAR / BAIXAR MÚSICAS");LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(50));ap.setMargins(0,dp(12),0,0);empty.addView(add,ap);add.setOnClickListener(v->openDownloads());listBox.addView(empty);return;}
         ScrollView sv=new ScrollView(this);LinearLayout rows=col();sv.addView(rows,new ScrollView.LayoutParams(-1,-2));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(270));sp.setMargins(0,dp(10),0,0);listBox.addView(sv,sp);int limit=Math.min(n,240);for(int i=0;i<limit;i++){Track t=tracks.get(i);rows.addView(trackRow(t,i));if(i<limit-1){View d=new View(this);d.setBackgroundColor(BORDER);rows.addView(d,new LinearLayout.LayoutParams(-1,dp(1)));}}if(n>limit)rows.addView(text("Mostrando 240 de "+n+" faixas.",10,MUTED,false));}
 
     private View trackRow(Track t,int pos){LinearLayout r=row();r.setGravity(Gravity.CENTER_VERTICAL);r.setPadding(dp(8),dp(8),dp(6),dp(8));TextView idx=text(String.format(Locale.ROOT,"%02d",pos+1),10,GOLD,true);idx.setGravity(Gravity.CENTER);r.addView(idx,new LinearLayout.LayoutParams(dp(38),dp(44)));LinearLayout m=col();TextView tt=text(t.title,14,TEXT,true);tt.setMaxLines(1);m.addView(tt);String folder=LibraryStore.folderKey(t);TextView aa=text(t.artist+(folder==null||folder.isEmpty()?"":" · "+folder),10,MUTED,false);aa.setMaxLines(1);m.addView(aa);r.addView(m,new LinearLayout.LayoutParams(0,-2,1));Button go=control("▶",true);r.addView(go,new LinearLayout.LayoutParams(dp(48),dp(44)));go.setOnClickListener(v->command(PlayerService.ACTION_PLAY_TRACK,t.key(),"__ALL__"));r.setOnClickListener(v->command(PlayerService.ACTION_PLAY_TRACK,t.key(),"__ALL__"));return r;}
 
-    private void maybeAskAudioPermissionOnce(){if(PhoneMp3Store.hasPermission(this)||Build.VERSION.SDK_INT<23)return;android.content.SharedPreferences p=getSharedPreferences(PERM_PREFS,MODE_PRIVATE);if(p.getBoolean("asked",false))return;p.edit().putBoolean("asked",true).apply();if(root!=null)root.postDelayed(this::requestDeviceAudio,450);}
+    private void maybeAskAudioPermissionOnce(){if(PhoneMp3Store.hasPermission(this)||Build.VERSION.SDK_INT<23)return;android.content.SharedPreferences p=getSharedPreferences(PERM_PREFS,MODE_PRIVATE);if(p.getBoolean("asked",false))return;p.edit().putBoolean("asked",true).apply();if(root!=null)root.postDelayed(this::requestDeviceAudio,350);}
     private void requestDeviceAudio(){
         if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.READ_MEDIA_AUDIO},REQ_DEVICE_AUDIO);
         else if(Build.VERSION.SDK_INT>=23)requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},REQ_DEVICE_AUDIO);
         else loadTracks(true);
     }
 
-    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode!=REQ_DEVICE_AUDIO)return;if(PhoneMp3Store.hasPermission(this)){Toast.makeText(this,"Acesso às músicas liberado. Localizando MP3.",Toast.LENGTH_SHORT).show();PhoneMp3Store.invalidate();loadTracks(true);}else{renderTracks(FastMusicLibrary.downloadedTracks(this));Toast.makeText(this,"Sem a permissão de músicas, o Estrada Play só mostra os próprios downloads.",Toast.LENGTH_LONG).show();}}
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode!=REQ_DEVICE_AUDIO)return;if(PhoneMp3Store.hasPermission(this)){Toast.makeText(this,"Acesso liberado. Criando índice local de MP3.",Toast.LENGTH_SHORT).show();PhoneMp3Store.invalidate(this);loadTracks(true);}else{renderTracks(PhoneMp3Store.mergeCached(this,FastMusicLibrary.downloadedTracks(this)));Toast.makeText(this,"Sem a permissão de músicas, o Estrada Play só mostra os próprios downloads.",Toast.LENGTH_LONG).show();}}
 
     private void register(){if(registered)return;IntentFilter f=new IntentFilter(PlayerService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(playerState,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(playerState,f);registered=true;}
     private void queryPlayer(){try{startService(new Intent(this,PlayerService.class).setAction(PlayerService.ACTION_QUERY_STATE));}catch(Throwable ignored){}}
