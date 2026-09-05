@@ -5,6 +5,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "app" / "src" / "main" / "java" / "com" / "estradaplay" / "comunista"
 GRADLE = ROOT / "app" / "build.gradle"
+MANIFEST = ROOT / "app" / "src" / "main" / "AndroidManifest.xml"
 
 errors = []
 
@@ -20,11 +21,13 @@ def require(path: Path, needle: str, label: str | None = None) -> None:
 require(GRADLE, "versionCode 262", "versionCode esperado: 262")
 require(GRADLE, "versionName '2.5.1'", "versionName esperado: 2.5.1")
 require(GRADLE, "EPC_251_MUSIC_STABLE")
+require(GRADLE, "targetSdk 35", "targetSdk esperado: 35")
 
 player = JAVA / "PlayerService.java"
 activity = JAVA / "MusicPlayerActivity.java"
 integrity = JAVA / "MusicLibraryIntegrityV247.java"
 application = JAVA / "EstradaPlayApplication.java"
+download = JAVA / "DownloadService.java"
 
 for marker in (
     "PLAYER_EXACT_QUEUE_V245",
@@ -60,6 +63,16 @@ for marker in (
 ):
     require(integrity, marker)
 
+for marker in (
+    "MUSIC_DOWNLOAD_TIMEOUT_V251",
+    "onTimeout(int startId, int fgsType)",
+    "stopSelf(startId)",
+    "progresso parcial preservado",
+):
+    require(download, marker)
+
+require(MANIFEST, 'android.permission.FOREGROUND_SERVICE_DATA_SYNC')
+require(MANIFEST, 'android:foregroundServiceType="dataSync"')
 require(application, "MusicLibraryIntegrityV247.repair(this)")
 
 for path in JAVA.rglob("*.java"):
@@ -83,4 +96,5 @@ print(" - callbacks antigos do MediaPlayer são ignorados")
 print(" - fila persiste identidade da fonte local")
 print(" - fila persistida não remapeia uma fonte ausente para outra cópia")
 print(" - biblioteca repara entradas locais obsoletas")
+print(" - download dataSync encerra com segurança no timeout do Android 15")
 print(" - sem WebView")
