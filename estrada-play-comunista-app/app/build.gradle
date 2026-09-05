@@ -11,7 +11,7 @@ def releaseKeyAlias = project.findProperty('ESTRADAPLAY_RELEASE_KEY_ALIAS') ?: S
 def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_PASSWORD')
 def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
-// EPC_2316_MUSIC_LIBRARY_UX
+// EPC_2317_MUSIC_LIBRARY_FUNCTIONAL
 // Build configuration only: source files are never rewritten by Gradle.
 android {
     namespace 'com.estradaplay.comunista'
@@ -21,8 +21,8 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 35
-        versionCode 247
-        versionName '2.3.16'
+        versionCode 248
+        versionName '2.3.17'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
     }
