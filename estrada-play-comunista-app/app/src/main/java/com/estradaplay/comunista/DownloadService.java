@@ -36,6 +36,7 @@ public final class DownloadService extends Service {
     private static final long SPACE_CHECK_STEP = 8L * 1024L * 1024L;
 
     // MUSIC_DOWNLOAD_ENGINE_V241: foreground download engine is resumable, cancellable and byte-aware.
+    // MUSIC_DOWNLOAD_TIMEOUT_V251: Android 15 dataSync timeout cancels safely and preserves .part for resume.
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private volatile boolean running;
     private volatile boolean cancelRequested;
@@ -332,6 +333,17 @@ public final class DownloadService extends Service {
     private void updateNotification(Notification n) {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm != null) nm.notify(NOTIFICATION_ID, n);
+    }
+
+    @Override public void onTimeout(int startId, int fgsType) {
+        cancelRequested = true;
+        running = false;
+        HttpURLConnection c = activeConnection;
+        activeConnection = null;
+        if (c != null) try { c.disconnect(); } catch (Throwable ignored) {}
+        publish(false, 0, 0, 0, "Download pausado pelo Android · progresso parcial preservado");
+        try { stopForeground(true); } catch (Throwable ignored) {}
+        stopSelf(startId);
     }
 
     @Override public void onTaskRemoved(Intent rootIntent) {
