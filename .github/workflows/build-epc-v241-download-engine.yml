@@ -1,16 +1,6 @@
 name: EPC Android 2.4.1 Downloads Resilientes
 
 on:
-  push:
-    branches: [agent/estrada-play-comunista]
-    paths:
-      - 'estrada-play-comunista-app/app/build.gradle'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DownloadService.java'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MusicPlayerActivity.java'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MainActivity.java'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/LibraryStore.java'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/PlayerService.java'
-      - '.github/workflows/build-epc-v241-download-engine.yml'
   workflow_dispatch:
 
 concurrency:
@@ -26,84 +16,8 @@ jobs:
           ref: agent/estrada-play-comunista
           fetch-depth: 0
 
-      - name: Validate 2.4.1 resilient downloads
+      - name: Validate archived 2.4.1 workflow
         shell: bash
         run: |
-          set -euo pipefail
-          APP=estrada-play-comunista-app
-          J="$APP/app/src/main/java/com/estradaplay/comunista"
-          G="$APP/app/build.gradle"
-          grep -q "versionCode 251" "$G"
-          grep -q "versionName '2.4.1'" "$G"
-          grep -q 'EPC_241_DOWNLOAD_ENGINE' "$G"
-          grep -q 'MUSIC_DOWNLOAD_ENGINE_V241' "$J/DownloadService.java"
-          grep -q 'ACTION_CANCEL' "$J/DownloadService.java"
-          grep -q 'Range.*bytes=' "$J/DownloadService.java"
-          grep -q 'HTTP_PARTIAL' "$J/DownloadService.java"
-          grep -q 'progresso parcial foi preservado' "$J/DownloadService.java"
-          grep -q 'PendingIntent.getService' "$J/DownloadService.java"
-          grep -q 'humanBytes' "$J/DownloadService.java"
-          grep -q 'SharedMusicPublisher.publishTrack' "$J/DownloadService.java"
-          grep -q 'BAIXAR MÚSICAS' "$J/MusicPlayerActivity.java"
-          if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then echo 'WebView detected'; exit 1; fi
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Prepare development signing key
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP=estrada-play-comunista-app
-          base64 -d "$APP/signing/estradaplay-dev.keystore.b64" > "$APP/signing/estradaplay-dev.keystore"
-
-      - name: Generate embedded Portuguese voice bank
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP=estrada-play-comunista-app
-          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
-          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
-          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
-          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
-          rm -rf /tmp/epc-v241-voice && mkdir -p /tmp/epc-v241-voice
-          tar -xjf "$MODEL" -C /tmp/epc-v241-voice
-          python3 "$APP/tools/generate_voice_bank.py" --model-root /tmp/epc-v241-voice --output "$APP/app/src/main/res/raw" --metadata-output "$APP/app/src/main/assets/estradaplay_voice"
-          test "$(find "$APP/app/src/main/res/raw" -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
-
-      - name: Unit tests and build universal plus horizontal APKs
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP=estrada-play-comunista-app
-          (cd "$APP" && gradle --no-daemon testUniversalDebugUnitTest testHorizontalDebugUnitTest assembleUniversalDebug assembleHorizontalDebug)
-          U="$APP/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
-          H="$APP/app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk"
-          test -f "$U" && test -f "$H"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/u.txt
-          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='251' versionName='2.4.1'" /tmp/u.txt
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/h.txt
-          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='251' versionName='2.4.1'" /tmp/h.txt
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
-          cp "$U" Estrada-Play-Comunista-Universal-2.4.1.apk
-          cp "$H" Estrada-Play-Comunista-Horizontal-2.4.1.apk
-          sha256sum Estrada-Play-Comunista-Universal-2.4.1.apk Estrada-Play-Comunista-Horizontal-2.4.1.apk
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Estrada-Play-Comunista-2.4.1-Downloads-Resilientes
-          path: |
-            Estrada-Play-Comunista-Universal-2.4.1.apk
-            Estrada-Play-Comunista-Horizontal-2.4.1.apk
-          retention-days: 7
-          compression-level: 0
+          echo '2.4.1 was already validated successfully in run 33939455399.'
+          echo 'This workflow is manual-only to avoid validating newer Android versions against old version markers.'
