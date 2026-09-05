@@ -74,6 +74,8 @@ public final class PlayerService extends Service {
     // stopping or replacing the song the user most recently chose.
     // PLAYER_QUEUE_SOURCE_IDENTITY_V2410: staged and persisted queues remember the exact local
     // source for each key, so next/previous/session restore cannot remap a key to another copy.
+    // PLAYER_QUEUE_SOURCE_STRICT_V251: once a queue has persisted source identity, a missing
+    // source is dropped instead of falling back to another local file that happens to share its key.
     private final ArrayList<Track> queue = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -193,6 +195,7 @@ public final class PlayerService extends Service {
         if (preferredKeys != null && !preferredKeys.isEmpty()) {
             ArrayList<Track> exact = new ArrayList<>();
             LinkedHashSet<String> seen = new LinkedHashSet<>();
+            boolean strictPreferredSources = preferredSources != null && !preferredSources.isEmpty();
             for (String key : preferredKeys) {
                 if (key == null || !seen.add(key)) continue;
                 String wantedSource = preferredSources == null ? "" : safeSource(preferredSources.get(key));
@@ -205,18 +208,18 @@ public final class PlayerService extends Service {
                             break;
                         }
                     }
+                    if (chosen != null) exact.add(chosen);
+                    continue;
                 }
-                if (chosen == null) {
-                    for (Track candidate : all) {
-                        if (candidate != null && key.equals(candidate.key())) {
-                            chosen = candidate;
-                            break;
-                        }
+                for (Track candidate : all) {
+                    if (candidate != null && key.equals(candidate.key())) {
+                        chosen = candidate;
+                        break;
                     }
                 }
                 if (chosen != null) exact.add(chosen);
             }
-            if (!exact.isEmpty()) return exact;
+            if (!exact.isEmpty() || strictPreferredSources) return exact;
         }
 
         ArrayList<Track> loaded = new ArrayList<>();
