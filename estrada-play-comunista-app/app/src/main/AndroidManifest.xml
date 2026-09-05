@@ -25,7 +25,7 @@
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="false"
         android:hardwareAccelerated="true"
-        android:resizeableActivity="false"
+        android:resizeableActivity="true"
         android:label="${appLabel}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -33,12 +33,8 @@
         android:theme="@style/Theme.EstradaPlay"
         android:usesCleartextTraffic="false">
 
-        <!-- ANDROID16_COMPAT_V251: preserve the current fixed-orientation cockpit on sw600dp+
-             while the layouts are migrated incrementally to Android 16 adaptive-window behavior. -->
-        <property
-            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
-            android:value="true" />
-
+        <!-- ANDROID16_ADAPTIVE_V280: the app now accepts resizeable/large-screen windows.
+             Flavor orientation remains a phone/car preference, while API 36 may override it on large displays. -->
         <activity
             android:name=".GateActivity"
             android:exported="true"
