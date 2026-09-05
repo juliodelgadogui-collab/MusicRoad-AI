@@ -42,4 +42,12 @@ final class ProcessCrashGuard {
 
         return safeMode;
     }
+
+    // SYSTEM_DIAGNOSTICS_V270: read-only visibility for the local diagnostics screen.
+    static boolean recentCrash(Context context) {
+        if (context == null) return false;
+        long last = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getLong(KEY_LAST_CRASH, 0L);
+        return last > 0L && System.currentTimeMillis() - last < LOOP_WINDOW_MS;
+    }
 }
