@@ -67,6 +67,9 @@ public final class PlayerService extends Service {
     // in the UI, so a duplicated/stale key can no longer redirect playback to another file.
     // PLAYER_SELECTED_FAILSAFE_V248: an explicit tap never silently falls through to another
     // queue item when the selected source is missing or cannot be decoded.
+    // PLAYER_PREPARE_GENERATION_V249: callbacks from an older asynchronous MediaPlayer are
+    // ignored after a newer selection/next/previous starts, preventing stale callbacks from
+    // stopping or replacing the song the user most recently chose.
     private final ArrayList<Track> queue = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -82,6 +85,7 @@ public final class PlayerService extends Service {
     private float focusDuck = 1f;
     private String currentFolder = "__ALL__";
     private int pendingSeekMs;
+    private long playerGeneration;
 
     private final AudioManager.OnAudioFocusChangeListener focusListener = change ->
             main.post(() -> handleAudioFocusChange(change));
@@ -381,26 +385,28 @@ public final class PlayerService extends Service {
     }
 
     private void prepareCurrent(boolean autoPlay, int seekMs, boolean restoringSession, boolean explicitSelection) {
+        final long generation = ++playerGeneration;
         releasePlayerOnly();
         Track t = current();
         if (t == null) { broadcast("", false, "Fila vazia"); if (autoPlay) stopSelf(); return; }
         String source = t.localPath == null ? "" : t.localPath.trim();
         if (!PhoneMp3Store.readable(this, source)) {
             if (source.startsWith("content://")) PhoneMp3Store.invalidate(this);
-            if (explicitSelection) {
-                main.post(() -> failExplicitSelection(t, "Música selecionada indisponível"));
-            } else {
-                main.post(() -> skipCurrentUnavailable(autoPlay,
-                        restoringSession ? "Última música indisponível" : "Pulando arquivo indisponível"));
-            }
+            postIfGenerationActive(generation, null, () -> {
+                if (explicitSelection) failExplicitSelection(t, "Música selecionada indisponível");
+                else skipCurrentUnavailable(autoPlay,
+                        restoringSession ? "Última música indisponível" : "Pulando arquivo indisponível");
+            });
             return;
         }
         try {
             player = new MediaPlayer();
+            final MediaPlayer createdPlayer = player;
             player.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
             if (source.startsWith("content://")) player.setDataSource(this, Uri.parse(source));
             else player.setDataSource(new File(source).getAbsolutePath());
             player.setOnPreparedListener(mp -> {
+                if (!isGenerationActive(generation, mp)) return;
                 prepared = true;
                 int target = Math.max(0, seekMs);
                 try {
@@ -415,10 +421,13 @@ public final class PlayerService extends Service {
                     try {
                         mp.start();
                     } catch (Throwable startError) {
-                        if (explicitSelection) main.post(() -> failExplicitSelection(t, "Não foi possível tocar esta música"));
-                        else main.post(() -> skipCurrentUnavailable(true, "Pulando arquivo inválido"));
+                        postIfGenerationActive(generation, mp, () -> {
+                            if (explicitSelection) failExplicitSelection(t, "Não foi possível tocar esta música");
+                            else skipCurrentUnavailable(true, "Pulando arquivo inválido");
+                        });
                         return;
                     }
+                    if (!isGenerationActive(generation, mp)) return;
                     resumeOnFocus = false;
                     startForeground(NOTIFICATION_ID, notification(t, true));
                     scheduleCheckpoint();
@@ -429,22 +438,43 @@ public final class PlayerService extends Service {
                 }
                 saveSnapshot();
             });
-            player.setOnCompletionListener(mp -> next());
+            player.setOnCompletionListener(mp -> {
+                if (isGenerationActive(generation, mp)) next();
+            });
             player.setOnErrorListener((mp, what, extra) -> {
-                if (explicitSelection) main.post(() -> failExplicitSelection(t, "Não foi possível tocar esta música"));
-                else main.post(() -> skipCurrentUnavailable(true, "Pulando arquivo inválido"));
+                postIfGenerationActive(generation, mp, () -> {
+                    if (explicitSelection) failExplicitSelection(t, "Não foi possível tocar esta música");
+                    else skipCurrentUnavailable(true, "Pulando arquivo inválido");
+                });
                 return true;
             });
             if (autoPlay) startForeground(NOTIFICATION_ID, notification(t, false));
             broadcast(t.title, false, restoringSession ? "Restaurando" : "Carregando local");
             player.prepareAsync();
         } catch (Exception e) {
-            if (explicitSelection) main.post(() -> failExplicitSelection(t, "Não foi possível tocar esta música"));
-            else main.post(() -> skipCurrentUnavailable(autoPlay, "Pulando arquivo inválido"));
+            final MediaPlayer failedPlayer = player;
+            postIfGenerationActive(generation, failedPlayer, () -> {
+                if (explicitSelection) failExplicitSelection(t, "Não foi possível tocar esta música");
+                else skipCurrentUnavailable(autoPlay, "Pulando arquivo inválido");
+            });
         }
     }
 
+    private boolean isGenerationActive(long generation, MediaPlayer expectedPlayer) {
+        if (generation != playerGeneration) return false;
+        return expectedPlayer == null || player == expectedPlayer;
+    }
+
+    private void postIfGenerationActive(long generation, MediaPlayer expectedPlayer, Runnable action) {
+        if (action == null) return;
+        main.post(() -> {
+            if (!isGenerationActive(generation, expectedPlayer)) return;
+            action.run();
+        });
+    }
+
     private void failExplicitSelection(Track selected, String state) {
+        playerGeneration++;
         releasePlayerOnly();
         Track broken = selected == null ? current() : selected;
         if (broken != null && broken.localPath != null && broken.localPath.startsWith("content://")) {
@@ -459,6 +489,7 @@ public final class PlayerService extends Service {
     }
 
     private void skipCurrentUnavailable(boolean autoPlay, String emptyState) {
+        playerGeneration++;
         releasePlayerOnly();
         Track broken = current();
         if (broken != null && broken.localPath != null && broken.localPath.startsWith("content://")) {
@@ -795,6 +826,7 @@ public final class PlayerService extends Service {
     @Override public void onDestroy() {
         saveSnapshot();
         io.shutdownNow();
+        playerGeneration++;
         releasePlayerOnly();
         abandonFocus();
         if (mediaSession != null) {
