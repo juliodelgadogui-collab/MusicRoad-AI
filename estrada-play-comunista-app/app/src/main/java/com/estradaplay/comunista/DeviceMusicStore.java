@@ -1,44 +1,79 @@
 package com.estradaplay.comunista;
 
-import android.Manifest;
 import android.content.ContentResolver;
-import android.content.ContentUris;
 import android.content.Context;
-import android.content.pm.PackageManager;
+import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.Build;
-import android.provider.MediaStore;
+import android.provider.DocumentsContract;
 
 import java.io.File;
 import java.text.Normalizer;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 
 /**
- * DEVICE_MUSIC_V2312_MP3_FOLDERS
- * Fast local lookup: only MP3 files already indexed by Android inside the
- * Music/ and Download/ folders are queried. No full-storage traversal and no
- * network/server access. Results stay cached until the user explicitly refreshes.
+ * DEVICE_MUSIC_V2313_FOLDER_PICKER
+ * The user chooses one folder through Android's Storage Access Framework.
+ * Estrada Play then reads only .mp3 files from that folder/subfolders using the
+ * persisted tree URI. No MediaStore index, no whole-phone scan and no server.
  */
 final class DeviceMusicStore {
+    private static final String PREFS = "epc_music_folder_v2313";
+    private static final String KEY_TREE = "tree_uri";
     private static final Object SCAN_LOCK = new Object();
+    private static final int MAX_DEPTH = 8;
+    private static final int MAX_FOLDERS = 800;
+    private static final int MAX_TRACKS = 5000;
+
     private static ArrayList<Track> cached = new ArrayList<>();
+    private static String cachedTree = "";
     private static boolean cacheReady;
 
     private DeviceMusicStore() {}
 
-    static boolean hasPermission(Context context) {
-        if (context == null) return false;
-        if (Build.VERSION.SDK_INT >= 33) {
-            return context.checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    static boolean hasSelectedFolder(Context context) {
+        return selectedFolderUri(context) != null;
+    }
+
+    static Uri selectedFolderUri(Context context) {
+        if (context == null) return null;
+        String raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_TREE, "");
+        if (raw == null || raw.trim().isEmpty()) return null;
+        try { return Uri.parse(raw.trim()); } catch (Throwable ignored) { return null; }
+    }
+
+    static boolean saveSelectedFolder(Context context, Uri treeUri, int resultFlags) {
+        if (context == null || treeUri == null) return false;
+        try {
+            int takeFlags = resultFlags & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            if ((takeFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) takeFlags |= Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            try { context.getContentResolver().takePersistableUriPermission(treeUri, takeFlags); }
+            catch (Throwable ignored) {
+                try { context.getContentResolver().takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+                catch (Throwable ignored2) {}
+            }
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_TREE, treeUri.toString()).apply();
+            invalidate();
+            return true;
+        } catch (Throwable ignored) {
+            return false;
         }
-        if (Build.VERSION.SDK_INT >= 23) {
-            return context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    static void clearSelectedFolder(Context context) {
+        Uri uri = selectedFolderUri(context);
+        if (context != null) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_TREE).apply();
+        if (context != null && uri != null) {
+            try { context.getContentResolver().releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+            catch (Throwable ignored) {}
         }
-        return true;
+        invalidate();
     }
 
     static boolean hasCached() {
@@ -48,114 +83,122 @@ final class DeviceMusicStore {
     static void invalidate() {
         synchronized (SCAN_LOCK) {
             cached.clear();
+            cachedTree = "";
             cacheReady = false;
         }
     }
 
-    static ArrayList<Track> scan(Context context) {
-        return scan(context, false);
-    }
+    static ArrayList<Track> scan(Context context) { return scan(context, false); }
 
     static ArrayList<Track> scan(Context context, boolean force) {
-        ArrayList<Track> empty = new ArrayList<>();
-        if (context == null || !hasPermission(context)) return empty;
+        Uri treeUri = selectedFolderUri(context);
+        if (context == null || treeUri == null) return new ArrayList<>();
+        String treeKey = treeUri.toString();
 
         synchronized (SCAN_LOCK) {
-            if (!force && cacheReady) return new ArrayList<>(cached);
-            ArrayList<Track> out = queryMp3Folders(context);
+            if (!force && cacheReady && treeKey.equals(cachedTree)) return new ArrayList<>(cached);
+        }
+
+        ArrayList<Track> out = querySelectedFolder(context, treeUri);
+        synchronized (SCAN_LOCK) {
             cached = new ArrayList<>(out);
+            cachedTree = treeKey;
             cacheReady = true;
-            return out;
         }
-    }
-
-    private static ArrayList<Track> queryMp3Folders(Context context) {
-        ArrayList<Track> out = new ArrayList<>();
-        ContentResolver resolver = context.getContentResolver();
-        Uri base = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-
-        ArrayList<String> projection = new ArrayList<>();
-        projection.add(MediaStore.Audio.Media._ID);
-        projection.add(MediaStore.Audio.Media.TITLE);
-        projection.add(MediaStore.Audio.Media.ARTIST);
-        projection.add(MediaStore.Audio.Media.DISPLAY_NAME);
-        projection.add(MediaStore.Audio.Media.SIZE);
-        if (Build.VERSION.SDK_INT >= 29) projection.add(MediaStore.Audio.Media.RELATIVE_PATH);
-        else projection.add(MediaStore.Audio.Media.DATA);
-
-        String selection;
-        String[] args;
-        String sort;
-        if (Build.VERSION.SDK_INT >= 29) {
-            selection = MediaStore.Audio.Media.SIZE + ">0 AND (" +
-                    MediaStore.Audio.Media.MIME_TYPE + "=? OR " +
-                    MediaStore.Audio.Media.DISPLAY_NAME + " LIKE ?) AND (" +
-                    MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ? OR " +
-                    MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ? OR " +
-                    MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ?)";
-            args = new String[]{"audio/mpeg", "%.mp3", "Music/%", "Download/%", "Downloads/%"};
-            sort = MediaStore.Audio.Media.RELATIVE_PATH + " COLLATE NOCASE ASC, " +
-                    MediaStore.Audio.Media.DISPLAY_NAME + " COLLATE NOCASE ASC";
-        } else {
-            selection = MediaStore.Audio.Media.SIZE + ">0 AND (" +
-                    MediaStore.Audio.Media.MIME_TYPE + "=? OR " +
-                    MediaStore.Audio.Media.DATA + " LIKE ?) AND (" +
-                    MediaStore.Audio.Media.DATA + " LIKE ? OR " +
-                    MediaStore.Audio.Media.DATA + " LIKE ?)";
-            args = new String[]{"audio/mpeg", "%.mp3", "%/Music/%", "%/Download/%"};
-            sort = MediaStore.Audio.Media.DATA + " COLLATE NOCASE ASC";
-        }
-
-        try (Cursor c = resolver.query(base, projection.toArray(new String[0]), selection, args, sort)) {
-            if (c == null) return out;
-            int id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
-            int title = c.getColumnIndex(MediaStore.Audio.Media.TITLE);
-            int artist = c.getColumnIndex(MediaStore.Audio.Media.ARTIST);
-            int name = c.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME);
-            int size = c.getColumnIndex(MediaStore.Audio.Media.SIZE);
-            int path = c.getColumnIndex(Build.VERSION.SDK_INT >= 29 ? MediaStore.Audio.Media.RELATIVE_PATH : MediaStore.Audio.Media.DATA);
-
-            while (c.moveToNext() && out.size() < 12000) {
-                long mediaId = c.getLong(id);
-                String display = value(c, name);
-                if (!isMp3(display)) continue;
-                String rawTitle = value(c, title);
-                if (rawTitle.isEmpty()) rawTitle = stripExtension(display);
-                String rawArtist = value(c, artist);
-                String rawPath = value(c, path);
-                long bytes = size >= 0 ? Math.max(0L, c.getLong(size)) : 0L;
-                if (bytes <= 0) continue;
-
-                Uri uri = ContentUris.withAppendedId(base, mediaId);
-                String folder = deviceFolder(rawPath);
-                out.add(new Track(
-                        "device_" + mediaId,
-                        rawTitle,
-                        rawArtist,
-                        "",
-                        folder,
-                        folder,
-                        "audio/mpeg",
-                        "",
-                        uri.toString(),
-                        bytes,
-                        0L));
-            }
-        } catch (Throwable ignored) {}
         return out;
     }
 
-    static ArrayList<Track> merge(Context context, List<Track> appTracks) {
-        return merge(context, appTracks, false);
+    private static ArrayList<Track> querySelectedFolder(Context context, Uri treeUri) {
+        ArrayList<Track> out = new ArrayList<>();
+        ContentResolver resolver = context.getContentResolver();
+        String rootId;
+        try { rootId = DocumentsContract.getTreeDocumentId(treeUri); }
+        catch (Throwable ignored) { return out; }
+
+        String rootName = queryDisplayName(resolver, DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId));
+        if (rootName.isEmpty()) rootName = "Pasta selecionada";
+
+        ArrayDeque<FolderNode> queue = new ArrayDeque<>();
+        queue.add(new FolderNode(rootId, rootName, 0));
+        int visitedFolders = 0;
+        String[] projection = new String[]{
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE
+        };
+
+        while (!queue.isEmpty() && out.size() < MAX_TRACKS && visitedFolders < MAX_FOLDERS) {
+            FolderNode node = queue.removeFirst();
+            visitedFolders++;
+            Uri children;
+            try { children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, node.documentId); }
+            catch (Throwable ignored) { continue; }
+
+            try (Cursor c = resolver.query(children, projection, null, null, null)) {
+                if (c == null) continue;
+                int idCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+                int nameCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+                int mimeCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE);
+                int sizeCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE);
+
+                while (c.moveToNext() && out.size() < MAX_TRACKS) {
+                    String documentId = value(c, idCol);
+                    String display = value(c, nameCol);
+                    String mime = value(c, mimeCol);
+                    if (documentId.isEmpty()) continue;
+
+                    if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                        if (node.depth < MAX_DEPTH) {
+                            String nextPath = node.path.isEmpty() ? display : node.path + " / " + display;
+                            queue.addLast(new FolderNode(documentId, nextPath, node.depth + 1));
+                        }
+                        continue;
+                    }
+
+                    if (!isMp3(display)) continue;
+                    long bytes = 0L;
+                    try { if (sizeCol >= 0 && !c.isNull(sizeCol)) bytes = Math.max(0L, c.getLong(sizeCol)); }
+                    catch (Throwable ignored) {}
+                    Uri documentUri;
+                    try { documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId); }
+                    catch (Throwable ignored) { continue; }
+
+                    String folder = "Celular / " + (node.path.isEmpty() ? rootName : node.path);
+                    out.add(new Track(
+                            "tree_" + documentId,
+                            stripExtension(display),
+                            "MP3 do celular",
+                            "",
+                            folder,
+                            folder,
+                            "audio/mpeg",
+                            "",
+                            documentUri.toString(),
+                            bytes,
+                            0L));
+                }
+            } catch (SecurityException denied) {
+                clearSelectedFolder(context);
+                return new ArrayList<>();
+            } catch (Throwable ignored) {}
+        }
+
+        Collections.sort(out, Comparator
+                .comparing((Track t) -> t.folderPath == null ? "" : t.folderPath, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(t -> t.title == null ? "" : t.title, String.CASE_INSENSITIVE_ORDER));
+        return out;
     }
 
-    static ArrayList<Track> merge(Context context, List<Track> appTracks, boolean forceDeviceScan) {
+    static ArrayList<Track> merge(Context context, List<Track> appTracks) { return merge(context, appTracks, false); }
+
+    static ArrayList<Track> merge(Context context, List<Track> appTracks, boolean forceFolderScan) {
         LinkedHashMap<String, Track> result = new LinkedHashMap<>();
         if (appTracks != null) {
             for (Track t : appTracks) if (t != null && readable(context, t.localPath)) result.put(signature(t), t);
         }
-        if (hasPermission(context)) {
-            for (Track t : scan(context, forceDeviceScan)) {
+        if (hasSelectedFolder(context)) {
+            for (Track t : scan(context, forceFolderScan)) {
                 String signature = signature(t);
                 if (!result.containsKey(signature)) result.put(signature, t);
             }
@@ -175,34 +218,24 @@ final class DeviceMusicStore {
         return f.isFile() && f.length() > 0;
     }
 
+    private static String queryDisplayName(ContentResolver resolver, Uri documentUri) {
+        if (resolver == null || documentUri == null) return "";
+        String[] projection = new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME};
+        try (Cursor c = resolver.query(documentUri, projection, null, null, null)) {
+            if (c != null && c.moveToFirst()) return value(c, c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME));
+        } catch (Throwable ignored) {}
+        return "";
+    }
+
     private static boolean isMp3(String name) {
         return name != null && name.toLowerCase(Locale.ROOT).endsWith(".mp3");
     }
 
     private static String signature(Track t) {
-        return token(t == null ? "" : t.title) + "|" + token(t == null ? "" : t.artist);
-    }
-
-    private static String deviceFolder(String raw) {
-        String path = raw == null ? "" : raw.replace('\\', '/').trim();
-        if (Build.VERSION.SDK_INT < 29 && path.contains("/")) path = path.substring(0, path.lastIndexOf('/'));
-        while (path.endsWith("/")) path = path.substring(0, path.length() - 1);
-        if (path.isEmpty()) return "Músicas do celular";
-
-        String lower = path.toLowerCase(Locale.ROOT);
-        int music = lower.indexOf("music/");
-        if (music >= 0) {
-            String sub = path.substring(music + 6);
-            return sub.isEmpty() ? "Celular / Música" : "Celular / Música / " + sub;
-        }
-        int download = lower.indexOf("download/");
-        if (download >= 0) {
-            String sub = path.substring(download + 9);
-            return sub.isEmpty() ? "Celular / Download" : "Celular / Download / " + sub;
-        }
-        if (lower.endsWith("/music") || "music".equals(lower)) return "Celular / Música";
-        if (lower.endsWith("/download") || "download".equals(lower)) return "Celular / Download";
-        return "Celular / " + path;
+        if (t == null) return "";
+        String title = token(t.title);
+        if (t.id != null && t.id.startsWith("tree_")) return title;
+        return title + "|" + token(t.artist);
     }
 
     private static String value(Cursor c, int index) {
@@ -220,5 +253,16 @@ final class DeviceMusicStore {
     private static String token(String raw) {
         String n = Normalizer.normalize(raw == null ? "" : raw, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
         return n.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").trim();
+    }
+
+    private static final class FolderNode {
+        final String documentId;
+        final String path;
+        final int depth;
+        FolderNode(String documentId, String path, int depth) {
+            this.documentId = documentId;
+            this.path = path == null ? "" : path;
+            this.depth = depth;
+        }
     }
 }
