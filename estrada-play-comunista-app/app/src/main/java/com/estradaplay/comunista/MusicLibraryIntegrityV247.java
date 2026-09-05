@@ -12,6 +12,7 @@ import java.util.Iterator;
 
 /**
  * MUSIC_LIBRARY_INTEGRITY_V247
+ * MUSIC_LIBRARY_SESSION_CLEANUP_V251
  *
  * Fast, local-only repair for stale Estrada Play download entries.
  * It never walks storage and never contacts the server: only paths already
@@ -19,8 +20,8 @@ import java.util.Iterator;
  * the Music screen can expose them as playable songs.
  *
  * This also clears a saved PlayerService session when its current track was one
- * of the removed entries. That prevents a stale selection from being restored
- * against another local source after an upgrade/restart.
+ * of the removed entries. 2.5.1 includes the exact-source queue maps introduced
+ * in 2.4.10, so a stale session cannot leave an orphan source mapping behind.
  */
 final class MusicLibraryIntegrityV247 {
     private static final String LIB_PREFS = "estradaplay_library_v1";
@@ -33,8 +34,10 @@ final class MusicLibraryIntegrityV247 {
     private static final String KEY_FOLDER = "folder";
     private static final String KEY_POSITION = "position_ms";
     private static final String KEY_QUEUE = "queue_json_v245";
+    private static final String KEY_QUEUE_SOURCES = "queue_sources_json_v2410";
     private static final String KEY_STAGED_QUEUE = "staged_queue_json_v245";
     private static final String KEY_STAGED_TOKEN = "staged_queue_token_v245";
+    private static final String KEY_STAGED_SOURCES = "staged_queue_sources_json_v2410";
 
     private static final String REPAIR_PREFS = "epc_music_integrity_v247";
     private static final String KEY_LAST_REPAIR = "last_repair_at";
@@ -110,8 +113,10 @@ final class MusicLibraryIntegrityV247 {
                 .remove(KEY_FOLDER)
                 .remove(KEY_POSITION)
                 .remove(KEY_QUEUE)
+                .remove(KEY_QUEUE_SOURCES)
                 .remove(KEY_STAGED_QUEUE)
                 .remove(KEY_STAGED_TOKEN)
+                .remove(KEY_STAGED_SOURCES)
                 .apply();
     }
 
