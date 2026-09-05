@@ -22,6 +22,10 @@ public final class EstradaPlayApplication extends Application {
 
         UiVersionLabelFix.register(this);
 
+        // ANDROID15_SAFE_INSETS_V251: targetSdk 35 is edge-to-edge on Android 15.
+        // Install one process-level safe-area bridge for every Activity before optional bridges can defer.
+        SystemBarsCompatV251.register(this);
+
         // MUSIC_LIBRARY_INTEGRITY_V247: repair only already-indexed app downloads before any
         // music UI can expose a missing/zero-byte file as a playable song. No storage scan/server.
         try { MusicLibraryIntegrityV247.repair(this); } catch (Throwable ignored) {}
