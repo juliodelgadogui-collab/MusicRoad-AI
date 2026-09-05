@@ -9,8 +9,8 @@ export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
 ANDROID_CMDLINE_ZIP="$HOME/.cache/commandlinetools-linux-11076708_latest.zip"
-GRADLE_ZIP="$HOME/.cache/gradle-8.9-bin.zip"
-GRADLE_HOME="$HOME/.cache/gradle-8.9"
+GRADLE_ZIP="$HOME/.cache/gradle-8.11.1-bin.zip"
+GRADLE_HOME="$HOME/.cache/gradle-8.11.1"
 VOICE_VENV="$HOME/.cache/epc-v251-voice-venv"
 VOICE_MODEL="$HOME/.cache/vits-piper-pt_BR-faber-medium.tar.bz2"
 VOICE_ROOT="$HOME/.cache/epc-v251-voice-model"
@@ -28,10 +28,13 @@ if ! grep -Eq 'version "17\.|openjdk version "17\.' /tmp/epc-java-version.txt; t
   exit 1
 fi
 
-if ! command -v unzip >/dev/null 2>&1; then
-  log "Instalando unzip"
+need_apt=0
+command -v unzip >/dev/null 2>&1 || need_apt=1
+command -v readelf >/dev/null 2>&1 || need_apt=1
+if [ "$need_apt" -eq 1 ]; then
+  log "Instalando utilitários de validação"
   sudo apt-get update
-  sudo apt-get install -y unzip
+  sudo apt-get install -y unzip binutils
 fi
 
 if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
@@ -50,17 +53,17 @@ fi
 
 export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-log "Instalando Android SDK 35"
+log "Instalando Android SDK 36"
 yes | sdkmanager --licenses >/dev/null 2>&1 || true
-sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
 
 if [ ! -x "$GRADLE_HOME/bin/gradle" ]; then
-  log "Instalando Gradle 8.9"
+  log "Instalando Gradle 8.11.1"
   mkdir -p "$HOME/.cache"
   if [ ! -f "$GRADLE_ZIP" ]; then
     curl -L --fail --retry 3 --retry-delay 2 \
       -o "$GRADLE_ZIP" \
-      https://services.gradle.org/distributions/gradle-8.9-bin.zip
+      https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
   fi
   rm -rf "$GRADLE_HOME"
   unzip -q "$GRADLE_ZIP" -d "$HOME/.cache"
@@ -109,15 +112,51 @@ test -f "$H"
 
 AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
 APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+
+# NATIVE_16K_AUDIT_V251: packaging alignment is mandatory; ELF alignment is reported
+# per native SDK so the offline ML Kit OCR can be migrated deliberately instead of silently removed.
+audit_elf_16k(){
+  local apk="$1" label="$2" tmp bad so align value
+  tmp="$(mktemp -d)"
+  bad=0
+  if unzip -qq "$apk" 'lib/*/*.so' -d "$tmp" 2>/dev/null; then
+    while IFS= read -r -d '' so; do
+      while IFS= read -r align; do
+        case "$align" in
+          0x*) value=$((align)) ;;
+          *) continue ;;
+        esac
+        if [ "$value" -lt $((0x4000)) ]; then
+          printf 'AVISO 16 KB [%s]: %s tem LOAD align %s\n' "$label" "${so#"$tmp/"}" "$align" >&2
+          bad=1
+          break
+        fi
+      done < <(readelf -lW "$so" 2>/dev/null | awk '$1=="LOAD" {print $NF}')
+    done < <(find "$tmp/lib" -type f -name '*.so' -print0 2>/dev/null)
+  fi
+  rm -rf "$tmp"
+  if [ "$bad" -eq 0 ]; then
+    printf 'ELF 16 KB [%s]: nenhum LOAD abaixo de 0x4000 detectado.\n' "$label"
+  else
+    printf 'ELF 16 KB [%s]: há SDK nativo a migrar antes da exigência do Google Play.\n' "$label" >&2
+  fi
+}
 
 log "Validando APK Universal"
 "$AAPT" dump badging "$U" | tee /tmp/epc-v251-universal.txt
 grep -q "package: name='com.estradaplay.comunista.universal' versionCode='262' versionName='2.5.1'" /tmp/epc-v251-universal.txt
+grep -q "targetSdkVersion:'36'" /tmp/epc-v251-universal.txt
+"$ZIPALIGN" -c -P 16 -v 4 "$U"
+audit_elf_16k "$U" "Universal"
 "$APKSIGNER" verify --print-certs "$U"
 
 log "Validando APK Horizontal"
 "$AAPT" dump badging "$H" | tee /tmp/epc-v251-horizontal.txt
 grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='262' versionName='2.5.1'" /tmp/epc-v251-horizontal.txt
+grep -q "targetSdkVersion:'36'" /tmp/epc-v251-horizontal.txt
+"$ZIPALIGN" -c -P 16 -v 4 "$H"
+audit_elf_16k "$H" "Horizontal"
 "$APKSIGNER" verify --print-certs "$H"
 
 log "Organizando APKs"
