@@ -55,8 +55,10 @@ public final class PlayerService extends Service {
     private static final String KEY_FOLDER = "folder";
     private static final String KEY_POSITION = "position_ms";
     private static final String KEY_QUEUE = "queue_json_v245";
+    private static final String KEY_QUEUE_SOURCES = "queue_sources_json_v2410";
     private static final String KEY_STAGED_QUEUE = "staged_queue_json_v245";
     private static final String KEY_STAGED_TOKEN = "staged_queue_token_v245";
+    private static final String KEY_STAGED_SOURCES = "staged_queue_sources_json_v2410";
     private static final long CHECKPOINT_MS = 5000L;
 
     // PLAYER_MEDIA_SESSION_V243: Bluetooth/headset/car controls and the Android media
@@ -70,6 +72,8 @@ public final class PlayerService extends Service {
     // PLAYER_PREPARE_GENERATION_V249: callbacks from an older asynchronous MediaPlayer are
     // ignored after a newer selection/next/previous starts, preventing stale callbacks from
     // stopping or replacing the song the user most recently chose.
+    // PLAYER_QUEUE_SOURCE_IDENTITY_V2410: staged and persisted queues remember the exact local
+    // source for each key, so next/previous/session restore cannot remap a key to another copy.
     private final ArrayList<Track> queue = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -102,12 +106,13 @@ public final class PlayerService extends Service {
 
     /**
      * Stages a potentially large visible queue in same-process SharedPreferences instead
-     * of putting thousands of track keys in an Intent/Binder transaction. The returned
-     * token makes sure only the matching PLAY_TRACK command can consume that queue.
+     * of putting thousands of tracks in an Intent/Binder transaction. Keys preserve order;
+     * the compact source object preserves the exact local URI/path for every key.
      */
     static String stageQueue(Context context, List<Track> tracks) {
         if (context == null) return "";
         JSONArray a = new JSONArray();
+        JSONObject sources = new JSONObject();
         LinkedHashSet<String> seen = new LinkedHashSet<>();
         if (tracks != null) {
             for (Track t : tracks) {
@@ -115,6 +120,7 @@ public final class PlayerService extends Service {
                 String key = t.key();
                 if (key == null || key.trim().isEmpty() || !seen.add(key)) continue;
                 a.put(key);
+                try { sources.put(key, safeSource(t.localPath)); } catch (Throwable ignored) {}
                 if (seen.size() >= 10000) break;
             }
         }
@@ -123,6 +129,7 @@ public final class PlayerService extends Service {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString(KEY_STAGED_TOKEN, token)
                 .putString(KEY_STAGED_QUEUE, raw)
+                .putString(KEY_STAGED_SOURCES, sources.toString())
                 .apply();
         return token;
     }
@@ -144,11 +151,11 @@ public final class PlayerService extends Service {
             String requestedFolder = normalizeFolder(intent.getStringExtra(EXTRA_FOLDER));
             String queueToken = intent.getStringExtra(EXTRA_QUEUE_TOKEN);
             Track exactSelected = exactTrackFromIntent(intent, key);
-            ArrayList<String> requestedKeys = readStagedQueue(queueToken);
+            StagedQueue requested = readStagedQueue(queueToken);
             startForeground(NOTIFICATION_ID, notification(null, false));
             io.execute(() -> {
-                ArrayList<Track> loaded = loadQueue(requestedFolder, requestedKeys);
-                alignExactSelected(loaded, exactSelected, key, requestedKeys);
+                ArrayList<Track> loaded = loadQueue(requestedFolder, requested.keys, requested.sources);
+                alignExactSelected(loaded, exactSelected, key, requested.keys);
                 main.post(() -> {
                     saveSnapshot();
                     currentFolder = requestedFolder;
@@ -175,19 +182,39 @@ public final class PlayerService extends Service {
 
     // PLAYER_LOCAL_INDEX_V2315: playback never asks MediaStore to rebuild anything.
     // Queue comes from the saved Estrada Play index + persistent phone MP3 SQLite index.
-    private ArrayList<Track> loadQueue(String folder) { return loadQueue(folder, null); }
+    private ArrayList<Track> loadQueue(String folder) { return loadQueue(folder, null, null); }
 
     private ArrayList<Track> loadQueue(String folder, List<String> preferredKeys) {
+        return loadQueue(folder, preferredKeys, null);
+    }
+
+    private ArrayList<Track> loadQueue(String folder, List<String> preferredKeys, Map<String, String> preferredSources) {
         ArrayList<Track> all = loadLocalTracks();
         if (preferredKeys != null && !preferredKeys.isEmpty()) {
-            Map<String, Track> byKey = new LinkedHashMap<>();
-            for (Track t : all) if (t != null && !byKey.containsKey(t.key())) byKey.put(t.key(), t);
             ArrayList<Track> exact = new ArrayList<>();
             LinkedHashSet<String> seen = new LinkedHashSet<>();
             for (String key : preferredKeys) {
                 if (key == null || !seen.add(key)) continue;
-                Track t = byKey.get(key);
-                if (t != null) exact.add(t);
+                String wantedSource = preferredSources == null ? "" : safeSource(preferredSources.get(key));
+                Track chosen = null;
+                if (!wantedSource.isEmpty()) {
+                    for (Track candidate : all) {
+                        if (candidate != null && key.equals(candidate.key())
+                                && wantedSource.equals(safeSource(candidate.localPath))) {
+                            chosen = candidate;
+                            break;
+                        }
+                    }
+                }
+                if (chosen == null) {
+                    for (Track candidate : all) {
+                        if (candidate != null && key.equals(candidate.key())) {
+                            chosen = candidate;
+                            break;
+                        }
+                    }
+                }
+                if (chosen != null) exact.add(chosen);
             }
             if (!exact.isEmpty()) return exact;
         }
@@ -256,14 +283,17 @@ public final class PlayerService extends Service {
         loaded.add(Math.max(0, Math.min(insertAt, loaded.size())), exact);
     }
 
-    private ArrayList<String> readStagedQueue(String token) {
-        ArrayList<String> out = new ArrayList<>();
-        if (prefs == null || token == null || token.trim().isEmpty()) return out;
+    private StagedQueue readStagedQueue(String token) {
+        if (prefs == null || token == null || token.trim().isEmpty()) return new StagedQueue();
         String expected = prefs.getString(KEY_STAGED_TOKEN, "");
-        if (!token.equals(expected)) return out;
-        String raw = prefs.getString(KEY_STAGED_QUEUE, "[]");
-        prefs.edit().remove(KEY_STAGED_TOKEN).remove(KEY_STAGED_QUEUE).apply();
-        return parseQueueKeys(raw);
+        if (!token.equals(expected)) return new StagedQueue();
+        String rawKeys = prefs.getString(KEY_STAGED_QUEUE, "[]");
+        String rawSources = prefs.getString(KEY_STAGED_SOURCES, "{}");
+        prefs.edit().remove(KEY_STAGED_TOKEN).remove(KEY_STAGED_QUEUE).remove(KEY_STAGED_SOURCES).apply();
+        StagedQueue out = new StagedQueue();
+        out.keys.addAll(parseQueueKeys(rawKeys));
+        out.sources.putAll(parseQueueSources(rawSources));
+        return out;
     }
 
     private static ArrayList<String> parseQueueKeys(String raw) {
@@ -274,6 +304,20 @@ public final class PlayerService extends Service {
             for (int i = 0; i < a.length() && out.size() < 10000; i++) {
                 String key = a.optString(i, "").trim();
                 if (!key.isEmpty() && seen.add(key)) out.add(key);
+            }
+        } catch (Throwable ignored) {}
+        return out;
+    }
+
+    private static LinkedHashMap<String, String> parseQueueSources(String raw) {
+        LinkedHashMap<String, String> out = new LinkedHashMap<>();
+        try {
+            JSONObject o = new JSONObject(raw == null ? "{}" : raw);
+            java.util.Iterator<String> it = o.keys();
+            while (it.hasNext() && out.size() < 10000) {
+                String key = it.next();
+                String source = safeSource(o.optString(key, ""));
+                if (key != null && !key.trim().isEmpty() && !source.isEmpty()) out.put(key, source);
             }
         } catch (Throwable ignored) {}
         return out;
@@ -290,6 +334,20 @@ public final class PlayerService extends Service {
             if (seen.size() >= 10000) break;
         }
         return a.toString();
+    }
+
+    private String queueSourcesJson() {
+        JSONObject sources = new JSONObject();
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        for (Track t : queue) {
+            if (t == null) continue;
+            String key = t.key();
+            String source = safeSource(t.localPath);
+            if (key == null || key.trim().isEmpty() || source.isEmpty() || !seen.add(key)) continue;
+            try { sources.put(key, source); } catch (Throwable ignored) {}
+            if (seen.size() >= 10000) break;
+        }
+        return sources.toString();
     }
 
     private String normalizeFolder(String folder) {
@@ -352,13 +410,14 @@ public final class PlayerService extends Service {
         String folder = normalizeFolder(prefs.getString(KEY_FOLDER, "__ALL__"));
         int position = Math.max(0, prefs.getInt(KEY_POSITION, 0));
         ArrayList<String> savedKeys = parseQueueKeys(prefs.getString(KEY_QUEUE, "[]"));
+        LinkedHashMap<String, String> savedSources = parseQueueSources(prefs.getString(KEY_QUEUE_SOURCES, "{}"));
         if (key == null || key.trim().isEmpty()) {
             broadcast("", false, "PRONTO");
             return;
         }
         restoring = true;
         io.execute(() -> {
-            ArrayList<Track> loaded = loadQueue(folder, savedKeys);
+            ArrayList<Track> loaded = loadQueue(folder, savedKeys, savedSources);
             main.post(() -> {
                 restoring = false;
                 boolean shouldAutoPlay = autoPlay || playAfterRestore;
@@ -366,7 +425,9 @@ public final class PlayerService extends Service {
                 queue.clear();
                 queue.addAll(loaded);
                 currentFolder = folder;
-                index = findRestoreIndex(key, savedKeys);
+                String restoredSource = savedSources.get(key);
+                index = findIndex(key, restoredSource == null ? "" : restoredSource);
+                if (index < 0) index = findRestoreIndex(key, savedKeys);
                 if (index < 0) {
                     clearSnapshot();
                     queue.clear();
@@ -401,7 +462,6 @@ public final class PlayerService extends Service {
         }
         try {
             player = new MediaPlayer();
-            final MediaPlayer createdPlayer = player;
             player.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
             if (source.startsWith("content://")) player.setDataSource(this, Uri.parse(source));
             else player.setDataSource(new File(source).getAbsolutePath());
@@ -622,6 +682,7 @@ public final class PlayerService extends Service {
                 .putString(KEY_FOLDER, normalizeFolder(currentFolder))
                 .putInt(KEY_POSITION, position)
                 .putString(KEY_QUEUE, queueJson())
+                .putString(KEY_QUEUE_SOURCES, queueSourcesJson())
                 .apply();
     }
 
@@ -629,7 +690,8 @@ public final class PlayerService extends Service {
         pendingSeekMs = 0;
         if (prefs != null) prefs.edit()
                 .remove(KEY_TRACK).remove(KEY_FOLDER).remove(KEY_POSITION).remove(KEY_QUEUE)
-                .remove(KEY_STAGED_TOKEN).remove(KEY_STAGED_QUEUE).apply();
+                .remove(KEY_QUEUE_SOURCES)
+                .remove(KEY_STAGED_TOKEN).remove(KEY_STAGED_QUEUE).remove(KEY_STAGED_SOURCES).apply();
     }
 
     private void applyVolume() {
@@ -815,6 +877,11 @@ public final class PlayerService extends Service {
             try { player.release(); } catch (Exception ignored) {}
             player = null;
         }
+    }
+
+    private static final class StagedQueue {
+        final ArrayList<String> keys = new ArrayList<>();
+        final LinkedHashMap<String, String> sources = new LinkedHashMap<>();
     }
 
     @Override public void onTaskRemoved(Intent rootIntent) {
