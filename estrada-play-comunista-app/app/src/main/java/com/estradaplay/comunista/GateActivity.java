@@ -1,13 +1,8 @@
 package com.estradaplay.comunista;
 
-import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.net.ConnectivityManager;
-import android.net.NetworkCapabilities;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -19,17 +14,9 @@ import android.widget.TextView;
 
 import androidx.activity.ComponentActivity;
 
-import org.json.JSONObject;
-
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
+/** Lightweight local gate: branding/deep-link capture only, never a network blocker. */
 public final class GateActivity extends ComponentActivity {
-    private static final String UI_PREFS = "estradaplay_ui_v1";
-    private static final String KEY_ACCOUNT = "account";
-
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private final ExecutorService io = Executors.newSingleThreadExecutor();
     private boolean launched;
 
     @Override protected void onCreate(Bundle state) {
@@ -92,49 +79,10 @@ public final class GateActivity extends ComponentActivity {
     private void openApp() {
         if (launched || isFinishing()) return;
 
-        // SESSION_PERSIST_V232: never translate "Keystore token could not be reopened" directly
-        // into a password prompt. If a remembered account exists, first try device_login using the
-        // stable random installation secret. A successful response silently mints fresh tokens.
-        boolean remembered = hasRememberedAccount();
-        if (!remembered || !online()) {
-            launchMain();
-            return;
-        }
-
-        ApiClient api = new ApiClient(this);
-        if (api.hasSecureSession()) {
-            launchMain();
-            return;
-        }
-
-        io.execute(() -> {
-            boolean authenticated = false;
-            boolean definitelyRejected = false;
-            try {
-                JSONObject data = new JSONObject();
-                data.put("device_token", DeviceIdentity.token(GateActivity.this));
-                data.put("device_label", DeviceIdentity.label());
-                data.put("app_version", BuildConfig.VERSION_NAME);
-                ApiClient.Response response = api.post("api/native_app.php?action=device_login", data);
-                JSONObject body = response.json();
-                authenticated = response.ok() && body.optBoolean("ok", false)
-                        && body.optJSONObject("account") != null;
-                definitelyRejected = response.code == 401 || response.code == 403;
-            } catch (Throwable ignored) {
-                // Network failure is not an authentication failure. Keep remembered offline state.
-            }
-
-            final boolean ok = authenticated;
-            final boolean rejected = definitelyRejected;
-            runOnUiThread(() -> {
-                if (isFinishing()) return;
-                if (!ok && rejected) {
-                    api.clearSession();
-                    getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().remove(KEY_ACCOUNT).apply();
-                }
-                launchMain();
-            });
-        });
+        // STARTUP_OFFLINE_FIRST_V290: Gate never waits for server/device_login.
+        // MainActivity opens remembered local state immediately. When an online request is
+        // actually needed, ApiClient already performs refresh/device recovery after a 401.
+        launchMain();
     }
 
     private void launchMain() {
@@ -146,38 +94,8 @@ public final class GateActivity extends ComponentActivity {
         finish();
     }
 
-    private boolean hasRememberedAccount() {
-        SharedPreferences p = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
-        String raw = p.getString(KEY_ACCOUNT, "{}");
-        if (raw == null || raw.trim().isEmpty() || "{}".equals(raw.trim())) return false;
-        try {
-            JSONObject account = new JSONObject(raw);
-            return account.optBoolean("authenticated", false) || account.optJSONObject("user") != null;
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
-    private boolean online() {
-        try {
-            ConnectivityManager cm = (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (cm == null) return false;
-            if (Build.VERSION.SDK_INT >= 23) {
-                android.net.Network n = cm.getActiveNetwork();
-                if (n == null) return false;
-                NetworkCapabilities c = cm.getNetworkCapabilities(n);
-                return c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
-            }
-            android.net.NetworkInfo info = cm.getActiveNetworkInfo();
-            return info != null && info.isConnected();
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
     @Override protected void onDestroy() {
         ui.removeCallbacksAndMessages(null);
-        io.shutdownNow();
         super.onDestroy();
     }
 
