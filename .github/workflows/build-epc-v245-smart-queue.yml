@@ -13,6 +13,9 @@ on:
       - '.github/workflows/build-epc-v245-smart-queue.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
   group: epc-android-v245-smart-queue
   cancel-in-progress: true
@@ -111,11 +114,21 @@ jobs:
           sha256sum Estrada-Play-Comunista-Universal-2.4.5.apk Estrada-Play-Comunista-Horizontal-2.4.5.apk
           git diff --exit-code
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Estrada-Play-Comunista-2.4.5-Fila-Inteligente
-          path: |
-            Estrada-Play-Comunista-Universal-2.4.5.apk
-            Estrada-Play-Comunista-Horizontal-2.4.5.apk
-          retention-days: 7
-          compression-level: 0
+      - name: Publish 2.4.5 APKs as GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estrada-play-comunista-2.4.5-fila-inteligente"
+          U="Estrada-Play-Comunista-Universal-2.4.5.apk"
+          H="Estrada-Play-Comunista-Horizontal-2.4.5.apk"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$U" "$H" --clobber
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "Estrada Play Comunista 2.4.5 - Fila Inteligente" \
+              --notes "Fila de reprodução segue exatamente a busca/pasta visível, persiste entre reinícios, pula arquivos indisponíveis, atualiza a biblioteca após downloads e reduz duplicatas entre download do Estrada Play e cópia compartilhada. Sem mudança de design." \
+              "$U" "$H"
+          fi
