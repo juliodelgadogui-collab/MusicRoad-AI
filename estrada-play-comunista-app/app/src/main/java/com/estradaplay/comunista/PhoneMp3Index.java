@@ -12,9 +12,13 @@ import java.util.List;
 
 /**
  * PHONE_MP3_LOCAL_DB_V2315
+ * PHONE_MP3_INCREMENTAL_DB_V244
  * Tiny local-only database used as the source of truth for phone MP3s.
  * Opening the Music screen reads this DB only; MediaStore is consulted only by
  * an explicit/background refresh and never blocks the UI.
+ *
+ * 2.4.4 also supports single-row upsert/removal so a precise MediaStore change
+ * can update only that song instead of rebuilding the whole phone index.
  */
 final class PhoneMp3Index extends SQLiteOpenHelper {
     private static final String DB = "epc_phone_mp3_v2315.db";
@@ -94,26 +98,28 @@ final class PhoneMp3Index extends SQLiteOpenHelper {
         try {
             db.delete("phone_mp3", null, null);
             if (tracks != null) {
-                for (Track t : tracks) {
-                    if (t == null || t.localPath == null || !t.localPath.startsWith("content://")) continue;
-                    long mediaId = mediaId(t);
-                    if (mediaId < 0) continue;
-                    ContentValues v = new ContentValues();
-                    v.put("media_id", mediaId);
-                    v.put("title", safe(t.title));
-                    v.put("artist", safe(t.artist));
-                    v.put("folder", safe(t.folder));
-                    v.put("uri", t.localPath);
-                    v.put("bytes", Math.max(0L, t.size));
-                    db.insertWithOnConflict("phone_mp3", null, v, SQLiteDatabase.CONFLICT_REPLACE);
-                }
+                for (Track t : tracks) putTrack(db, t);
             }
             db.setTransactionSuccessful();
         } finally {
             db.endTransaction();
         }
-        prefs().edit().putBoolean(KEY_READY, true).putBoolean(KEY_DIRTY, false)
-                .putLong(KEY_UPDATED, System.currentTimeMillis()).apply();
+        markFresh();
+    }
+
+    boolean upsert(Track track) {
+        long mediaId = mediaId(track);
+        if (mediaId < 0 || track == null || track.localPath == null || !track.localPath.startsWith("content://")) return false;
+        SQLiteDatabase db = getWritableDatabase();
+        return putTrack(db, track) >= 0;
+    }
+
+    boolean remove(long mediaId) {
+        if (mediaId < 0) return false;
+        try {
+            getWritableDatabase().delete("phone_mp3", "media_id=?", new String[]{Long.toString(mediaId)});
+            return true;
+        } catch (Throwable ignored) { return false; }
     }
 
     boolean isReady() { return prefs().getBoolean(KEY_READY, false); }
@@ -121,6 +127,20 @@ final class PhoneMp3Index extends SQLiteOpenHelper {
     long updatedAt() { return prefs().getLong(KEY_UPDATED, 0L); }
     void markDirty() { prefs().edit().putBoolean(KEY_DIRTY, true).apply(); }
     void markFresh() { prefs().edit().putBoolean(KEY_READY, true).putBoolean(KEY_DIRTY, false).putLong(KEY_UPDATED, System.currentTimeMillis()).apply(); }
+
+    private long putTrack(SQLiteDatabase db, Track t) {
+        if (db == null || t == null || t.localPath == null || !t.localPath.startsWith("content://")) return -1L;
+        long mediaId = mediaId(t);
+        if (mediaId < 0) return -1L;
+        ContentValues v = new ContentValues();
+        v.put("media_id", mediaId);
+        v.put("title", safe(t.title));
+        v.put("artist", safe(t.artist));
+        v.put("folder", safe(t.folder));
+        v.put("uri", t.localPath);
+        v.put("bytes", Math.max(0L, t.size));
+        return db.insertWithOnConflict("phone_mp3", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
 
     private SharedPreferences prefs() { return app.getSharedPreferences(PREFS, Context.MODE_PRIVATE); }
 
