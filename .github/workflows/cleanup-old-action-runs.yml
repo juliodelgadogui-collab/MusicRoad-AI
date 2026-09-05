@@ -1,0 +1,74 @@
+name: Cleanup Old Actions Runs
+
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - '.github/workflows/cleanup-old-action-runs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: cleanup-old-actions-runs
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          KEEP_RUN_ID: '33965586079'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Current cleanup run: $CURRENT_RUN_ID"
+          echo "Preserving EPC 2.4.5 run: $KEEP_RUN_ID"
+
+          deleted=0
+          pass=0
+          while true; do
+            pass=$((pass + 1))
+            echo "Cleanup pass $pass"
+
+            mapfile -t ids < <(
+              gh api "/repos/$REPO/actions/runs?per_page=100" \
+                --jq '.workflow_runs[].id'
+            )
+
+            deletable=()
+            for id in "${ids[@]}"; do
+              if [[ "$id" != "$CURRENT_RUN_ID" && "$id" != "$KEEP_RUN_ID" ]]; then
+                deletable+=("$id")
+              fi
+            done
+
+            if (( ${#deletable[@]} == 0 )); then
+              break
+            fi
+
+            for id in "${deletable[@]}"; do
+              echo "Deleting run $id"
+              if gh api --method DELETE "/repos/$REPO/actions/runs/$id"; then
+                deleted=$((deleted + 1))
+              else
+                echo "Warning: could not delete run $id" >&2
+              fi
+              sleep 0.05
+            done
+
+            if (( pass >= 30 )); then
+              echo "Safety stop after 30 passes" >&2
+              exit 1
+            fi
+          done
+
+          remaining=$(gh api "/repos/$REPO/actions/runs?per_page=1" --jq '.total_count')
+          echo "Deleted runs: $deleted"
+          echo "Remaining runs reported by GitHub: $remaining"
