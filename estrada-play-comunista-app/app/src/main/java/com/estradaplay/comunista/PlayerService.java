@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
@@ -34,16 +35,38 @@ public final class PlayerService extends Service {
     private static final String CHANNEL = "estradaplay_player";
     private static final int NOTIFICATION_ID = 4501;
 
+    // PLAYER_SESSION_V242: last local track, folder and position survive service/app recreation.
+    // Restoring never starts music by itself; playback resumes only after an explicit user action.
+    private static final String PREFS = "epc_player_session_v242";
+    private static final String KEY_TRACK = "track_key";
+    private static final String KEY_FOLDER = "folder";
+    private static final String KEY_POSITION = "position_ms";
+    private static final long CHECKPOINT_MS = 5000L;
+
     private final ArrayList<Track> queue = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private MediaPlayer player;
+    private SharedPreferences prefs;
     private int index = -1;
     private boolean prepared;
+    private boolean restoring;
     private float alertDuck = 1f;
+    private String currentFolder = "__ALL__";
+    private int pendingSeekMs;
+
+    private final Runnable checkpoint = new Runnable() {
+        @Override public void run() {
+            if (isPlaying()) {
+                saveSnapshot();
+                main.postDelayed(this, CHECKPOINT_MS);
+            }
+        }
+    };
 
     @Override public void onCreate() {
         super.onCreate();
+        prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         createChannel();
     }
 
@@ -54,16 +77,19 @@ public final class PlayerService extends Service {
         String action = intent.getAction();
         if (ACTION_PLAY_TRACK.equals(action)) {
             String key = intent.getStringExtra(EXTRA_KEY);
-            String folder = intent.getStringExtra(EXTRA_FOLDER);
+            String requestedFolder = normalizeFolder(intent.getStringExtra(EXTRA_FOLDER));
             startForeground(NOTIFICATION_ID, notification(null, false));
             io.execute(() -> {
-                ArrayList<Track> loaded = loadQueue(folder);
+                ArrayList<Track> loaded = loadQueue(requestedFolder);
                 main.post(() -> {
+                    saveSnapshot();
+                    currentFolder = requestedFolder;
                     queue.clear();
                     queue.addAll(loaded);
                     index = findIndex(key);
                     if (index < 0 && !queue.isEmpty()) index = 0;
-                    prepareAndPlay();
+                    pendingSeekMs = 0;
+                    prepareCurrent(true, 0, false);
                 });
             });
         } else if (ACTION_TOGGLE.equals(action)) toggle();
@@ -71,7 +97,10 @@ public final class PlayerService extends Service {
         else if (ACTION_PREVIOUS.equals(action)) previous();
         else if (ACTION_DUCK.equals(action)) { alertDuck = 0.22f; applyVolume(); }
         else if (ACTION_UNDUCK.equals(action)) { alertDuck = 1f; applyVolume(); }
-        else if (ACTION_QUERY_STATE.equals(action)) broadcastCurrent();
+        else if (ACTION_QUERY_STATE.equals(action)) {
+            if (current() == null) restoreSession(false);
+            else broadcastCurrent();
+        }
         return START_NOT_STICKY;
     }
 
@@ -83,11 +112,16 @@ public final class PlayerService extends Service {
         List<Track> all = PhoneMp3Store.hasPermission(this)
                 ? PhoneMp3Store.mergeCached(this, appTracks)
                 : appTracks;
-        String f = folder == null ? "" : folder.trim();
+        String f = normalizeFolder(folder);
         for (Track t : all) {
-            if (f.isEmpty() || "__ALL__".equals(f) || f.equals(LibraryStore.folderKey(t))) loaded.add(t);
+            if ("__ALL__".equals(f) || f.equals(LibraryStore.folderKey(t))) loaded.add(t);
         }
         return loaded;
+    }
+
+    private String normalizeFolder(String folder) {
+        String f = folder == null ? "" : folder.trim();
+        return f.isEmpty() ? "__ALL__" : f;
     }
 
     private int findIndex(String key) {
@@ -98,14 +132,51 @@ public final class PlayerService extends Service {
 
     private Track current() { return index >= 0 && index < queue.size() ? queue.get(index) : null; }
 
-    private void prepareAndPlay() {
-        releasePlayer();
+    private void restoreSession(boolean autoPlay) {
+        if (restoring || current() != null) {
+            if (autoPlay) toggle(); else broadcastCurrent();
+            return;
+        }
+        String key = prefs.getString(KEY_TRACK, "");
+        String folder = normalizeFolder(prefs.getString(KEY_FOLDER, "__ALL__"));
+        int position = Math.max(0, prefs.getInt(KEY_POSITION, 0));
+        if (key == null || key.trim().isEmpty()) {
+            broadcast("", false, "PRONTO");
+            return;
+        }
+        restoring = true;
+        io.execute(() -> {
+            ArrayList<Track> loaded = loadQueue(folder);
+            main.post(() -> {
+                restoring = false;
+                queue.clear();
+                queue.addAll(loaded);
+                currentFolder = folder;
+                index = findIndex(key);
+                if (index < 0) {
+                    clearSnapshot();
+                    queue.clear();
+                    broadcast("", false, "Última música indisponível");
+                    return;
+                }
+                pendingSeekMs = position;
+                prepareCurrent(autoPlay, position, true);
+            });
+        });
+    }
+
+    private void prepareCurrent(boolean autoPlay, int seekMs, boolean restoringSession) {
+        releasePlayerOnly();
         Track t = current();
-        if (t == null) { broadcast("", false, "Fila vazia"); stopSelf(); return; }
+        if (t == null) { broadcast("", false, "Fila vazia"); if (autoPlay) stopSelf(); return; }
         String source = t.localPath == null ? "" : t.localPath.trim();
         if (!PhoneMp3Store.readable(this, source)) {
             if (source.startsWith("content://")) PhoneMp3Store.invalidate(this);
-            next();
+            if (restoringSession) {
+                clearSnapshot();
+                queue.clear(); index = -1;
+                broadcast("", false, "Última música indisponível");
+            } else next();
             return;
         }
         try {
@@ -115,50 +186,124 @@ public final class PlayerService extends Service {
             else player.setDataSource(new File(source).getAbsolutePath());
             player.setOnPreparedListener(mp -> {
                 prepared = true;
+                int target = Math.max(0, seekMs);
+                try {
+                    int duration = mp.getDuration();
+                    if (duration > 0 && target >= duration - 1500) target = 0;
+                    if (target > 0) mp.seekTo(target);
+                } catch (Throwable ignored) {}
+                pendingSeekMs = target;
                 requestFocus();
                 applyVolume();
-                mp.start();
-                startForeground(NOTIFICATION_ID, notification(t, true));
-                broadcast(t.title, true, source.startsWith("content://") ? "NO CELULAR" : "OFFLINE");
+                if (autoPlay) {
+                    mp.start();
+                    startForeground(NOTIFICATION_ID, notification(t, true));
+                    scheduleCheckpoint();
+                    broadcast(t.title, true, source.startsWith("content://") ? "NO CELULAR" : "OFFLINE");
+                } else {
+                    updateNotification(notification(t, false));
+                    broadcast(t.title, false, "PAUSADO");
+                }
+                saveSnapshot();
             });
             player.setOnCompletionListener(mp -> next());
             player.setOnErrorListener((mp, what, extra) -> { next(); return true; });
-            startForeground(NOTIFICATION_ID, notification(t, false));
-            broadcast(t.title, false, "Carregando local");
+            if (autoPlay) startForeground(NOTIFICATION_ID, notification(t, false));
+            broadcast(t.title, false, restoringSession ? "Restaurando" : "Carregando local");
             player.prepareAsync();
         } catch (Exception e) {
             broadcast(t.title, false, "Arquivo local inválido");
-            next();
+            if (restoringSession) {
+                clearSnapshot();
+                queue.clear(); index = -1;
+            } else next();
         }
     }
 
     private void toggle() {
-        if (player == null || !prepared) return;
+        if (player == null || !prepared) {
+            restoreSession(true);
+            return;
+        }
         try {
             Track t = current();
             if (player.isPlaying()) {
                 player.pause();
+                stopCheckpoint();
+                saveSnapshot();
                 if (t != null) { updateNotification(notification(t, false)); broadcast(t.title, false, "Pausado"); }
             } else {
-                requestFocus(); applyVolume(); player.start();
-                if (t != null) { updateNotification(notification(t, true)); broadcast(t.title, true, "LOCAL"); }
+                requestFocus();
+                applyVolume();
+                player.start();
+                scheduleCheckpoint();
+                if (t != null) {
+                    startForeground(NOTIFICATION_ID, notification(t, true));
+                    broadcast(t.title, true, "LOCAL");
+                }
             }
         } catch (Exception ignored) {}
     }
 
     private void next() {
-        if (queue.isEmpty()) return;
+        if (queue.isEmpty()) {
+            restoreSession(true);
+            return;
+        }
+        saveSnapshot();
         index = (index + 1) % queue.size();
-        prepareAndPlay();
+        pendingSeekMs = 0;
+        prepareCurrent(true, 0, false);
     }
 
     private void previous() {
-        if (queue.isEmpty()) return;
+        if (queue.isEmpty()) {
+            restoreSession(true);
+            return;
+        }
         try {
-            if (player != null && prepared && player.getCurrentPosition() > 5000) { player.seekTo(0); return; }
+            if (player != null && prepared && player.getCurrentPosition() > 5000) {
+                player.seekTo(0);
+                pendingSeekMs = 0;
+                saveSnapshot();
+                return;
+            }
         } catch (Exception ignored) {}
+        saveSnapshot();
         index = (index - 1 + queue.size()) % queue.size();
-        prepareAndPlay();
+        pendingSeekMs = 0;
+        prepareCurrent(true, 0, false);
+    }
+
+    private void scheduleCheckpoint() {
+        main.removeCallbacks(checkpoint);
+        main.postDelayed(checkpoint, CHECKPOINT_MS);
+    }
+
+    private void stopCheckpoint() { main.removeCallbacks(checkpoint); }
+
+    private boolean isPlaying() {
+        try { return player != null && prepared && player.isPlaying(); }
+        catch (Throwable ignored) { return false; }
+    }
+
+    private void saveSnapshot() {
+        Track t = current();
+        if (t == null || prefs == null) return;
+        int position = pendingSeekMs;
+        try { if (player != null && prepared) position = Math.max(0, player.getCurrentPosition()); }
+        catch (Throwable ignored) {}
+        pendingSeekMs = position;
+        prefs.edit()
+                .putString(KEY_TRACK, t.key())
+                .putString(KEY_FOLDER, normalizeFolder(currentFolder))
+                .putInt(KEY_POSITION, position)
+                .apply();
+    }
+
+    private void clearSnapshot() {
+        pendingSeekMs = 0;
+        if (prefs != null) prefs.edit().remove(KEY_TRACK).remove(KEY_FOLDER).remove(KEY_POSITION).apply();
     }
 
     private void applyVolume() {
@@ -173,8 +318,7 @@ public final class PlayerService extends Service {
 
     private void broadcastCurrent() {
         Track t = current();
-        boolean playing = false;
-        try { playing = player != null && prepared && player.isPlaying(); } catch (Throwable ignored) {}
+        boolean playing = isPlaying();
         broadcast(t == null ? "" : t.title, playing, t == null ? "PRONTO" : (playing ? "LOCAL" : "PAUSADO"));
     }
 
@@ -211,7 +355,8 @@ public final class PlayerService extends Service {
         if (nm != null) nm.notify(NOTIFICATION_ID, n);
     }
 
-    private void releasePlayer() {
+    private void releasePlayerOnly() {
+        stopCheckpoint();
         prepared = false;
         if (player != null) {
             try { player.stop(); } catch (Exception ignored) {}
@@ -221,9 +366,16 @@ public final class PlayerService extends Service {
     }
 
     @Override public void onTaskRemoved(Intent rootIntent) {
+        saveSnapshot();
         stopSelf();
         super.onTaskRemoved(rootIntent);
     }
 
-    @Override public void onDestroy() { io.shutdownNow(); releasePlayer(); stopForeground(true); super.onDestroy(); }
+    @Override public void onDestroy() {
+        saveSnapshot();
+        io.shutdownNow();
+        releasePlayerOnly();
+        stopForeground(true);
+        super.onDestroy();
+    }
 }
