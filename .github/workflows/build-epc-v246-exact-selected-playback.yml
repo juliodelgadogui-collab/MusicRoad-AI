@@ -121,3 +121,5 @@ jobs:
               --notes "Corrige o caso em que a tela mostrava a música escolhida, mas o serviço podia resolver outra fonte local para reprodução. Agora o toque envia ao PlayerService o Track exato selecionado, preservando a fila inteligente da 2.4.5. Sem mudança de design." \
               "$U" "$H"
           fi
+
+# RETRY_AFTER_MANUAL_ARTIFACT_CLEANUP_20260905
