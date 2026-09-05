@@ -33,7 +33,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
     private ListView trackList;
     private TrackAdapter adapter;
     private final ArrayList<Track> allTracks = new ArrayList<>();
-    private boolean registered;
+    private boolean registered,downloadRegistered;
     private String selectedFolder = ALL_FOLDERS;
     private String searchQuery = "";
 
@@ -43,6 +43,14 @@ public final class MusicPlayerActivity extends ComponentActivity {
         if(title!=null)title.setText(t==null||t.trim().isEmpty()?"Escolha uma música":t.trim());
         if(artist!=null)artist.setText(a==null||a.trim().isEmpty()?"Biblioteca local":a.trim());
         if(state!=null){state.setText(playing?"● TOCANDO":(s==null||s.isEmpty()?"PRONTO":s.toUpperCase(Locale.ROOT)));state.setTextColor(playing?GREEN:MUTED);}
+    }};
+
+    // MUSIC_AUTO_LIBRARY_V245: a completed EstradaPlay download refreshes the local
+    // list automatically. The user no longer needs to touch the MP3 index button just
+    // to see a song that the app itself has finished downloading.
+    private final BroadcastReceiver downloadState=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){
+        if(i==null||i.getBooleanExtra("active",false))return;
+        if(root!=null)root.postDelayed(()->loadTracks(false),180L);
     }};
 
     @Override protected void onCreate(Bundle b){
@@ -66,6 +74,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
 
     @Override protected void onDestroy(){
         if(registered)try{unregisterReceiver(playerState);}catch(Throwable ignored){}
+        if(downloadRegistered)try{unregisterReceiver(downloadState);}catch(Throwable ignored){}
         io.shutdownNow();
         super.onDestroy();
     }
@@ -73,6 +82,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
     // MUSIC_LIBRARY_UX_V2316: one real scrollable ListView, local search and folder grouping.
     // MUSIC_COMPACT_PLAYER_V2318: the player is a compact control strip so the library owns most of the screen.
     // MUSIC_DOWNLOAD_ENTRY_V240: download management is visible again without changing the player/library layout.
+    // MUSIC_EXACT_QUEUE_V245: play/next/previous follow exactly what is visible after search/folder filtering.
     // There is no ScrollView wrapped around the song list, so swipe/drag stays smooth even with thousands of tracks.
     private void build(){
         FrameLayout frame=new FrameLayout(this);
@@ -364,7 +374,9 @@ public final class MusicPlayerActivity extends ComponentActivity {
     private void playTrack(Track t){
         if(t==null)return;
         String queueFolder=ALL_FOLDERS.equals(selectedFolder)?"__ALL__":selectedFolder;
-        command(PlayerService.ACTION_PLAY_TRACK,t.key(),queueFolder);
+        ArrayList<Track> visible=adapter==null?new ArrayList<>():adapter.visibleTracks();
+        String queueToken=PlayerService.stageQueue(this,visible);
+        command(PlayerService.ACTION_PLAY_TRACK,t.key(),queueFolder,queueToken);
     }
 
     private void focusSearch(){
@@ -434,6 +446,17 @@ public final class MusicPlayerActivity extends ComponentActivity {
                 }
             }
             notifyDataSetChanged();
+        }
+
+        ArrayList<Track> visibleTracks(){
+            ArrayList<Track> out=new ArrayList<>();
+            LinkedHashSet<String> seen=new LinkedHashSet<>();
+            for(DisplayItem item:items){
+                if(item==null||item.track==null)continue;
+                String key=item.track.key();
+                if(key!=null&&seen.add(key))out.add(item.track);
+            }
+            return out;
         }
 
         DisplayItem item(int position){return position>=0&&position<items.size()?items.get(position):null;}
@@ -512,9 +535,27 @@ public final class MusicPlayerActivity extends ComponentActivity {
         static DisplayItem track(Track value){return new DisplayItem(null,value);}
     }
 
-    private void register(){if(registered)return;IntentFilter f=new IntentFilter(PlayerService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(playerState,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(playerState,f);registered=true;}
+    private void register(){
+        if(!registered){
+            IntentFilter f=new IntentFilter(PlayerService.ACTION_STATE);
+            if(Build.VERSION.SDK_INT>=33)registerReceiver(playerState,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(playerState,f);
+            registered=true;
+        }
+        if(!downloadRegistered){
+            IntentFilter f=new IntentFilter(DownloadService.ACTION_STATE);
+            if(Build.VERSION.SDK_INT>=33)registerReceiver(downloadState,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(downloadState,f);
+            downloadRegistered=true;
+        }
+    }
     private void queryPlayer(){try{startService(new Intent(this,PlayerService.class).setAction(PlayerService.ACTION_QUERY_STATE));}catch(Throwable ignored){}}
-    private void command(String action,String key,String folder){try{Intent i=new Intent(this,PlayerService.class).setAction(action);if(key!=null)i.putExtra(PlayerService.EXTRA_KEY,key);if(folder!=null)i.putExtra(PlayerService.EXTRA_FOLDER,folder);if(Build.VERSION.SDK_INT>=26&&PlayerService.ACTION_PLAY_TRACK.equals(action))startForegroundService(i);else startService(i);}catch(Throwable e){Toast.makeText(this,"Não consegui iniciar o player agora.",Toast.LENGTH_SHORT).show();}}
+    private void command(String action,String key,String folder){command(action,key,folder,null);}
+    private void command(String action,String key,String folder,String queueToken){try{
+        Intent i=new Intent(this,PlayerService.class).setAction(action);
+        if(key!=null)i.putExtra(PlayerService.EXTRA_KEY,key);
+        if(folder!=null)i.putExtra(PlayerService.EXTRA_FOLDER,folder);
+        if(queueToken!=null&&!queueToken.trim().isEmpty())i.putExtra(PlayerService.EXTRA_QUEUE_TOKEN,queueToken);
+        if(Build.VERSION.SDK_INT>=26&&PlayerService.ACTION_PLAY_TRACK.equals(action))startForegroundService(i);else startService(i);
+    }catch(Throwable e){Toast.makeText(this,"Não consegui iniciar o player agora.",Toast.LENGTH_SHORT).show();}}
     private void openDownloads(){Intent i=new Intent(this,MainActivity.class);i.putExtra("open","library");startActivity(i);}
     private void openStorage(){startActivity(new Intent(this,MusicStorageActivity.class));}
 
