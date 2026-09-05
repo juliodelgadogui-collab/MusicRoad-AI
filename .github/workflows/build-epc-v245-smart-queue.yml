@@ -1,16 +1,6 @@
 name: EPC Android 2.4.5 Fila Inteligente
 
 on:
-  push:
-    branches: [agent/estrada-play-comunista]
-    paths:
-      - 'estrada-play-comunista-app/app/build.gradle'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/PlayerService.java'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MusicPlayerActivity.java'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/PhoneMp3Store.java'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/PhoneMp3Index.java'
-      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DownloadService.java'
-      - '.github/workflows/build-epc-v245-smart-queue.yml'
   workflow_dispatch:
 
 permissions:
