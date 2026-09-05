@@ -3,12 +3,16 @@ package com.estradaplay.comunista;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
+import android.media.MediaMetadata;
 import android.media.MediaPlayer;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -43,23 +47,32 @@ public final class PlayerService extends Service {
     private static final String KEY_POSITION = "position_ms";
     private static final long CHECKPOINT_MS = 5000L;
 
+    // PLAYER_MEDIA_SESSION_V243: Bluetooth/headset/car controls and the Android media
+    // notification use the same local queue as the in-app player. No UI layout changes.
     private final ArrayList<Track> queue = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private MediaPlayer player;
     private SharedPreferences prefs;
+    private MediaSession mediaSession;
     private int index = -1;
     private boolean prepared;
     private boolean restoring;
     private boolean playAfterRestore;
+    private boolean resumeOnFocus;
     private float alertDuck = 1f;
+    private float focusDuck = 1f;
     private String currentFolder = "__ALL__";
     private int pendingSeekMs;
+
+    private final AudioManager.OnAudioFocusChangeListener focusListener = change ->
+            main.post(() -> handleAudioFocusChange(change));
 
     private final Runnable checkpoint = new Runnable() {
         @Override public void run() {
             if (isPlaying()) {
                 saveSnapshot();
+                updateMediaSession(current(), true);
                 main.postDelayed(this, CHECKPOINT_MS);
             }
         }
@@ -69,6 +82,7 @@ public final class PlayerService extends Service {
         super.onCreate();
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         createChannel();
+        createMediaSession();
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
@@ -142,7 +156,7 @@ public final class PlayerService extends Service {
             if (!autoPlay) {
                 broadcastCurrent();
             } else if (player != null && prepared) {
-                toggle();
+                resumePlayback();
             } else {
                 prepareCurrent(true, pendingSeekMs, false);
             }
@@ -210,6 +224,7 @@ public final class PlayerService extends Service {
                 applyVolume();
                 if (autoPlay) {
                     mp.start();
+                    resumeOnFocus = false;
                     startForeground(NOTIFICATION_ID, notification(t, true));
                     scheduleCheckpoint();
                     broadcast(t.title, true, source.startsWith("content://") ? "NO CELULAR" : "OFFLINE");
@@ -234,26 +249,44 @@ public final class PlayerService extends Service {
     }
 
     private void toggle() {
+        if (isPlaying()) pausePlayback("Pausado");
+        else resumePlayback();
+    }
+
+    private void resumePlayback() {
         if (player == null || !prepared) {
             restoreSession(true);
             return;
         }
+        if (isPlaying()) {
+            broadcastCurrent();
+            return;
+        }
         try {
             Track t = current();
-            if (player.isPlaying()) {
-                player.pause();
-                stopCheckpoint();
-                saveSnapshot();
-                if (t != null) { updateNotification(notification(t, false)); broadcast(t.title, false, "Pausado"); }
-            } else {
-                requestFocus();
-                applyVolume();
-                player.start();
-                scheduleCheckpoint();
-                if (t != null) {
-                    startForeground(NOTIFICATION_ID, notification(t, true));
-                    broadcast(t.title, true, "LOCAL");
-                }
+            requestFocus();
+            focusDuck = 1f;
+            applyVolume();
+            player.start();
+            resumeOnFocus = false;
+            scheduleCheckpoint();
+            if (t != null) {
+                startForeground(NOTIFICATION_ID, notification(t, true));
+                broadcast(t.title, true, "LOCAL");
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void pausePlayback(String reason) {
+        if (player == null || !prepared) return;
+        try {
+            Track t = current();
+            if (player.isPlaying()) player.pause();
+            stopCheckpoint();
+            saveSnapshot();
+            if (t != null) {
+                updateNotification(notification(t, false));
+                broadcast(t.title, false, reason == null || reason.isEmpty() ? "Pausado" : reason);
             }
         } catch (Exception ignored) {}
     }
@@ -279,6 +312,7 @@ public final class PlayerService extends Service {
                 player.seekTo(0);
                 pendingSeekMs = 0;
                 saveSnapshot();
+                updateMediaSession(current(), isPlaying());
                 return;
             }
         } catch (Exception ignored) {}
@@ -286,6 +320,18 @@ public final class PlayerService extends Service {
         index = (index - 1 + queue.size()) % queue.size();
         pendingSeekMs = 0;
         prepareCurrent(true, 0, false);
+    }
+
+    private void seekTo(long positionMs) {
+        if (player == null || !prepared) return;
+        try {
+            int duration = Math.max(0, player.getDuration());
+            int target = (int) Math.max(0L, Math.min(positionMs, duration > 0 ? duration : Integer.MAX_VALUE));
+            player.seekTo(target);
+            pendingSeekMs = target;
+            saveSnapshot();
+            updateMediaSession(current(), isPlaying());
+        } catch (Throwable ignored) {}
     }
 
     private void scheduleCheckpoint() {
@@ -321,12 +367,46 @@ public final class PlayerService extends Service {
 
     private void applyVolume() {
         if (player == null) return;
-        try { player.setVolume(alertDuck, alertDuck); } catch (Throwable ignored) {}
+        float volume = Math.max(0f, Math.min(1f, alertDuck * focusDuck));
+        try { player.setVolume(volume, volume); } catch (Throwable ignored) {}
     }
 
     private void requestFocus() {
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-        if (am != null) am.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+        if (am != null) {
+            try { am.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN); }
+            catch (Throwable ignored) {}
+        }
+    }
+
+    private void abandonFocus() {
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am != null) {
+            try { am.abandonAudioFocus(focusListener); } catch (Throwable ignored) {}
+        }
+    }
+
+    private void handleAudioFocusChange(int change) {
+        if (change == AudioManager.AUDIOFOCUS_GAIN) {
+            focusDuck = 1f;
+            applyVolume();
+            if (resumeOnFocus) {
+                resumeOnFocus = false;
+                resumePlayback();
+            }
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+            focusDuck = 0.25f;
+            applyVolume();
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            if (isPlaying()) {
+                resumeOnFocus = true;
+                pausePlayback("Pausado por outro áudio");
+            }
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS) {
+            resumeOnFocus = false;
+            focusDuck = 1f;
+            if (isPlaying()) pausePlayback("Pausado");
+        }
     }
 
     private void broadcastCurrent() {
@@ -337,6 +417,7 @@ public final class PlayerService extends Service {
 
     private void broadcast(String title, boolean playing, String state) {
         Track t = current();
+        updateMediaSession(t, playing);
         Intent i = new Intent(ACTION_STATE).setPackage(getPackageName());
         i.putExtra("title", title == null ? "" : title);
         i.putExtra("artist", t == null ? "" : t.artist);
@@ -345,6 +426,63 @@ public final class PlayerService extends Service {
         i.putExtra("track_key", t == null ? "" : t.key());
         sendBroadcast(i);
     }
+
+    private void createMediaSession() {
+        try {
+            mediaSession = new MediaSession(this, "EstradaPlayPlayer");
+            mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+            mediaSession.setCallback(new MediaSession.Callback() {
+                @Override public void onPlay() { resumePlayback(); }
+                @Override public void onPause() { pausePlayback("Pausado"); }
+                @Override public void onSkipToNext() { next(); }
+                @Override public void onSkipToPrevious() { previous(); }
+                @Override public void onSeekTo(long pos) { seekTo(pos); }
+                @Override public void onStop() { pausePlayback("Pausado"); }
+            }, main);
+            mediaSession.setActive(true);
+            updateMediaSession(null, false);
+        } catch (Throwable ignored) {
+            mediaSession = null;
+        }
+    }
+
+    private void updateMediaSession(Track t, boolean playing) {
+        if (mediaSession == null) return;
+        try {
+            long position = Math.max(0, pendingSeekMs);
+            long duration = 0L;
+            if (player != null && prepared) {
+                try { position = Math.max(0, player.getCurrentPosition()); } catch (Throwable ignored) {}
+                try { duration = Math.max(0, player.getDuration()); } catch (Throwable ignored) {}
+            }
+            long actions = PlaybackState.ACTION_PLAY
+                    | PlaybackState.ACTION_PAUSE
+                    | PlaybackState.ACTION_PLAY_PAUSE
+                    | PlaybackState.ACTION_SKIP_TO_NEXT
+                    | PlaybackState.ACTION_SKIP_TO_PREVIOUS
+                    | PlaybackState.ACTION_SEEK_TO;
+            int sessionState = t == null ? PlaybackState.STATE_NONE : (playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED);
+            PlaybackState playbackState = new PlaybackState.Builder()
+                    .setActions(actions)
+                    .setState(sessionState, position, playing ? 1f : 0f)
+                    .build();
+            mediaSession.setPlaybackState(playbackState);
+
+            if (t == null) {
+                mediaSession.setMetadata(null);
+            } else {
+                MediaMetadata.Builder meta = new MediaMetadata.Builder()
+                        .putString(MediaMetadata.METADATA_KEY_TITLE, safe(t.title))
+                        .putString(MediaMetadata.METADATA_KEY_ARTIST, safe(t.artist))
+                        .putString(MediaMetadata.METADATA_KEY_ALBUM, safe(t.album));
+                if (duration > 0) meta.putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
+                mediaSession.setMetadata(meta.build());
+            }
+            if (!mediaSession.isActive()) mediaSession.setActive(true);
+        } catch (Throwable ignored) {}
+    }
+
+    private String safe(String value) { return value == null ? "" : value.trim(); }
 
     private void createChannel() {
         if (Build.VERSION.SDK_INT < 26) return;
@@ -356,11 +494,43 @@ public final class PlayerService extends Service {
     private Notification notification(Track t, boolean playing) {
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         b.setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle(t == null ? "Estrada Play Comunista" : t.title)
-                .setContentText(t == null ? "Música local" : t.artist + (playing ? " · Tocando no aparelho" : " · Pausado"))
+                .setContentTitle(t == null ? "Estrada Play Comunista" : safe(t.title))
+                .setContentText(notificationSubtitle(t, playing))
+                .setContentIntent(openPlayerIntent())
+                .setCategory(Notification.CATEGORY_TRANSPORT)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setOngoing(playing)
-                .setOnlyAlertOnce(true);
+                .setOnlyAlertOnce(true)
+                .addAction(android.R.drawable.ic_media_previous, "Anterior", serviceAction(1, ACTION_PREVIOUS))
+                .addAction(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
+                        playing ? "Pausar" : "Tocar", serviceAction(2, ACTION_TOGGLE))
+                .addAction(android.R.drawable.ic_media_next, "Próxima", serviceAction(3, ACTION_NEXT));
+        if (mediaSession != null) {
+            try {
+                b.setStyle(new Notification.MediaStyle()
+                        .setMediaSession(mediaSession.getSessionToken())
+                        .setShowActionsInCompactView(0, 1, 2));
+            } catch (Throwable ignored) {}
+        }
         return b.build();
+    }
+
+    private String notificationSubtitle(Track t, boolean playing) {
+        if (t == null) return "Música local";
+        String artist = safe(t.artist);
+        String suffix = playing ? "Tocando no aparelho" : "Pausado";
+        return artist.isEmpty() ? suffix : artist + " · " + suffix;
+    }
+
+    private PendingIntent serviceAction(int requestCode, String action) {
+        Intent i = new Intent(this, PlayerService.class).setAction(action);
+        return PendingIntent.getService(this, requestCode, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private PendingIntent openPlayerIntent() {
+        Intent i = new Intent(this, MusicPlayerActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        return PendingIntent.getActivity(this, 10, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
     private void updateNotification(Notification n) {
@@ -388,6 +558,12 @@ public final class PlayerService extends Service {
         saveSnapshot();
         io.shutdownNow();
         releasePlayerOnly();
+        abandonFocus();
+        if (mediaSession != null) {
+            try { mediaSession.setActive(false); } catch (Throwable ignored) {}
+            try { mediaSession.release(); } catch (Throwable ignored) {}
+            mediaSession = null;
+        }
         stopForeground(true);
         super.onDestroy();
     }
