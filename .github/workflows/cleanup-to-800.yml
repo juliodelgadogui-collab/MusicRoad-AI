@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: Delete a small batch of oldest workflow runs
         env:
@@ -26,10 +27,7 @@ jobs:
           target=800
           total=$(gh api "/repos/$REPO/actions/runs?per_page=1" --jq '.total_count')
           echo "Total before: $total"
-          if [ "$total" -le "$target" ]; then
-            echo "Already at target"
-            exit 0
-          fi
+          if [ "$total" -le "$target" ]; then exit 0; fi
           need=$((total-target))
           batch=25
           if [ "$need" -lt "$batch" ]; then batch=$need; fi
@@ -40,13 +38,11 @@ jobs:
             [ "$deleted" -ge "$batch" ] && break
             [ "$id" = "$CURRENT_RUN_ID" ] && continue
             [ "$id" = "$KEEP_RUN_ID" ] && continue
-            echo "Deleting old run $id"
             if gh api --method DELETE "/repos/$REPO/actions/runs/$id" >/dev/null 2>&1; then
               deleted=$((deleted+1))
             fi
             sleep 1
           done
-          after=$(gh api "/repos/$REPO/actions/runs?per_page=1" --jq '.total_count' || echo unknown)
           echo "Deleted: $deleted"
-          echo "Total after: $after"
+          gh api "/repos/$REPO/actions/runs?per_page=1" --jq '.total_count'
           exit 0
