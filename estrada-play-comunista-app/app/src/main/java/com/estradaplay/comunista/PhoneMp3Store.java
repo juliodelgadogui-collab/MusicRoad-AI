@@ -24,18 +24,27 @@ import java.util.Locale;
 
 /**
  * PHONE_MP3_V2315_PERSISTENT_INDEX
+ * PHONE_MP3_SAFE_REFRESH_V242
  * The Music screen never scans storage. It opens a tiny local SQLite index.
  * MediaStore is touched only on first permission, explicit refresh or after
  * Android reports that the audio collection changed. No server is involved.
+ *
+ * 2.4.2 makes refresh fail-safe: timeout/provider/security failures never erase
+ * the previous local index, and an unexpected empty result is confirmed before
+ * replacing a non-empty library. Failed refreshes use a short retry backoff so
+ * repeatedly opening Music cannot hammer MediaStore.
  */
 final class PhoneMp3Store {
     private static final Object LOCK = new Object();
     private static final long QUERY_TIMEOUT_MS = 3000L;
+    private static final long EMPTY_CONFIRM_TIMEOUT_MS = 900L;
+    private static final long RETRY_BACKOFF_MS = 60_000L;
     private static final int MAX_TRACKS = 10000;
     private static ArrayList<Track> memory = new ArrayList<>();
     private static boolean memoryReady;
     private static boolean lastTimedOut;
     private static boolean observerInstalled;
+    private static long retryAfterMs;
 
     private PhoneMp3Store() {}
 
@@ -72,11 +81,17 @@ final class PhoneMp3Store {
 
     private static void onAudioChanged(Context context) {
         try { PhoneMp3Index.get(context).markDirty(); } catch (Throwable ignored) {}
-        synchronized (LOCK) { memoryReady = false; }
+        synchronized (LOCK) {
+            memoryReady = false;
+            retryAfterMs = 0L;
+        }
     }
 
     static boolean needsRefresh(Context context) {
         if (!hasPermission(context)) return false;
+        synchronized (LOCK) {
+            if (System.currentTimeMillis() < retryAfterMs) return false;
+        }
         try {
             PhoneMp3Index db = PhoneMp3Index.get(context);
             return !db.isReady() || db.isDirty();
@@ -94,6 +109,7 @@ final class PhoneMp3Store {
         synchronized (LOCK) {
             memoryReady = false;
             lastTimedOut = false;
+            retryAfterMs = 0L;
         }
     }
 
@@ -115,20 +131,48 @@ final class PhoneMp3Store {
     static ArrayList<Track> refresh(Context context) {
         if (context == null || !hasPermission(context)) return cached(context);
         installObserver(context);
-        ArrayList<Track> fresh = queryMp3Index(context);
-        boolean timedOut = lastTimedOut();
-        if (!timedOut) {
-            try { PhoneMp3Index.get(context).replace(fresh); } catch (Throwable ignored) {}
-            synchronized (LOCK) {
-                memory = new ArrayList<>(fresh);
-                memoryReady = true;
-            }
-            return new ArrayList<>(fresh);
+
+        ArrayList<Track> previous = cached(context);
+        QueryResult result = queryMp3Index(context);
+        synchronized (LOCK) { lastTimedOut = result.timedOut; }
+
+        if (!result.success) {
+            scheduleRetry();
+            return previous;
         }
-        return cached(context);
+
+        // A transient MediaStore/provider failure used to look like a valid zero-result
+        // query and could wipe a perfectly good local index. Confirm zero independently
+        // before clearing a library that was already populated.
+        if (result.tracks.isEmpty() && !previous.isEmpty() && !confirmEmpty(context)) {
+            scheduleRetry();
+            return previous;
+        }
+
+        try {
+            PhoneMp3Index.get(context).replace(result.tracks);
+        } catch (Throwable ignored) {
+            scheduleRetry();
+            return previous;
+        }
+
+        synchronized (LOCK) {
+            memory = new ArrayList<>(result.tracks);
+            memoryReady = true;
+            retryAfterMs = 0L;
+            lastTimedOut = false;
+        }
+        return new ArrayList<>(result.tracks);
     }
 
-    private static ArrayList<Track> queryMp3Index(Context context) {
+    private static void scheduleRetry() {
+        synchronized (LOCK) {
+            retryAfterMs = System.currentTimeMillis() + RETRY_BACKOFF_MS;
+            memoryReady = true;
+        }
+    }
+
+    private static QueryResult queryMp3Index(Context context) {
         ArrayList<Track> out = new ArrayList<>();
         ContentResolver resolver = context.getContentResolver();
         Uri base = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
@@ -148,6 +192,7 @@ final class PhoneMp3Store {
         Runnable cancel = () -> { try { signal.cancel(); } catch (Throwable ignored) {} };
         main.postDelayed(cancel, QUERY_TIMEOUT_MS);
         boolean timedOut = false;
+        boolean success = false;
         try (Cursor c = resolver.query(base, projection.toArray(new String[0]), selection, args, null, signal)) {
             if (c != null) {
                 int id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
@@ -170,16 +215,36 @@ final class PhoneMp3Store {
                     out.add(new Track("phone_" + mediaId, rawTitle, rawArtist, "", folder, folder,
                             "audio/mpeg", "", uri.toString(), bytes, 0L));
                 }
+                success = true;
             }
         } catch (OperationCanceledException canceled) {
             timedOut = true;
         } catch (SecurityException ignored) {
+            success = false;
         } catch (Throwable ignored) {
+            success = false;
         } finally {
             main.removeCallbacks(cancel);
-            synchronized (LOCK) { lastTimedOut = timedOut; }
         }
-        return out;
+        return new QueryResult(out, success, timedOut);
+    }
+
+    private static boolean confirmEmpty(Context context) {
+        ContentResolver resolver = context.getContentResolver();
+        Uri base = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        String selection = MediaStore.Audio.Media.SIZE + ">0 AND " + MediaStore.Audio.Media.DISPLAY_NAME + " LIKE ?";
+        String[] args = new String[]{"%.mp3"};
+        CancellationSignal signal = new CancellationSignal();
+        Handler main = new Handler(Looper.getMainLooper());
+        Runnable cancel = () -> { try { signal.cancel(); } catch (Throwable ignored) {} };
+        main.postDelayed(cancel, EMPTY_CONFIRM_TIMEOUT_MS);
+        try (Cursor c = resolver.query(base, new String[]{MediaStore.Audio.Media._ID}, selection, args, null, signal)) {
+            return c != null && !c.moveToFirst();
+        } catch (Throwable ignored) {
+            return false;
+        } finally {
+            main.removeCallbacks(cancel);
+        }
     }
 
     static ArrayList<Track> mergeCached(Context context, List<Track> appTracks) {
@@ -245,5 +310,17 @@ final class PhoneMp3Store {
     private static String token(String raw) {
         String n = Normalizer.normalize(raw == null ? "" : raw, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
         return n.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").trim();
+    }
+
+    private static final class QueryResult {
+        final ArrayList<Track> tracks;
+        final boolean success;
+        final boolean timedOut;
+
+        QueryResult(ArrayList<Track> tracks, boolean success, boolean timedOut) {
+            this.tracks = tracks == null ? new ArrayList<>() : tracks;
+            this.success = success;
+            this.timedOut = timedOut;
+        }
     }
 }
