@@ -21,6 +21,11 @@ public final class EstradaPlayApplication extends Application {
         if (isRadioProcess()) return;
 
         UiVersionLabelFix.register(this);
+
+        // MUSIC_LIBRARY_INTEGRITY_V247: repair only already-indexed app downloads before any
+        // music UI can expose a missing/zero-byte file as a playable song. No storage scan/server.
+        try { MusicLibraryIntegrityV247.repair(this); } catch (Throwable ignored) {}
+
         boolean deferOptionalBridges = ProcessCrashGuard.install(this);
         if (deferOptionalBridges) return;
 
