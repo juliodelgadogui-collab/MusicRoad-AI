@@ -32,8 +32,11 @@ for marker in (
     "PLAYER_SELECTED_FAILSAFE_V248",
     "PLAYER_PREPARE_GENERATION_V249",
     "PLAYER_QUEUE_SOURCE_IDENTITY_V2410",
+    "PLAYER_QUEUE_SOURCE_STRICT_V251",
     "queue_sources_json_v2410",
     "staged_queue_sources_json_v2410",
+    "strictPreferredSources",
+    "if (!exact.isEmpty() || strictPreferredSources) return exact;",
     "postIfGenerationActive",
     "failExplicitSelection",
 ):
@@ -78,5 +81,6 @@ print(" - reprodução selecionada usa fonte exata")
 print(" - falha explícita não pula silenciosamente para outra música")
 print(" - callbacks antigos do MediaPlayer são ignorados")
 print(" - fila persiste identidade da fonte local")
+print(" - fila persistida não remapeia uma fonte ausente para outra cópia")
 print(" - biblioteca repara entradas locais obsoletas")
 print(" - sem WebView")
