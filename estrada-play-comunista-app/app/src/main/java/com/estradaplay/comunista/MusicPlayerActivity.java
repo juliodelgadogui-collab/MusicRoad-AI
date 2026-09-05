@@ -1,11 +1,11 @@
 package com.estradaplay.comunista;
 
-import android.Manifest;
 import android.content.*;
-import android.content.pm.PackageManager;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.*;
+import android.provider.DocumentsContract;
 import android.view.*;
 import android.widget.*;
 import androidx.activity.ComponentActivity;
@@ -14,7 +14,7 @@ import java.util.concurrent.*;
 
 /** Dedicated music surface. Opening Music never redirects to the download manager. */
 public final class MusicPlayerActivity extends ComponentActivity {
-    private static final int REQ_DEVICE_AUDIO=4310;
+    private static final int REQ_MP3_FOLDER=4313;
     private final int BG=Color.rgb(8,5,7),SURFACE=Color.rgb(18,9,12),SURFACE2=Color.rgb(29,14,18),BORDER=Color.rgb(76,38,44);
     private final int TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(174,151,146),RED=Color.rgb(190,18,38),GREEN=Color.rgb(72,212,134),GOLD=Color.rgb(226,185,76);
     private final ExecutorService io=Executors.newSingleThreadExecutor();
@@ -47,7 +47,6 @@ public final class MusicPlayerActivity extends ComponentActivity {
         listBox=col();listBox.setPadding(dp(14),dp(14),dp(14),dp(14));listBox.setBackground(panel(SURFACE,18,BORDER));
         LinearLayout.LayoutParams lp=landscape?new LinearLayout.LayoutParams(0,dp(390),.58f):new LinearLayout.LayoutParams(-1,-2);if(landscape)lp.setMargins(dp(12),0,0,0);else lp.setMargins(0,dp(12),0,0);body.addView(listBox,lp);
         LinearLayout lh=row();lh.setGravity(Gravity.CENTER_VERTICAL);LinearLayout lt=col();lt.addView(over("NO APARELHO",MUTED));count=text("Carregando…",17,TEXT,true);lt.addView(count);lh.addView(lt,new LinearLayout.LayoutParams(0,-2,1));Button cleanup=small("LIMPEZA");lh.addView(cleanup,new LinearLayout.LayoutParams(dp(86),dp(42)));cleanup.setOnClickListener(v->openStorage());listBox.addView(lh);
-        TextView wait=text("O Estrada Play procura somente arquivos MP3 nas pastas Música e Download do celular. Nada de varrer o aparelho inteiro.",12,MUTED,false);LinearLayout.LayoutParams wp=new LinearLayout.LayoutParams(-1,-2);wp.setMargins(0,dp(14),0,0);listBox.addView(wait,wp);
     }
 
     private LinearLayout playerCard(){
@@ -60,38 +59,46 @@ public final class MusicPlayerActivity extends ComponentActivity {
         TextView note=text("Downloads do Estrada Play também ganham uma cópia em Música/EstradaPlay. Essa cópia continua no celular mesmo se o app for removido.",10,MUTED,false);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-1,-2);np.setMargins(0,dp(13),0,0);p.addView(note,np);return p;
     }
 
-    // MUSIC_MP3_FOLDERS_V2312: app downloads render immediately; phone lookup is a targeted MP3 query.
-    // Device scan is cached until the user taps Atualizar, so playback/opening the screen does not rescan storage.
+    // MUSIC_FOLDER_PICKER_V2313: no MediaStore lookup. User chooses one folder once;
+    // only .mp3 files from that folder/subfolders are read through the persisted tree URI.
     private void loadTracks(){loadTracks(false);}
-    private void loadTracks(boolean forceDeviceScan){if(io.isShutdown())return;io.execute(()->{
+    private void loadTracks(boolean forceFolderScan){if(io.isShutdown())return;io.execute(()->{
         LibraryStore.ReconcileResult rec=library.reconcileOffline();
         List<Track> appTracks=library.downloadedTracks();
         ArrayList<Track> immediate=new ArrayList<>(appTracks);
         runOnUiThread(()->{
             if(rec.recovered>0)Toast.makeText(this,rec.recovered+" música(s) offline recuperada(s).",Toast.LENGTH_LONG).show();
             renderTracks(immediate);
-            if(DeviceMusicStore.hasPermission(this)&&count!=null&&!DeviceMusicStore.hasCached())count.setText(immediate.size()+" do Estrada Play · localizando MP3…");
+            if(DeviceMusicStore.hasSelectedFolder(this)&&count!=null&&!DeviceMusicStore.hasCached())count.setText(immediate.size()+" do Estrada Play · lendo pasta MP3…");
         });
-        if(!DeviceMusicStore.hasPermission(this))return;
-        List<Track> tracks=DeviceMusicStore.merge(this,appTracks,forceDeviceScan);
+        if(!DeviceMusicStore.hasSelectedFolder(this))return;
+        List<Track> tracks=DeviceMusicStore.merge(this,appTracks,forceFolderScan);
         runOnUiThread(()->renderTracks(tracks));
     });}
 
     private void renderTracks(List<Track> tracks){if(listBox==null)return;while(listBox.getChildCount()>1)listBox.removeViewAt(1);int n=tracks==null?0:tracks.size();if(count!=null)count.setText(n+" "+(n==1?"música disponível":"músicas disponíveis"));
-        LinearLayout source=col();source.setPadding(0,dp(12),0,0);Button phone=DeviceMusicStore.hasPermission(this)?small("ATUALIZAR MP3 DO CELULAR"):primary("LOCALIZAR MP3 DO CELULAR");source.addView(phone,new LinearLayout.LayoutParams(-1,dp(52)));phone.setOnClickListener(v->{if(DeviceMusicStore.hasPermission(this)){DeviceMusicStore.invalidate();loadTracks(true);}else requestDeviceAudio();});
-        TextView sourceNote=text(DeviceMusicStore.hasPermission(this)?"Busca rápida: apenas .mp3 em Música/ e Download/. O resultado fica guardado até você tocar em Atualizar.":"Ao autorizar, o app lê somente MP3 das pastas Música e Download. Nada é enviado ao servidor.",10,MUTED,false);LinearLayout.LayoutParams sn=new LinearLayout.LayoutParams(-1,-2);sn.setMargins(0,dp(7),0,0);source.addView(sourceNote,sn);listBox.addView(source);
-        if(n==0){LinearLayout empty=col();empty.setPadding(0,dp(18),0,0);empty.addView(text("Nenhum MP3 reconhecido",19,TEXT,true));empty.addView(text("Coloque seus arquivos .mp3 nas pastas Música ou Download, ou baixe músicas pela biblioteca do Estrada Play.",12,MUTED,false));Button add=small("ADICIONAR / BAIXAR MÚSICAS");LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(50));ap.setMargins(0,dp(12),0,0);empty.addView(add,ap);add.setOnClickListener(v->openDownloads());listBox.addView(empty);return;}
+        boolean selected=DeviceMusicStore.hasSelectedFolder(this);
+        LinearLayout source=col();source.setPadding(0,dp(12),0,0);
+        Button choose=selected?small("TROCAR PASTA DE MP3"):primary("ESCOLHER PASTA DE MP3");source.addView(choose,new LinearLayout.LayoutParams(-1,dp(52)));choose.setOnClickListener(v->pickMp3Folder());
+        if(selected){Button refresh=small("ATUALIZAR PASTA MP3");LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(48));rp.setMargins(0,dp(7),0,0);source.addView(refresh,rp);refresh.setOnClickListener(v->{DeviceMusicStore.invalidate();loadTracks(true);});}
+        TextView sourceNote=text(selected?"Acesso direto à pasta escolhida. O app lê somente arquivos .mp3 dela e das subpastas; não depende do índice de mídia do Android.":"Escolha a pasta onde seus MP3 estão. O Android libera somente essa pasta para o Estrada Play; nada é enviado ao servidor.",10,MUTED,false);LinearLayout.LayoutParams sn=new LinearLayout.LayoutParams(-1,-2);sn.setMargins(0,dp(7),0,0);source.addView(sourceNote,sn);listBox.addView(source);
+        if(n==0){LinearLayout empty=col();empty.setPadding(0,dp(18),0,0);empty.addView(text(selected?"Nenhum MP3 nessa pasta":"Escolha sua pasta de músicas",19,TEXT,true));empty.addView(text(selected?"Se os arquivos estiverem em outra pasta, toque em TROCAR PASTA DE MP3.":"Aponte diretamente para Música, EstradaPlay ou outra pasta que contenha arquivos .mp3.",12,MUTED,false));Button add=small("ADICIONAR / BAIXAR MÚSICAS");LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(50));ap.setMargins(0,dp(12),0,0);empty.addView(add,ap);add.setOnClickListener(v->openDownloads());listBox.addView(empty);return;}
         ScrollView sv=new ScrollView(this);LinearLayout rows=col();sv.addView(rows,new ScrollView.LayoutParams(-1,-2));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(270));sp.setMargins(0,dp(10),0,0);listBox.addView(sv,sp);int limit=Math.min(n,240);for(int i=0;i<limit;i++){Track t=tracks.get(i);rows.addView(trackRow(t,i));if(i<limit-1){View d=new View(this);d.setBackgroundColor(BORDER);rows.addView(d,new LinearLayout.LayoutParams(-1,dp(1)));}}if(n>limit)rows.addView(text("Mostrando 240 de "+n+" faixas.",10,MUTED,false));}
 
     private View trackRow(Track t,int pos){LinearLayout r=row();r.setGravity(Gravity.CENTER_VERTICAL);r.setPadding(dp(8),dp(8),dp(6),dp(8));TextView idx=text(String.format(Locale.ROOT,"%02d",pos+1),10,GOLD,true);idx.setGravity(Gravity.CENTER);r.addView(idx,new LinearLayout.LayoutParams(dp(38),dp(44)));LinearLayout m=col();TextView tt=text(t.title,14,TEXT,true);tt.setMaxLines(1);m.addView(tt);String folder=LibraryStore.folderKey(t);TextView aa=text(t.artist+(folder==null||folder.isEmpty()?"":" · "+folder),10,MUTED,false);aa.setMaxLines(1);m.addView(aa);r.addView(m,new LinearLayout.LayoutParams(0,-2,1));Button go=control("▶",true);r.addView(go,new LinearLayout.LayoutParams(dp(48),dp(44)));go.setOnClickListener(v->command(PlayerService.ACTION_PLAY_TRACK,t.key(),"__ALL__"));r.setOnClickListener(v->command(PlayerService.ACTION_PLAY_TRACK,t.key(),"__ALL__"));return r;}
 
-    private void requestDeviceAudio(){
-        if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.READ_MEDIA_AUDIO},REQ_DEVICE_AUDIO);
-        else if(Build.VERSION.SDK_INT>=23)requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},REQ_DEVICE_AUDIO);
-        else loadTracks(true);
+    private void pickMp3Folder(){
+        try{
+            Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+            if(Build.VERSION.SDK_INT>=26){
+                try{i.putExtra(DocumentsContract.EXTRA_INITIAL_URI,Uri.parse("content://com.android.externalstorage.documents/document/primary%3AMusic"));}catch(Throwable ignored){}
+            }
+            startActivityForResult(i,REQ_MP3_FOLDER);
+        }catch(Throwable e){Toast.makeText(this,"Não consegui abrir o seletor de pasta.",Toast.LENGTH_LONG).show();}
     }
 
-    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQ_DEVICE_AUDIO){if(DeviceMusicStore.hasPermission(this)){Toast.makeText(this,"Acesso liberado. Procurando MP3 em Música e Download.",Toast.LENGTH_SHORT).show();DeviceMusicStore.invalidate();loadTracks(true);}else Toast.makeText(this,"Sem essa permissão, o player continua usando somente as músicas do Estrada Play.",Toast.LENGTH_LONG).show();}}
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){super.onActivityResult(requestCode,resultCode,data);if(requestCode!=REQ_MP3_FOLDER||resultCode!=RESULT_OK||data==null||data.getData()==null)return;Uri tree=data.getData();if(DeviceMusicStore.saveSelectedFolder(this,tree,data.getFlags())){Toast.makeText(this,"Pasta salva. Lendo somente os MP3 dela.",Toast.LENGTH_SHORT).show();loadTracks(true);}else Toast.makeText(this,"Não consegui manter acesso a essa pasta. Escolha outra.",Toast.LENGTH_LONG).show();}
 
     private void register(){if(registered)return;IntentFilter f=new IntentFilter(PlayerService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(playerState,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(playerState,f);registered=true;}
     private void queryPlayer(){try{startService(new Intent(this,PlayerService.class).setAction(PlayerService.ACTION_QUERY_STATE));}catch(Throwable ignored){}}
