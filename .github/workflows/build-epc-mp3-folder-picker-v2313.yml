@@ -43,8 +43,8 @@ jobs:
           grep -q 'TROCAR PASTA DE MP3' "$J/MusicPlayerActivity.java"
           grep -q 'ATUALIZAR PASTA MP3' "$J/MusicPlayerActivity.java"
           grep -q 'requestedKey.startsWith("tree_")' "$J/PlayerService.java"
-          if grep -q 'MediaStore' "$J/DeviceMusicStore.java"; then
-            echo 'MediaStore must not be used in direct folder mode'; exit 1
+          if grep -Eq 'android\.provider\.MediaStore|MediaStore\.' "$J/DeviceMusicStore.java"; then
+            echo 'MediaStore API must not be used in direct folder mode'; exit 1
           fi
           if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then
             echo 'WebView detected'; exit 1
