@@ -72,6 +72,7 @@ public final class MusicPlayerActivity extends ComponentActivity {
 
     // MUSIC_LIBRARY_UX_V2316: one real scrollable ListView, local search and folder grouping.
     // MUSIC_COMPACT_PLAYER_V2318: the player is a compact control strip so the library owns most of the screen.
+    // MUSIC_DOWNLOAD_ENTRY_V240: download management is visible again without changing the player/library layout.
     // There is no ScrollView wrapped around the song list, so swipe/drag stays smooth even with thousands of tracks.
     private void build(){
         FrameLayout frame=new FrameLayout(this);
@@ -212,6 +213,11 @@ public final class MusicPlayerActivity extends ComponentActivity {
 
         LinearLayout actions=row();
         actions.setGravity(Gravity.CENTER_VERTICAL);
+        Button downloads=small("BAIXAR MÚSICAS");
+        LinearLayout.LayoutParams dl=new LinearLayout.LayoutParams(0,dp(44),1);
+        dl.setMargins(0,0,dp(8),0);
+        actions.addView(downloads,dl);
+        downloads.setOnClickListener(v->openDownloads());
         permissionButton=small("ATUALIZAR ÍNDICE MP3");
         actions.addView(permissionButton,new LinearLayout.LayoutParams(0,dp(44),1));
         permissionButton.setOnClickListener(v->{
