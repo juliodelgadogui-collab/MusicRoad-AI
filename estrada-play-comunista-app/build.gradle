@@ -1,4 +1,5 @@
-// EstradaPlay 1.7.2 optimized build trigger
+// EstradaPlay 2.5.1 toolchain
 plugins {
-    id 'com.android.application' version '8.7.3' apply false
+    // ANDROID16_TARGET_V251: API 36 requires AGP 8.9.1+; 8.10.1 keeps the build on the stable AGP 8.x line.
+    id 'com.android.application' version '8.10.1' apply false
 }
