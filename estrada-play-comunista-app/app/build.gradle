@@ -11,9 +11,8 @@ def releaseKeyAlias = project.findProperty('ESTRADAPLAY_RELEASE_KEY_ALIAS') ?: S
 def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_PASSWORD')
 def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
-// EPC_251_MUSIC_STABLE
+// EPC_260_SECURE_SERVER
 // ANDROID16_TARGET_V251: Play submissions after 2026-08-31 require API 36 for regular Android apps.
-// Version line policy: 2.4 -> 2.4.1 ... 2.4.10 -> 2.5 -> 2.5.1.
 // Build configuration only: source files are never rewritten by Gradle.
 android {
     namespace 'com.estradaplay.comunista'
@@ -23,8 +22,8 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 36
-        versionCode 262
-        versionName '2.5.1'
+        versionCode 270
+        versionName '2.6.0'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
     }
