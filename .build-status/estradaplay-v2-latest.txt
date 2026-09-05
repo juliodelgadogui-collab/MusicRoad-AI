@@ -1,0 +1,9 @@
+status=success
+version=2.0.9
+run_id=33171406462
+run_number=15
+source_sha=e6d1a493ce8c0f2d021a538a8857f980e9d4a3af
+release_tag=estradaplay-2.0.9-direct-15
+apk_sha256=ecf04ccdad47d533c8185645982d492d572e7814e500a46684a67342638ba0f4
+release_asset=https://github.com/juliobji6-ship-it/MusicRoad-AI/releases/download/estradaplay-2.0.9-direct-15/EstradaPlay-2.0.9.apk
+server_asset=https://github.com/juliobji6-ship-it/MusicRoad-AI/releases/download/estradaplay-2.0.9-direct-15/EstradaPlay-2.0.9-SERVIDOR.zip

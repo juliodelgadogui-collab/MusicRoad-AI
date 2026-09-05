@@ -1,0 +1,30 @@
+name: Export EstradaPlay 1.7.4 APK
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/workflows/export-estradaplay-174-artifact.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download published APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download estradaplay-1.7.4-build-3 \
+            --repo juliobji6-ship-it/MusicRoad-AI \
+            --pattern 'EstradaPlay-1.7.4.apk'
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EstradaPlay-1.7.4-direct
+          path: EstradaPlay-1.7.4.apk
+          retention-days: 1
+          compression-level: 0

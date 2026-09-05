@@ -1,0 +1,248 @@
+name: Build EstradaPlay 2.x Direct
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - 'estradaplay-app-v2/**'
+      - 'admin.php'
+      - 'login.php'
+      - 'client.php'
+      - 'diagnostico_estradaplay_209.php'
+      - 'api/bootstrap.php'
+      - 'api/library.php'
+      - 'api/native_app.php'
+      - 'api/native_auth.php'
+      - 'api/native_library_sync.php'
+      - 'api/client_state.php'
+      - 'api/google_drive_public.php'
+      - 'api/drive_helpers.php'
+      - 'api/drive_stream.php'
+      - 'api/radar_route_helpers.php'
+      - '.github/workflows/build-estradaplay-v2.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: estradaplay-v2-direct
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d estradaplay-app-v2/signing/estradaplay-dev.keystore.b64 > estradaplay-app-v2/signing/estradaplay-dev.keystore
+
+      - name: Generate embedded EstradaPlay voice
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 \
+            -o "$MODEL" \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          test "$(stat -c %s "$MODEL")" -eq 67183065
+          tar -tjf "$MODEL" >/dev/null
+          rm -rf /tmp/estradaplay-voice
+          mkdir -p /tmp/estradaplay-voice
+          tar -xjf "$MODEL" -C /tmp/estradaplay-voice
+          python3 estradaplay-app-v2/tools/generate_voice_bank.py \
+            --model-root /tmp/estradaplay-voice \
+            --output estradaplay-app-v2/app/src/main/res/raw \
+            --metadata-output estradaplay-app-v2/app/src/main/assets/estradaplay_voice
+          test "$(find estradaplay-app-v2/app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 70
+
+      - name: Verify source architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "versionCode 209" estradaplay-app-v2/app/build.gradle
+          grep -q "versionName '2.0.9'" estradaplay-app-v2/app/build.gradle
+          grep -q 'android:resizeableActivity="true"' estradaplay-app-v2/app/src/main/AndroidManifest.xml
+          if grep -q 'sensorLandscape' estradaplay-app-v2/app/src/main/AndroidManifest.xml; then exit 1; fi
+          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app-v2/app/src/main/java; then exit 1; fi
+          grep -q 'AUTOMOTIVE_INPUT_V177' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'OSM_DIRECT_RADARS_V200' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'OSM_DIRECT_MAP_V200' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/OfflineRoadStore.java
+          grep -q 'ANR_GUARD_V201' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'ROAD_LIMIT_V202' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/EstradaPlayOfflineVoice.java
+          grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'OFFLINE_VOICE_V204' estradaplay-app-v2/tools/generate_voice_bank.py
+          grep -q 'X-EstradaPlay-Device' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/ApiClient.java
+          grep -q 'LIBRARY_PAGED_V208' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/ApiClient.java
+          grep -q 'CATALOG_FILE_V208' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/LibraryStore.java
+          grep -q 'LIBRARY_FAILSAFE_V209' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'ATUALIZAR DO SERVIDOR' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'X-EstradaPlay-Device' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/DownloadService.java
+          test -s estradaplay-app-v2/app/src/main/res/raw/ep_radar_frente.wav
+          test -s estradaplay-app-v2/app/src/main/res/raw/ep_limite_via.wav
+          test -s estradaplay-app-v2/app/src/main/res/raw/ep_speed_060.wav
+
+      - name: Verify server MariaDB compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'DB_COMPAT_V207' api/bootstrap.php
+          grep -q 'SERVER_DB_COMPAT_V209' api/bootstrap.php
+          grep -q 'SERVER_DB_COMPAT_V209' api/client_state.php
+          grep -q 'LIBRARY_FAST_V207' api/library.php
+          grep -q 'DRIVE_SYNC_V208' api/native_library_sync.php
+          grep -q "library_page" api/native_app.php
+          grep -q "library_fast" api/native_app.php
+          grep -q "library_sync_only" api/native_app.php
+          grep -q 'CURRENT_TIMESTAMP' admin.php
+          grep -q 'CURRENT_TIMESTAMP' login.php
+          grep -q 'CURRENT_TIMESTAMP' client.php
+          grep -q 'CURRENT_TIMESTAMP' api/google_drive_public.php
+          if grep -RniE "datetime\(['\"]now['\"]\)" --include='*.php' admin.php login.php client.php api; then exit 1; fi
+          if grep -n 'ON CONFLICT' api/client_state.php; then exit 1; fi
+          php -l api/bootstrap.php
+          php -l api/library.php
+          php -l api/native_app.php
+          php -l api/native_auth.php
+          php -l api/native_library_sync.php
+          php -l api/client_state.php
+          php -l api/google_drive_public.php
+          php -l api/radar_route_helpers.php
+          php -l admin.php
+          php -l login.php
+          php -l client.php
+          php -l diagnostico_estradaplay_209.php
+
+      - name: Build APK directly
+        working-directory: estradaplay-app-v2
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify signature and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=estradaplay-app-v2/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
+          grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/cert.txt
+          VERSION=$(grep -o "versionName '[^']*'" estradaplay-app-v2/app/build.gradle | head -1 | cut -d"'" -f2)
+          cp "$APK" "EstradaPlay-${VERSION}.apk"
+          sha256sum "EstradaPlay-${VERSION}.apk"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Package server recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=/tmp/estradaplay-server
+          rm -rf "$PKG"
+          mkdir -p "$PKG/api"
+          cp api/bootstrap.php "$PKG/api/"
+          cp api/library.php "$PKG/api/"
+          cp api/native_app.php "$PKG/api/"
+          cp api/native_auth.php "$PKG/api/"
+          cp api/native_library_sync.php "$PKG/api/"
+          cp api/client_state.php "$PKG/api/"
+          cp api/google_drive_public.php "$PKG/api/"
+          cp api/drive_helpers.php "$PKG/api/"
+          cp api/drive_stream.php "$PKG/api/"
+          cp api/radar_route_helpers.php "$PKG/api/"
+          cp admin.php "$PKG/"
+          cp login.php "$PKG/"
+          cp client.php "$PKG/"
+          cp diagnostico_estradaplay_209.php "$PKG/"
+          cat > "$PKG/LEIA-PRIMEIRO.txt" <<'EOF'
+          EstradaPlay 2.0.9 - compatibilidade MariaDB + biblioteca
+
+          Extraia este ZIP na RAIZ da instalação do EstradaPlay e permita sobrescrever SOMENTE os arquivos incluídos.
+
+          O pacote NÃO contém config/config.php, banco de dados, músicas, usuários ou pastas de mídia.
+          Portanto não apaga sua configuração nem seus dados.
+
+          Correções principais:
+          - remove SQL exclusivo de SQLite do painel, login, cliente, Drive e rotas;
+          - client_state usa atualização portátil em SQLite e MySQL/MariaDB;
+          - biblioteca continua paginada em blocos pequenos;
+          - APK usa fallback seguro para o catálogo legado se library_page falhar;
+          - catálogo grande continua salvo em arquivo interno no Android;
+          - sincronização do Google Drive permanece separada e resiliente.
+
+          Após instalar, abra diagnostico_estradaplay_209.php no navegador para confirmar o servidor.
+          EOF
+          (cd "$PKG" && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-${VERSION}-SERVIDOR.zip" .)
+          sha256sum "EstradaPlay-${VERSION}-SERVIDOR.zip"
+
+      - name: Try temporary artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: EstradaPlay-${{ env.VERSION }}-APK
+          path: |
+            EstradaPlay-${{ env.VERSION }}.apk
+            EstradaPlay-${{ env.VERSION }}-SERVIDOR.zip
+          retention-days: 1
+          compression-level: 0
+
+      - name: Publish direct-build release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="estradaplay-${VERSION}-direct-${GITHUB_RUN_NUMBER}"
+          NOTES="EstradaPlay ${VERSION}: corrige incompatibilidades SQLite/MySQL/MariaDB no painel, login, cliente, importação do Drive e estado do dispositivo; mantém biblioteca paginada e adiciona fallback seguro do APK quando o endpoint paginado estiver indisponível."
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "EstradaPlay ${VERSION} · MariaDB + biblioteca" \
+            --notes "$NOTES" \
+            "EstradaPlay-${VERSION}.apk" \
+            "EstradaPlay-${VERSION}-SERVIDOR.zip"
+
+      - name: Record build result
+        if: always()
+        env:
+          BUILD_RESULT: ${{ job.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_NOW=$(grep -o "versionName '[^']*'" estradaplay-app-v2/app/build.gradle | head -1 | cut -d"'" -f2)
+          TAG="estradaplay-${VERSION_NOW}-direct-${GITHUB_RUN_NUMBER}"
+          APK_FILE="EstradaPlay-${VERSION_NOW}.apk"
+          APK_SHA=""
+          if [ -f "$APK_FILE" ]; then
+            APK_SHA=$(sha256sum "$APK_FILE" | awk '{print $1}')
+          fi
+          mkdir -p .build-status
+          cat > .build-status/estradaplay-v2-latest.txt <<EOF
+          status=${BUILD_RESULT}
+          version=${VERSION_NOW}
+          run_id=${GITHUB_RUN_ID}
+          run_number=${GITHUB_RUN_NUMBER}
+          source_sha=${GITHUB_SHA}
+          release_tag=${TAG}
+          apk_sha256=${APK_SHA}
+          release_asset=https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK_FILE}
+          server_asset=https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/EstradaPlay-${VERSION_NOW}-SERVIDOR.zip
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .build-status/estradaplay-v2-latest.txt
+          git commit -m "Record EstradaPlay ${VERSION_NOW} build ${GITHUB_RUN_NUMBER} [skip ci]" || exit 0
+          git push origin HEAD:agent/native-apk-build

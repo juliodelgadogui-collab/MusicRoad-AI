@@ -1,0 +1,48 @@
+name: Transfer EstradaPlay 1.7.3 to Chat
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/workflows/transfer-estradaplay-173.yml'
+  workflow_dispatch:
+
+jobs:
+  transfer:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download 1.7.3 release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/531244766" \
+            -o EstradaPlay-1.7.3.apk
+          curl -fL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/531244765" \
+            -o EstradaPlay-1.7.3-SERVIDOR.zip
+          echo '3ed0636b6c7e9a553f530e891b965ac1d481028bdc38ea26bcf1d73dc2172ffe  EstradaPlay-1.7.3.apk' | sha256sum -c -
+          echo '79ac4eee05a988d391db71e1364e809e7250c970cbd9bbe6df882feadb451dc5  EstradaPlay-1.7.3-SERVIDOR.zip' | sha256sum -c -
+
+      - name: Upload direct chat artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EstradaPlay-1.7.3-direct-chat
+          path: |
+            EstradaPlay-1.7.3.apk
+            EstradaPlay-1.7.3-SERVIDOR.zip
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error

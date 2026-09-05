@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             if ($email === '') $email = $username . '@cliente.musicroad.local';
             try {
-                $stmt = db()->prepare("INSERT INTO users (name,email,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?, 'client','active',datetime('now'),datetime('now'))");
+                $stmt = db()->prepare("INSERT INTO users (name,email,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?, 'client','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)");
                 $stmt->execute([$name, $email, $username, password_hash($password, PASSWORD_DEFAULT)]);
                 audit_log('admin.client_create', ['client_id'=>(int)db()->lastInsertId(),'username'=>$username]);
                 $message = 'Cliente criado com sucesso.';
@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'toggle_client') {
         $id = (int)($_POST['client_id'] ?? 0);
-        $stmt = db()->prepare("UPDATE users SET status = CASE WHEN status='active' THEN 'inactive' ELSE 'active' END, updated_at=datetime('now') WHERE id=? AND role='client'");
+        $stmt = db()->prepare("UPDATE users SET status = CASE WHEN status='active' THEN 'inactive' ELSE 'active' END, updated_at=CURRENT_TIMESTAMP WHERE id=? AND role='client'");
         $stmt->execute([$id]);
         audit_log('admin.client_toggle', ['client_id'=>$id]);
         $message = 'Status do cliente atualizado.';
@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (strlen($password) < 6) {
             $error = 'A nova senha do cliente precisa ter pelo menos 6 caracteres.';
         } else {
-            $stmt = db()->prepare("UPDATE users SET password_hash=?, updated_at=datetime('now') WHERE id=? AND role='client'");
+            $stmt = db()->prepare("UPDATE users SET password_hash=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND role='client'");
             $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $id]);
             audit_log('admin.client_password_reset', ['client_id'=>$id]);
             $message = 'Senha do cliente redefinida.';
@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = db()->prepare('UPDATE drive_folders SET name=?,folder_link=?,active=1 WHERE folder_id=?');
                 $stmt->execute([$folderName,$folderLink,$folderId]);
             } else {
-                $stmt = db()->prepare("INSERT INTO drive_folders (name,folder_id,folder_link,active,created_at) VALUES (?,?,?,1,datetime('now'))");
+                $stmt = db()->prepare("INSERT INTO drive_folders (name,folder_id,folder_link,active,created_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)");
                 $stmt->execute([$folderName,$folderId,$folderLink]);
             }
             audit_log('admin.drive_folder_save', ['folder_id'=>$folderId]);
@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (strlen($password) < 6) {
             $error = 'A nova senha precisa ter pelo menos 6 caracteres.';
         } else {
-            $stmt = db()->prepare("UPDATE users SET password_hash=?,updated_at=datetime('now') WHERE id=?");
+            $stmt = db()->prepare("UPDATE users SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?");
             $stmt->execute([password_hash($password,PASSWORD_DEFAULT),(int)$user['id']]);
             $message = 'Senha do administrador alterada.';
         }
@@ -131,6 +131,7 @@ $summary = [
     'Músicas Drive' => (int)db()->query("SELECT COUNT(*) FROM music_library WHERE origin='Google Drive'")->fetchColumn(),
     'Radares' => (int)db()->query('SELECT COUNT(*) FROM radars')->fetchColumn(),
 ];
+$health = server_health_snapshot();
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -143,7 +144,7 @@ $summary = [
 <main class="admin-main">
   <div class="toolbar admin-toolbar">
     <div><p class="eyebrow">MusicRoad AI v1.0.0</p><h1>Painel Administrativo</h1><p class="muted">Gerencie clientes, biblioteca do Drive e radares.</p></div>
-    <div class="row"><a class="button secondary" href="admin_radares.php">Central de Radares</a><a class="button secondary" href="logout.php">Sair</a></div>
+    <div class="row"><a class="button secondary" href="admin_server.php">Central do Servidor</a><a class="button secondary" href="admin_radares.php">Central de Radares</a><a class="button secondary" href="logout.php">Sair</a></div>
   </div>
 
   <?php if ($message): ?><div class="panel success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
@@ -152,6 +153,18 @@ $summary = [
   <div class="grid admin-summary">
     <?php foreach ($summary as $label=>$value): ?><article class="panel"><h2><?= htmlspecialchars($label) ?></h2><p class="big-number"><?= (int)$value ?></p></article><?php endforeach; ?>
   </div>
+
+  <section class="panel">
+    <div class="section-heading"><div><h2>Saúde do servidor · modo 500 MB</h2><p class="muted">O servidor guarda somente metadados. Áudio permanece no Google Drive e vai direto para o aparelho.</p></div></div>
+    <div class="grid admin-summary">
+      <article class="panel"><h2>Espaço livre</h2><p class="big-number"><?= htmlspecialchars((string)$health['disk_free_h']) ?></p></article>
+      <article class="panel"><h2>MariaDB</h2><p class="big-number"><?= htmlspecialchars((string)$health['db_h']) ?></p></article>
+      <article class="panel"><h2>Logs</h2><p class="big-number"><?= htmlspecialchars((string)$health['logs_h']) ?></p></article>
+      <article class="panel"><h2>Catálogo</h2><p class="big-number"><?= (int)$health['tracks'] ?></p></article>
+    </div>
+    <p class="muted"><strong>Última sincronização:</strong> <?= htmlspecialchars((string)$health['last_sync']) ?> · <strong>Pastas ativas:</strong> <?= (int)$health['active_roots'] ?></p>
+    <details><summary>Sincronização automática</summary><p class="muted">Configure o cron da hospedagem para chamar esta URL a cada 5 ou 10 minutos. Chamadas extras não repetem a varredura se o catálogo ainda estiver recente.</p><code style="word-break:break-all"><?= htmlspecialchars((string)$health['cron_url']) ?></code></details>
+  </section>
 
   <section class="panel">
     <div class="section-heading"><div><h2>Clientes</h2><p class="muted">O cliente entra no app e recebe a solicitação para autorizar pastas de música e localização.</p></div></div>

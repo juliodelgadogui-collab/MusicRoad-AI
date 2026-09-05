@@ -1,0 +1,185 @@
+name: Migrate EstradaPlay 2.0.6 Nonblocking Boot
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/workflows/migrate-estradaplay-206.yml'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/native-apk-build
+          fetch-depth: 0
+
+      - name: Consolidate 2.0.6 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+
+          p = Path('estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java')
+          s = p.read_text(encoding='utf-8')
+
+          def sub1(pattern, replacement, label, count=1):
+              global s
+              s2, n = re.subn(pattern, textwrap.dedent(replacement), s, count=count, flags=re.S)
+              if n != count:
+                  raise SystemExit(f'{label}: expected {count}, got {n}')
+              s = s2
+
+          sub1(
+              r'    private void boot\(\) \{.*?\n    \}\n\n    private void openConfiguredTarget',
+              '''
+              // BOOT_NONBLOCKING_V206: biblioteca nunca bloqueia a abertura do EstradaPlay.
+              private void boot() {
+                  if (hasAccount()) {
+                      startRoadSafetyIfAllowed();
+                      library.setSetupDone(true);
+                      openConfiguredTarget();
+                      if (online()) syncCatalogInBackground();
+                      return;
+                  }
+                  if (online()) attemptDeviceLogin();
+                  else showAuth(false, "Conecte-se para entrar pela primeira vez. Depois, mapa, proteção e músicas já baixadas continuam disponíveis offline.");
+              }
+
+              private void openConfiguredTarget''',
+              'boot')
+
+          sub1(
+              r'saveAccount\(j\.optJSONObject\("account"\)\);\s*ui\.post\(\(\) -> loadCatalogAndOpenChooser\(true\)\);',
+              '''
+              saveAccount(j.optJSONObject("account"));
+              library.setSetupDone(true);
+              ui.post(() -> { showHome(); syncCatalogInBackground(); });''',
+              'post-login gates', 2)
+
+          anchor = '    private void loadCatalogAndOpenChooser(boolean initial) {'
+          if anchor not in s:
+              raise SystemExit('catalog loader anchor missing')
+          background = textwrap.dedent('''
+              private void syncCatalogInBackground() {
+                  if (!online()) return;
+                  io.execute(() -> {
+                      try {
+                          ApiClient.Response r = api.get("api/library.php?action=list");
+                          JSONObject j = r.json();
+                          JSONArray arr = j.optJSONArray("tracks");
+                          if (!r.ok() || arr == null) {
+                              ApiClient.Response fallback = api.get("api/native_app.php?action=library");
+                              j = fallback.json();
+                              arr = j.optJSONArray("tracks");
+                              if (!fallback.ok() || arr == null) return;
+                          }
+                          ArrayList<Track> tracks = new ArrayList<>();
+                          for (int i = 0; i < arr.length(); i++) {
+                              JSONObject o = arr.optJSONObject(i);
+                              if (o == null) continue;
+                              Track t = Track.fromServer(o, api);
+                              if (!t.remoteSource.isEmpty()) tracks.add(t);
+                          }
+                          if (!tracks.isEmpty()) {
+                              int beforeFolders = library.folderNames(library.catalog()).size();
+                              library.saveCatalog(tracks);
+                              int afterFolders = library.folderNames(tracks).size();
+                              if (afterFolders > beforeFolders && beforeFolders > 0) {
+                                  int added = afterFolders - beforeFolders;
+                                  ui.post(() -> toast(added + (added == 1 ? " nova pasta encontrada." : " novas pastas encontradas.")));
+                              }
+                          }
+                      } catch (Exception ignored) {
+                          // Biblioteca é opcional para iniciar o app.
+                      }
+                  });
+              }
+
+          ''')
+          s = s.replace(anchor, background + anchor, 1)
+
+          sub1(
+              r'\s*library\.saveCatalog\(tracks\);\s*ui\.post\(\(\) -> \{ if \(tracks\.isEmpty\(\)\) showCatalogEmpty\(initial\); else showFolderChooser\(initial\); \}\);',
+              '''
+              if (!tracks.isEmpty()) library.saveCatalog(tracks);
+              ui.post(() -> {
+                  if (tracks.isEmpty()) {
+                      library.setSetupDone(true);
+                      showHome();
+                      toast("Nenhuma música disponível agora. O EstradaPlay continua funcionando; tente novamente em Gerenciar Biblioteca.");
+                  } else {
+                      library.setSetupDone(true);
+                      showFolderChooser(initial);
+                  }
+              });''',
+              'catalog success')
+
+          sub1(
+              r'if \(!library\.catalog\(\)\.isEmpty\(\)\) showFolderChooser\(initial\);\s*else alertWithRetry\("Não consegui carregar as pastas", "Confira a internet e tente novamente\.", \(\) -> loadCatalogAndOpenChooser\(initial\)\);',
+              '''
+              if (!library.catalog().isEmpty()) {
+                  library.setSetupDone(true);
+                  showFolderChooser(initial);
+              } else {
+                  library.setSetupDone(true);
+                  showHome();
+                  toast("Biblioteca indisponível agora. Mapa, GPS e proteção continuam funcionando.");
+              }''',
+              'catalog failure')
+
+          sub1(
+              r'library\.setSetupDone\(hasOfflineMusic\);\s*if \(hasOfflineMusic\) \{\s*ui\.postDelayed\(\(\) -> \{ downloadInitialFlow = false; showHome\(\); \}, 900\);\s*\} else \{\s*downloadInitialFlow = false;\s*ui\.postDelayed\(\(\) -> \{\s*toast\("Nenhuma música foi baixada\. Escolha novamente quando estiver online\."\);\s*if \(online\(\)\) loadCatalogAndOpenChooser\(true\); else showOfflineSetupBlocked\(\);\s*\}, 650\);\s*\}',
+              '''
+              library.setSetupDone(true);
+              if (hasOfflineMusic) {
+                  ui.postDelayed(() -> { downloadInitialFlow = false; showHome(); }, 900);
+              } else {
+                  downloadInitialFlow = false;
+                  ui.postDelayed(() -> {
+                      toast("Nenhuma música foi baixada. Você pode tentar novamente depois em Gerenciar Biblioteca.");
+                      showHome();
+                  }, 650);
+              }''',
+              'download gate')
+
+          old_alert = 'private void alertWithRetry(String title, String message, Runnable retry) { new AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton("Voltar", (d,w) -> { if (library.hasSetupDone()) showHome(); else showAuth(false, null); }).setPositiveButton("Tentar novamente", (d,w) -> retry.run()).show(); }'
+          new_alert = 'private void alertWithRetry(String title, String message, Runnable retry) { new AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton("Voltar", (d,w) -> { if (hasAccount()) showHome(); else showAuth(false, null); }).setPositiveButton("Tentar novamente", (d,w) -> retry.run()).show(); }'
+          if old_alert not in s:
+              raise SystemExit('alertWithRetry missing')
+          s = s.replace(old_alert, new_alert, 1)
+
+          old_intent = 'if (hasAccount() && library != null && library.hasSetupDone()) openConfiguredTarget();'
+          if old_intent not in s:
+              raise SystemExit('onNewIntent gate missing')
+          s = s.replace(old_intent, 'if (hasAccount() && library != null) openConfiguredTarget();', 1)
+          p.write_text(s, encoding='utf-8')
+
+          gradle = Path('estradaplay-app-v2/app/build.gradle')
+          g = gradle.read_text(encoding='utf-8')
+          if "versionCode 205" not in g or "versionName '2.0.5'" not in g:
+              raise SystemExit('expected 2.0.5 base')
+          g = g.replace('versionCode 205', 'versionCode 206', 1)
+          g = g.replace("versionName '2.0.5'", "versionName '2.0.6'", 1)
+          gradle.write_text(g, encoding='utf-8')
+          PY
+
+          grep -q 'BOOT_NONBLOCKING_V206' estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q "versionName '2.0.6'" estradaplay-app-v2/app/build.gradle
+
+      - name: Commit consolidated 2.0.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estradaplay-app-v2/app/src/main/java/com/estradaplay/app/MainActivity.java estradaplay-app-v2/app/build.gradle
+          git commit -m "EstradaPlay 2.0.6: never block boot on music library"
+          git push origin HEAD:agent/native-apk-build

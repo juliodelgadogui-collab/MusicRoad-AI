@@ -1,0 +1,125 @@
+name: Build EstradaPlay 1.7.7
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/scripts/apply_177_audit_fixes.py'
+      - '.github/workflows/build-estradaplay-177.yml'
+      - 'api/offline_state.php'
+  workflow_dispatch:
+
+concurrency:
+  group: estradaplay-177
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer and apply 1.7.7 audited chain
+        shell: bash
+        run: |
+          set -e
+          base64 -d estradaplay-app/signing/estradaplay-dev.keystore.b64 > estradaplay-app/signing/estradaplay-dev.keystore
+          python3 estradaplay-app/tools/apply_151.py
+          python3 estradaplay-app/tools/apply_152_alert_fix.py
+          python3 estradaplay-app/tools/apply_160_automotive.py
+          python3 estradaplay-app/tools/apply_161_stability.py
+          python3 estradaplay-app/tools/apply_170_responsive_ui.py
+          python3 .github/scripts/apply_171_touch_fix.py
+          python3 .github/scripts/apply_172_gps_radar_fix.py
+          python3 .github/scripts/apply_173_touch_compat_fix.py
+          python3 .github/scripts/apply_174b_direct_touch_musicroad_radars.py
+          python3 .github/scripts/apply_175_touch_window_hardening.py
+          python3 .github/scripts/apply_176_dual_orientation_native_touch.py
+          python3 .github/scripts/apply_177_audit_fixes.py
+
+          grep -q "versionName '1.7.7'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 19' estradaplay-app/app/build.gradle
+          grep -q 'DUAL_ORIENTATION_TOUCH_V176' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'AUTOMOTIVE_INPUT_V177' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'AUTOMOTIVE_INPUT_ALL_SCREENS_V177' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'openMain("music")' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'ABRIR MAPA E PROTEÇÃO' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'MUSICROAD_NEAR_RADARS_V177' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'api/radars.php?action=near' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'setInstanceFollowRedirects(false)' estradaplay-app/app/src/main/java/com/estradaplay/app/ApiClient.java
+          grep -q 'ensureApiSession(true)' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadSafetyService.java
+          grep -q 'android:resizeableActivity="true"' estradaplay-app/app/src/main/AndroidManifest.xml
+          test "$(grep -c 'android:screenOrientation="fullSensor"' estradaplay-app/app/src/main/AndroidManifest.xml)" -ge 4
+          if grep -q 'sensorLandscape' estradaplay-app/app/src/main/AndroidManifest.xml; then exit 1; fi
+          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app/app/src/main/java; then exit 1; fi
+
+          php -l api/offline_state.php
+          php -l api/radars.php
+          php -l api/road_map_state.php
+          php -l api/road_map_corridor.php
+          php -l api/road_map_helpers.php
+          php -l api/road_pack.php
+          php -l api/road_state_pack.php
+          php -l api/road_corridor_pack.php
+
+      - name: Build APK
+        working-directory: estradaplay-app
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify signature and package
+        shell: bash
+        run: |
+          set -e
+          APK=estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
+          grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/cert.txt
+          cp "$APK" EstradaPlay-1.7.7.apk
+
+          rm -rf /tmp/ep177 && mkdir -p /tmp/ep177/api
+          cp admin_radares.php /tmp/ep177/
+          cp \
+            api/radar_db.php \
+            api/radars.php \
+            api/road_hazard_db.php \
+            api/road_pack.php \
+            api/road_safety_pack_helpers.php \
+            api/road_state_pack.php \
+            api/road_corridor_pack.php \
+            api/offline_state.php \
+            api/road_map_state.php \
+            api/road_map_corridor.php \
+            api/road_map_helpers.php \
+            /tmp/ep177/api/
+          printf '%s\n' \
+            'EstradaPlay 1.7.7' \
+            'APK: horizontal + vertical, toque automotivo em touchscreen/mouse/stylus/teclas.' \
+            'Navegação: MÚSICA abre o player; INÍCIO abre uma tela inicial real; MAPA retorna ao cockpit.' \
+            'Radares: usa road_pack quando disponível e cai para o radars.php já usado pelo MusicRoad.' \
+            'Sessão: redirecionamento de login não é mais tratado como JSON 200; sessão do dispositivo é refeita e a consulta é tentada novamente.' \
+            'Servidor: este pacote agora inclui também os endpoints do mapa offline que faltavam na 1.7.6.' \
+            > /tmp/ep177/LEIA-PRIMEIRO.txt
+          (cd /tmp/ep177 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.7.7-SERVIDOR.zip" .)
+          unzip -t EstradaPlay-1.7.7-SERVIDOR.zip
+          sha256sum EstradaPlay-1.7.7.apk EstradaPlay-1.7.7-SERVIDOR.zip
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="estradaplay-1.7.7-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "EstradaPlay 1.7.7 · correção auditada de toque e radares" \
+            --notes "Corrige a navegação que fazia MÚSICA/INÍCIO parecerem sem toque, restaura compatibilidade direta com painéis que reportam mouse/stylus, corrige sessão expirada e adiciona fallback ao radars.php do MusicRoad. Mantém horizontal e vertical." \
+            EstradaPlay-1.7.7.apk EstradaPlay-1.7.7-SERVIDOR.zip

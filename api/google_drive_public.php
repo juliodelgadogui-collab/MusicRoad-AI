@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/drive_helpers.php';
+require_once __DIR__ . '/native_library_sync.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['ok' => false, 'error' => 'Use POST.'], 405);
@@ -14,6 +15,23 @@ if (!$user || ($user['role'] ?? '') !== 'admin') {
 ensure_runtime_tables();
 
 $data = input_json();
+if (!empty($data['import_all']) || !empty($data['folder_db_id'])) {
+    $ids = !empty($data['folder_db_id']) ? [(int)$data['folder_db_id']] : [];
+    $sync = native_library_sync_active_drive_folders(true, $ids);
+    $compat = [
+        'folders_scanned'=>(int)($sync['folders'] ?? 0),
+        'tracks_found'=>(int)($sync['tracks'] ?? 0),
+        'inserted'=>(int)($sync['inserted'] ?? 0),
+        'updated'=>(int)($sync['updated'] ?? 0),
+        'removed'=>(int)($sync['removed'] ?? 0),
+        'skipped'=>0,
+        'verified'=>(int)($sync['tracks'] ?? 0),
+        'saved'=>(int)($sync['inserted'] ?? 0) + (int)($sync['updated'] ?? 0),
+        'errors'=>$sync['errors'] ?? [],
+    ];
+    audit_log('google_drive.public_import', ['server500'=>true,'stats'=>$compat]);
+    json_response(['ok'=>true,'stats'=>$compat,'sync'=>$sync,'tracks'=>[]]);
+}
 $folders = resolve_requested_folders($data);
 $files = resolve_requested_files($data);
 $save = !array_key_exists('save', $data) || (bool)$data['save'];
@@ -156,7 +174,7 @@ function merge_stats(array &$total, array $stats): void
 
 function update_drive_folder_status(string $folderId, string $status): void
 {
-    $stmt = db()->prepare('UPDATE drive_folders SET last_import_at = datetime("now"), last_status = ? WHERE folder_id = ?');
+    $stmt = db()->prepare('UPDATE drive_folders SET last_import_at = CURRENT_TIMESTAMP, last_status = ? WHERE folder_id = ?');
     $stmt->execute([$status, $folderId]);
 }
 
@@ -171,11 +189,11 @@ function save_drive_folder_reference(array $folder, string $status): void
     $exists = db()->prepare('SELECT id FROM drive_folders WHERE folder_id = ? LIMIT 1');
     $exists->execute([$folderId]);
     if ($exists->fetchColumn()) {
-        $stmt = db()->prepare('UPDATE drive_folders SET name = ?, folder_link = ?, active = 1, last_import_at = datetime("now"), last_status = ? WHERE folder_id = ?');
+        $stmt = db()->prepare('UPDATE drive_folders SET name = ?, folder_link = ?, active = 1, last_import_at = CURRENT_TIMESTAMP, last_status = ? WHERE folder_id = ?');
         $stmt->execute([$name, $folderLink, $status, $folderId]);
         return;
     }
-    $stmt = db()->prepare('INSERT INTO drive_folders (name, folder_id, folder_link, active, last_import_at, last_status, created_at) VALUES (?, ?, ?, 1, datetime("now"), ?, datetime("now"))');
+    $stmt = db()->prepare('INSERT INTO drive_folders (name, folder_id, folder_link, active, last_import_at, last_status, created_at) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)');
     $stmt->execute([$name, $folderId, $folderLink, $status]);
 }
 
@@ -583,7 +601,7 @@ function drive_http_status(string $url): array
 function record_drive_link_check(array $entry, array $verification, ?int $musicId): void
 {
     try {
-        $stmt = db()->prepare('INSERT INTO drive_link_checks (source_link, file_id, title, mime_type, status, message, saved_music_id, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))');
+        $stmt = db()->prepare('INSERT INTO drive_link_checks (source_link, file_id, title, mime_type, status, message, saved_music_id, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)');
         $stmt->execute([
             $entry['source_link'] ?? null,
             $entry['id'] ?? null,
@@ -614,7 +632,7 @@ function save_drive_track_from_entry(array $file, array $path): array
         $id = (int)$existingId;
         $action = 'updated';
     } else {
-        $insert = db()->prepare('INSERT INTO music_library (title, artist, album, cover_url, origin, origin_ref, mime_type, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))');
+        $insert = db()->prepare('INSERT INTO music_library (title, artist, album, cover_url, origin, origin_ref, mime_type, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)');
         $insert->execute([$title, $folderPath, $album, $file['cover_url'] ?? null, 'Google Drive', $fileId, $file['mime_type'] ?? null, $file['file_size'] ?? null]);
         $id = (int)db()->lastInsertId();
         $action = 'inserted';

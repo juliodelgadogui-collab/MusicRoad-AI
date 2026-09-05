@@ -1,0 +1,94 @@
+name: Build EstradaPlay 1.7.6
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/scripts/apply_176_dual_orientation_native_touch.py'
+      - '.github/workflows/build-estradaplay-176.yml'
+      - 'api/offline_state.php'
+  workflow_dispatch:
+
+concurrency:
+  group: estradaplay-176
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare signer and apply 1.7.6 chain
+        shell: bash
+        run: |
+          set -e
+          base64 -d estradaplay-app/signing/estradaplay-dev.keystore.b64 > estradaplay-app/signing/estradaplay-dev.keystore
+          python3 estradaplay-app/tools/apply_151.py
+          python3 estradaplay-app/tools/apply_152_alert_fix.py
+          python3 estradaplay-app/tools/apply_160_automotive.py
+          python3 estradaplay-app/tools/apply_161_stability.py
+          python3 estradaplay-app/tools/apply_170_responsive_ui.py
+          python3 .github/scripts/apply_171_touch_fix.py
+          python3 .github/scripts/apply_172_gps_radar_fix.py
+          python3 .github/scripts/apply_173_touch_compat_fix.py
+          python3 .github/scripts/apply_174b_direct_touch_musicroad_radars.py
+          python3 .github/scripts/apply_175_touch_window_hardening.py
+          python3 .github/scripts/apply_176_dual_orientation_native_touch.py
+          grep -q "versionName '1.7.6'" estradaplay-app/app/build.gradle
+          grep -q 'versionCode 18' estradaplay-app/app/build.gradle
+          grep -q 'DUAL_ORIENTATION_TOUCH_V176' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadMapActivity.java
+          grep -q 'NATIVE_TOUCH_ALL_SCREENS_V176' estradaplay-app/app/src/main/java/com/estradaplay/app/MainActivity.java
+          grep -q 'android:resizeableActivity="true"' estradaplay-app/app/src/main/AndroidManifest.xml
+          test "$(grep -c 'android:screenOrientation="fullSensor"' estradaplay-app/app/src/main/AndroidManifest.xml)" -ge 4
+          if grep -q 'sensorLandscape' estradaplay-app/app/src/main/AndroidManifest.xml; then exit 1; fi
+          grep -q 'fetchMusicRoadStateRadars' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          grep -q 'api/offline_state.php?kind=radars' estradaplay-app/app/src/main/java/com/estradaplay/app/RoadPackStore.java
+          php -l api/offline_state.php
+          if grep -R -q 'android.webkit.WebView\|new WebView' estradaplay-app/app/src/main/java; then exit 1; fi
+
+      - name: Build APK
+        working-directory: estradaplay-app
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify signature and package
+        shell: bash
+        run: |
+          set -e
+          APK=estradaplay-app/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/cert.txt
+          grep -qi 'c2d88a15b134f435de9fb532699e93fcd46bc35900a086575fcb2bf7f2f66fdb' /tmp/cert.txt
+          cp "$APK" EstradaPlay-1.7.6.apk
+          rm -rf /tmp/ep176 && mkdir -p /tmp/ep176/api
+          cp admin_radares.php /tmp/ep176/
+          cp api/radar_db.php api/road_hazard_db.php api/road_pack.php api/road_safety_pack_helpers.php api/road_state_pack.php api/road_corridor_pack.php api/offline_state.php /tmp/ep176/api/
+          printf '%s\n' \
+            'EstradaPlay 1.7.6' \
+            'Orientação: horizontal e vertical nativas (fullSensor), sem landscape forçado.' \
+            'Toque: mapa fica atrás; painéis e botões são Views de topo e usam dispatch nativo Android.' \
+            'Todas as telas revalidam janela touchable/focusable.' \
+            'Radares: mantém a base estadual do MusicRoad via api/offline_state.php.' \
+            > /tmp/ep176/LEIA-PRIMEIRO.txt
+          (cd /tmp/ep176 && zip -qr "$GITHUB_WORKSPACE/EstradaPlay-1.7.6-SERVIDOR.zip" .)
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="estradaplay-1.7.6-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "EstradaPlay 1.7.6 · horizontal/vertical + toque nativo" \
+            --notes "Suporta horizontal e vertical sem rotação landscape forçada. O mapa é criado primeiro e os painéis/botões ficam como Views de topo, usando toque Android nativo. Mantém velocidade e ponte de radares MusicRoad." \
+            EstradaPlay-1.7.6.apk EstradaPlay-1.7.6-SERVIDOR.zip

@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+def musicRoadUrl = project.findProperty('MUSICROAD_URL') ?: 'https://musicroad1.gestao2.store/'
+
+android {
+    namespace 'com.musicroad.ai'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.musicroad.ai'
+        minSdk 24
+        targetSdk 35
+        versionCode 51
+        versionName '2.4.1'
+        buildConfigField 'String', 'MUSICROAD_URL', '"' + musicRoadUrl.replace('"', '\\"') + '"'
+    }
+
+    buildFeatures { buildConfig true }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+
+dependencies {
+    implementation 'androidx.activity:activity:1.10.1'
+    implementation 'com.mapbox.maps:android:11.28.3'
+}

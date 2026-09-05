@@ -1,0 +1,77 @@
+name: Server Central v2 Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [agent/native-apk-build]
+    paths:
+      - '.github/workflows/server-central-v2-release.yml'
+  workflow_dispatch:
+
+jobs:
+  server:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/native-apk-build
+          fetch-depth: 0
+
+      - name: Integrate
+        run: python3 .github/scripts/integrate_server_central_v2.py
+
+      - name: PHP syntax
+        run: |
+          php -l api/bootstrap.php
+          php -l api/server_500mb.php
+          php -l api/native_library_sync.php
+          php -l api/native_app.php
+          php -l api/google_drive_public.php
+          php -l api/cron_drive_sync.php
+          php -l admin.php
+          php -l admin_server.php
+
+      - name: Validate architecture
+        run: |
+          grep -q SERVER_500MB_V2 api/server_500mb.php
+          grep -q drive_sync_history api/server_500mb.php
+          grep -q server_catalog_version api/server_500mb.php
+          grep -q last_sync_inserted api/server_500mb.php
+          grep -q 'Central do Servidor' admin.php
+          grep -q 'Diagnóstico permanente' admin_server.php
+          grep -q safeFolders admin_server.php
+          grep -q catalog_version api/native_app.php
+
+      - name: Commit integration
+        run: |
+          git config user.name github-actions-bot
+          git config user.email github-actions-bot@users.noreply.github.com
+          git add admin.php admin_server.php api/native_app.php
+          git commit -m 'Integrate Server Central v2 [skip ci]' || true
+          git push origin HEAD:agent/native-apk-build
+
+      - name: Package
+        run: |
+          rm -rf /tmp/server-central-v2
+          mkdir -p /tmp/server-central-v2/api
+          cp api/bootstrap.php /tmp/server-central-v2/api/
+          cp api/server_500mb.php /tmp/server-central-v2/api/
+          cp api/native_library_sync.php /tmp/server-central-v2/api/
+          cp api/native_app.php /tmp/server-central-v2/api/
+          cp api/google_drive_public.php /tmp/server-central-v2/api/
+          cp api/cron_drive_sync.php /tmp/server-central-v2/api/
+          cp admin.php admin_server.php /tmp/server-central-v2/
+          printf '%s\n' 'EstradaPlay - Central do Servidor 500 MB v2' '' 'SOMENTE SERVIDOR. Nao contem APK nem config.php.' 'Extraia na raiz da instalacao e sobrescreva os arquivos incluidos.' '' 'Acesse /admin_server.php depois da instalacao.' > /tmp/server-central-v2/LEIA-PRIMEIRO.txt
+          cd /tmp/server-central-v2
+          zip -qr "$GITHUB_WORKSPACE/EstradaPlay-SERVIDOR-500MB-CENTRAL-v2.zip" .
+          cd "$GITHUB_WORKSPACE"
+          sha256sum EstradaPlay-SERVIDOR-500MB-CENTRAL-v2.zip
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="estradaplay-server-central-v2-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --target "$(git rev-parse HEAD)" --title 'EstradaPlay - Central do Servidor 500 MB v2' --notes 'Atualizacao somente do servidor. Central protegida, historico de sincronizacao, status por pasta, versao do catalogo, alertas de espaco e diagnostico permanente. Nenhuma alteracao no APK.' EstradaPlay-SERVIDOR-500MB-CENTRAL-v2.zip

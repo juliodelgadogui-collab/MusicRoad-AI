@@ -49,13 +49,21 @@ function db(): PDO
     return $pdo;
 }
 
+// SERVER_DB_COMPAT_V209: runtime PHP/SQL is normalized for SQLite and MySQL/MariaDB.
+// DB_COMPAT_V207: minimum runtime schema compatible with SQLite and MySQL/MariaDB.
 function schema_columns(string $table): array
 {
     try {
-        $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $driver = (string)db()->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
         if ($driver === 'sqlite') {
-            $rows = db()->query("PRAGMA table_info(" . preg_replace('/[^a-zA-Z0-9_]/', '', $table) . ")")->fetchAll();
+            $rows = db()->query("PRAGMA table_info(" . $safe . ")")->fetchAll();
             return array_map(fn($r) => (string)$r['name'], $rows);
+        }
+        if ($driver === 'mysql') {
+            $stmt = db()->prepare('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION');
+            $stmt->execute([$safe]);
+            return array_map(fn($r) => (string)$r['COLUMN_NAME'], $stmt->fetchAll() ?: []);
         }
     } catch (Throwable $e) {}
     return [];
@@ -66,75 +74,67 @@ function ensure_schema(): void
     static $done = false;
     if ($done) return;
     $done = true;
+    $driver = (string)db()->getAttribute(PDO::ATTR_DRIVER_NAME);
 
-    $sql = @file_get_contents(__DIR__ . '/../database/schema.sql');
-    if ($sql !== false) {
-        try { db()->exec($sql); } catch (Throwable $e) { error_log('Schema: ' . $e->getMessage()); }
-    }
-
-    // Migração leve para instalações v7.x.
-    $cols = schema_columns('users');
-    foreach ([
-        'status' => "TEXT NOT NULL DEFAULT 'active'",
-        'last_login_at' => 'TEXT',
-        'updated_at' => 'TEXT',
-    ] as $name => $definition) {
-        if ($cols && !in_array($name, $cols, true)) {
-            try { db()->exec("ALTER TABLE users ADD COLUMN $name $definition"); } catch (Throwable $e) {}
+    if ($driver === 'sqlite') {
+        $sql = @file_get_contents(__DIR__ . '/../database/schema.sql');
+        if ($sql !== false) {
+            try { db()->exec($sql); } catch (Throwable $e) { error_log('Schema sqlite: ' . $e->getMessage()); }
+        }
+    } elseif ($driver === 'mysql') {
+        $ddl = [
+            "CREATE TABLE IF NOT EXISTS users (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,name VARCHAR(190) NOT NULL,email VARCHAR(190) NOT NULL UNIQUE,username VARCHAR(190) NULL UNIQUE,password_hash VARCHAR(255) NOT NULL,role VARCHAR(32) NOT NULL DEFAULT 'client',status VARCHAR(32) NOT NULL DEFAULT 'active',last_login_at DATETIME NULL,created_at DATETIME NOT NULL,updated_at DATETIME NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS music_library (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,user_id INT NULL,title VARCHAR(255) NOT NULL,artist TEXT NULL,album VARCHAR(255) NULL,genre VARCHAR(120) NULL,year INT NULL,duration INT NULL,cover_url TEXT NULL,origin VARCHAR(64) NOT NULL,origin_ref VARCHAR(255) NULL,mime_type VARCHAR(120) NULL,file_size BIGINT NULL,created_at DATETIME NOT NULL,UNIQUE KEY idx_music_origin_ref (origin,origin_ref)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS drive_folders (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,name VARCHAR(255) NULL,folder_id VARCHAR(255) NOT NULL UNIQUE,folder_link TEXT NOT NULL,active TINYINT(1) NOT NULL DEFAULT 1,last_import_at DATETIME NULL,last_status TEXT NULL,created_at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS client_device_state (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,user_id INT NOT NULL,device_id VARCHAR(190) NOT NULL,device_name VARCHAR(190) NULL,music_permission VARCHAR(32) NOT NULL DEFAULT 'unknown',location_permission VARCHAR(32) NOT NULL DEFAULT 'unknown',music_folder_count INT NOT NULL DEFAULT 0,music_track_count INT NOT NULL DEFAULT 0,last_latitude DOUBLE NULL,last_longitude DOUBLE NULL,last_seen_at DATETIME NOT NULL,UNIQUE KEY idx_device_user (user_id,device_id),KEY idx_device_id (device_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS app_settings (`key` VARCHAR(190) NOT NULL PRIMARY KEY,value TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS audit_logs (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,action VARCHAR(190) NOT NULL,payload LONGTEXT NULL,ip VARCHAR(64) NULL,created_at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS user_music_state (user_id INT NOT NULL,music_id INT NOT NULL,is_favorite TINYINT(1) NOT NULL DEFAULT 0,play_count INT NOT NULL DEFAULT 0,skip_count INT NOT NULL DEFAULT 0,last_played_at DATETIME NULL,PRIMARY KEY (user_id,music_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        ];
+        foreach ($ddl as $sql) {
+            try { db()->exec($sql); } catch (Throwable $e) { error_log('Schema mysql: ' . $e->getMessage()); }
         }
     }
 
+    $cols = schema_columns('users');
+    if ($cols) {
+        $defs = $driver === 'mysql'
+            ? ['status'=>"VARCHAR(32) NOT NULL DEFAULT 'active'",'last_login_at'=>'DATETIME NULL','updated_at'=>'DATETIME NULL']
+            : ['status'=>"TEXT NOT NULL DEFAULT 'active'",'last_login_at'=>'TEXT','updated_at'=>'TEXT'];
+        foreach ($defs as $name => $definition) {
+            if (!in_array($name, $cols, true)) {
+                try { db()->exec("ALTER TABLE users ADD COLUMN $name $definition"); } catch (Throwable $e) {}
+            }
+        }
+    }
     try {
         db()->exec("UPDATE users SET role = 'client' WHERE role IN ('user','cliente')");
         db()->exec("UPDATE users SET status = 'active' WHERE status IS NULL OR status = ''");
     } catch (Throwable $e) {}
-
-    // Tabelas/índices que precisam existir mesmo em bancos antigos.
-    db()->exec("CREATE TABLE IF NOT EXISTS user_music_state (
-        user_id INTEGER NOT NULL,
-        music_id INTEGER NOT NULL,
-        is_favorite INTEGER NOT NULL DEFAULT 0,
-        play_count INTEGER NOT NULL DEFAULT 0,
-        skip_count INTEGER NOT NULL DEFAULT 0,
-        last_played_at TEXT,
-        PRIMARY KEY (user_id, music_id)
-    )");
-    db()->exec("CREATE TABLE IF NOT EXISTS client_device_state (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        device_id TEXT NOT NULL,
-        device_name TEXT,
-        music_permission TEXT NOT NULL DEFAULT 'unknown',
-        location_permission TEXT NOT NULL DEFAULT 'unknown',
-        music_folder_count INTEGER NOT NULL DEFAULT 0,
-        music_track_count INTEGER NOT NULL DEFAULT 0,
-        last_latitude REAL,
-        last_longitude REAL,
-        last_seen_at TEXT NOT NULL,
-        UNIQUE(user_id, device_id)
-    )");
-    db()->exec('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
-    db()->exec('CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL, payload TEXT, ip TEXT, created_at TEXT NOT NULL)');
+    if (function_exists('server_ensure_500mb_schema')) server_ensure_500mb_schema();
 }
 
 function ensure_default_users(): void
 {
     ensure_schema();
+    global $config;
+    if (($config['env'] ?? 'production') !== 'development') return;
+    $now = date('Y-m-d H:i:s');
     $adminCount = (int)db()->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
     if ($adminCount === 0) {
-        $stmt = db()->prepare("INSERT INTO users (name,email,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,'active',datetime('now'),datetime('now'))");
-        $stmt->execute(['Administrador', 'admin@musicroad.local', 'adm', password_hash('1', PASSWORD_DEFAULT), 'admin']);
+        $stmt = db()->prepare("INSERT INTO users (name,email,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,'active',?,?)");
+        $stmt->execute(['Administrador', 'admin@musicroad.local', 'adm', password_hash('1', PASSWORD_DEFAULT), 'admin', $now, $now]);
     }
     $clientCount = (int)db()->query("SELECT COUNT(*) FROM users WHERE role = 'client'")->fetchColumn();
     if ($clientCount === 0) {
-        $stmt = db()->prepare("INSERT INTO users (name,email,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,'active',datetime('now'),datetime('now'))");
-        $stmt->execute(['Cliente Teste', 'cliente@musicroad.local', 'cliente', password_hash('1', PASSWORD_DEFAULT), 'client']);
+        $stmt = db()->prepare("INSERT INTO users (name,email,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,'active',?,?)");
+        $stmt->execute(['Cliente Teste', 'cliente@musicroad.local', 'cliente', password_hash('1', PASSWORD_DEFAULT), 'client', $now, $now]);
     }
 }
 
 // Compatibilidade com os arquivos anteriores.
 function ensure_default_admin(): void { ensure_default_users(); }
-function ensure_runtime_tables(): void { ensure_schema(); }
+function ensure_runtime_tables(): void { ensure_schema(); if (function_exists('server_housekeeping')) server_housekeeping(); }
 
 function current_user(): ?array
 {
@@ -196,17 +196,21 @@ function app_setting(string $key, ?string $default = null): ?string
 function set_app_setting(string $key, ?string $value): void
 {
     ensure_schema();
-    $stmt = db()->prepare("INSERT INTO app_settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
     try {
+        $driver = (string)db()->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $sql = $driver === 'mysql'
+            ? "INSERT INTO app_settings (`key`,value) VALUES (?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)"
+            : "INSERT INTO app_settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value";
+        $stmt = db()->prepare($sql);
         $stmt->execute([$key, $value]);
     } catch (Throwable $e) {
-        $exists = db()->prepare('SELECT key FROM app_settings WHERE key = ?');
+        $exists = db()->prepare('SELECT `key` FROM app_settings WHERE `key` = ?');
         $exists->execute([$key]);
         if ($exists->fetchColumn()) {
-            $u = db()->prepare('UPDATE app_settings SET value = ? WHERE key = ?');
+            $u = db()->prepare('UPDATE app_settings SET value = ? WHERE `key` = ?');
             $u->execute([$value, $key]);
         } else {
-            $i = db()->prepare('INSERT INTO app_settings (key,value) VALUES (?,?)');
+            $i = db()->prepare('INSERT INTO app_settings (`key`,value) VALUES (?,?)');
             $i->execute([$key, $value]);
         }
     }
@@ -271,8 +275,8 @@ function audit_log(string $action, array $payload = []): void
 {
     ensure_schema();
     try {
-        $stmt = db()->prepare("INSERT INTO audit_logs (action,payload,ip,created_at) VALUES (?,?,?,datetime('now'))");
-        $stmt->execute([$action, json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES), $_SERVER['REMOTE_ADDR'] ?? 'cli']);
+        $stmt = db()->prepare("INSERT INTO audit_logs (action,payload,ip,created_at) VALUES (?,?,?,?)");
+        $stmt->execute([$action, json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES), $_SERVER['REMOTE_ADDR'] ?? 'cli', date('Y-m-d H:i:s')]);
     } catch (Throwable $e) {}
 }
 
@@ -302,3 +306,7 @@ function http_json(string $url, ?string $postBody = null, array $headers = []): 
     $data = json_decode((string)$raw,true);
     return is_array($data) ? $data : null;
 }
+
+
+require_once __DIR__ . '/server_500mb.php';
+server_rotate_logs();
