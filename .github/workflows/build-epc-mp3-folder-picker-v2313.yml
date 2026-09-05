@@ -1,0 +1,115 @@
+name: EPC Android 2.3.13 Pasta MP3 Direta
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - 'estrada-play-comunista-app/app/build.gradle'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/DeviceMusicStore.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/MusicPlayerActivity.java'
+      - 'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/PlayerService.java'
+      - '.github/workflows/build-epc-mp3-folder-picker-v2313.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: epc-android-v2313-folder-picker
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+
+      - name: Validate 2.3.13 direct folder source
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          J="$APP/app/src/main/java/com/estradaplay/comunista"
+          G="$APP/app/build.gradle"
+
+          grep -q "versionCode 244" "$G"
+          grep -q "versionName '2.3.13'" "$G"
+          grep -q 'EPC_2313_MP3_FOLDER_PICKER' "$G"
+          grep -q 'DEVICE_MUSIC_V2313_FOLDER_PICKER' "$J/DeviceMusicStore.java"
+          grep -q 'ACTION_OPEN_DOCUMENT_TREE' "$J/MusicPlayerActivity.java"
+          grep -q 'takePersistableUriPermission' "$J/DeviceMusicStore.java"
+          grep -q 'buildChildDocumentsUriUsingTree' "$J/DeviceMusicStore.java"
+          grep -q 'endsWith(".mp3")' "$J/DeviceMusicStore.java"
+          grep -q 'ESCOLHER PASTA DE MP3' "$J/MusicPlayerActivity.java"
+          grep -q 'TROCAR PASTA DE MP3' "$J/MusicPlayerActivity.java"
+          grep -q 'ATUALIZAR PASTA MP3' "$J/MusicPlayerActivity.java"
+          grep -q 'requestedKey.startsWith("tree_")' "$J/PlayerService.java"
+          if grep -q 'MediaStore' "$J/DeviceMusicStore.java"; then
+            echo 'MediaStore must not be used in direct folder mode'; exit 1
+          fi
+          if grep -R -q 'android.webkit.WebView\|new WebView' "$APP/app/src/main/java"; then
+            echo 'WebView detected'; exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare development signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          base64 -d "$APP/signing/estradaplay-dev.keystore.b64" > "$APP/signing/estradaplay-dev.keystore"
+
+      - name: Generate embedded Portuguese voice bank
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          python3 -m pip install --disable-pip-version-check sherpa-onnx soundfile numpy
+          MODEL=/tmp/vits-piper-pt_BR-faber-medium.tar.bz2
+          curl -L --fail --retry 3 --retry-delay 2 -o "$MODEL" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2
+          echo "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83  $MODEL" | sha256sum -c -
+          rm -rf /tmp/epc-v2313-voice && mkdir -p /tmp/epc-v2313-voice
+          tar -xjf "$MODEL" -C /tmp/epc-v2313-voice
+          python3 "$APP/tools/generate_voice_bank.py" --model-root /tmp/epc-v2313-voice --output "$APP/app/src/main/res/raw" --metadata-output "$APP/app/src/main/assets/estradaplay_voice"
+          test "$(find "$APP/app/src/main/res/raw" -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
+
+      - name: Unit tests and build universal plus horizontal APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=estrada-play-comunista-app
+          (cd "$APP" && gradle --no-daemon testUniversalDebugUnitTest testHorizontalDebugUnitTest assembleUniversalDebug assembleHorizontalDebug)
+
+          U="$APP/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
+          H="$APP/app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk"
+          test -f "$U"
+          test -f "$H"
+
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$U" | tee /tmp/epc-v2313-universal.txt
+          grep -q "package: name='com.estradaplay.comunista.universal' versionCode='244' versionName='2.3.13'" /tmp/epc-v2313-universal.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$H" | tee /tmp/epc-v2313-horizontal.txt
+          grep -q "package: name='com.estradaplay.comunista.horizontal' versionCode='244' versionName='2.3.13'" /tmp/epc-v2313-horizontal.txt
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$U"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$H"
+
+          cp "$U" Estrada-Play-Comunista-Universal-2.3.13.apk
+          cp "$H" Estrada-Play-Comunista-Horizontal-2.3.13.apk
+          sha256sum Estrada-Play-Comunista-Universal-2.3.13.apk Estrada-Play-Comunista-Horizontal-2.3.13.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-2.3.13-Pasta-MP3-Direta
+          path: |
+            Estrada-Play-Comunista-Universal-2.3.13.apk
+            Estrada-Play-Comunista-Horizontal-2.3.13.apk
+          retention-days: 7
+          compression-level: 0
