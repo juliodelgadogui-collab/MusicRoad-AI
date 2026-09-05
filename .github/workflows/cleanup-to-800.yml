@@ -1,0 +1,52 @@
+name: Cleanup Actions To 800
+
+on:
+  push:
+    branches: [agent/estrada-play-comunista]
+    paths:
+      - '.github/workflows/cleanup-to-800.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete a small batch of oldest workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          KEEP_RUN_ID: '33965586079'
+        shell: bash
+        run: |
+          set -u
+          target=800
+          total=$(gh api "/repos/$REPO/actions/runs?per_page=1" --jq '.total_count')
+          echo "Total before: $total"
+          if [ "$total" -le "$target" ]; then
+            echo "Already at target"
+            exit 0
+          fi
+          need=$((total-target))
+          batch=25
+          if [ "$need" -lt "$batch" ]; then batch=$need; fi
+          page=$(((total + 99) / 100))
+          mapfile -t ids < <(gh api "/repos/$REPO/actions/runs?per_page=100&page=$page" --jq '.workflow_runs | reverse | .[].id')
+          deleted=0
+          for id in "${ids[@]}"; do
+            [ "$deleted" -ge "$batch" ] && break
+            [ "$id" = "$CURRENT_RUN_ID" ] && continue
+            [ "$id" = "$KEEP_RUN_ID" ] && continue
+            echo "Deleting old run $id"
+            if gh api --method DELETE "/repos/$REPO/actions/runs/$id" >/dev/null 2>&1; then
+              deleted=$((deleted+1))
+            fi
+            sleep 1
+          done
+          after=$(gh api "/repos/$REPO/actions/runs?per_page=1" --jq '.total_count' || echo unknown)
+          echo "Deleted: $deleted"
+          echo "Total after: $after"
+          exit 0
