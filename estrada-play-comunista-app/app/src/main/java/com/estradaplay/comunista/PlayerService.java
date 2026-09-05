@@ -21,6 +21,7 @@ import android.os.IBinder;
 import android.os.Looper;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -43,6 +44,7 @@ public final class PlayerService extends Service {
     static final String EXTRA_KEY = "track_key";
     static final String EXTRA_FOLDER = "folder";
     static final String EXTRA_QUEUE_TOKEN = "queue_token";
+    static final String EXTRA_TRACK_JSON = "exact_track_json_v246";
     private static final String CHANNEL = "estradaplay_player";
     private static final int NOTIFICATION_ID = 4501;
 
@@ -61,6 +63,8 @@ public final class PlayerService extends Service {
     // notification use the same local queue as the in-app player. No UI layout changes.
     // PLAYER_EXACT_QUEUE_V245: the visible search/folder result becomes the real queue,
     // survives service/app recreation and drops missing/corrupt files without looping forever.
+    // PLAYER_EXACT_SELECTED_SOURCE_V246: PLAY_TRACK carries the exact Track shown/tapped
+    // in the UI, so a duplicated/stale key can no longer redirect playback to another file.
     private final ArrayList<Track> queue = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -132,16 +136,19 @@ public final class PlayerService extends Service {
         if (ACTION_PLAY_TRACK.equals(action)) {
             String key = intent.getStringExtra(EXTRA_KEY);
             String requestedFolder = normalizeFolder(intent.getStringExtra(EXTRA_FOLDER));
-            ArrayList<String> requestedKeys = readStagedQueue(intent.getStringExtra(EXTRA_QUEUE_TOKEN));
+            String queueToken = intent.getStringExtra(EXTRA_QUEUE_TOKEN);
+            Track exactSelected = exactTrackFromIntent(intent, key);
+            ArrayList<String> requestedKeys = readStagedQueue(queueToken);
             startForeground(NOTIFICATION_ID, notification(null, false));
             io.execute(() -> {
                 ArrayList<Track> loaded = loadQueue(requestedFolder, requestedKeys);
+                alignExactSelected(loaded, exactSelected, key, requestedKeys);
                 main.post(() -> {
                     saveSnapshot();
                     currentFolder = requestedFolder;
                     queue.clear();
                     queue.addAll(loaded);
-                    index = findIndex(key);
+                    index = findIndex(key, exactSelected == null ? "" : exactSelected.localPath);
                     if (index < 0 && !queue.isEmpty()) index = 0;
                     pendingSeekMs = 0;
                     saveSnapshot();
@@ -195,6 +202,54 @@ public final class PlayerService extends Service {
         return new ArrayList<>(all);
     }
 
+    private Track exactTrackFromIntent(Intent intent, String requestedKey) {
+        if (intent == null) return null;
+        String raw = intent.getStringExtra(EXTRA_TRACK_JSON);
+        if (raw == null || raw.trim().isEmpty()) return null;
+        try {
+            Track t = Track.fromStored(new JSONObject(raw));
+            if (t == null || t.localPath == null || t.localPath.trim().isEmpty()) return null;
+            if (requestedKey == null || requestedKey.trim().isEmpty() || requestedKey.equals(t.key())) return t;
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private void alignExactSelected(ArrayList<Track> loaded, Track exact, String requestedKey, List<String> preferredKeys) {
+        if (loaded == null || exact == null || exact.localPath == null || exact.localPath.trim().isEmpty()) return;
+        String key = requestedKey == null || requestedKey.trim().isEmpty() ? exact.key() : requestedKey;
+        String source = exact.localPath.trim();
+
+        for (int i = 0; i < loaded.size(); i++) {
+            Track candidate = loaded.get(i);
+            if (candidate != null && key.equals(candidate.key()) && source.equals(safeSource(candidate.localPath))) return;
+        }
+        for (int i = 0; i < loaded.size(); i++) {
+            Track candidate = loaded.get(i);
+            if (candidate != null && key.equals(candidate.key())) {
+                loaded.set(i, exact);
+                return;
+            }
+        }
+
+        int insertAt = 0;
+        if (preferredKeys != null && !preferredKeys.isEmpty()) {
+            int wanted = preferredKeys.indexOf(key);
+            if (wanted > 0) {
+                for (int p = 0; p < wanted; p++) {
+                    String previous = preferredKeys.get(p);
+                    if (previous == null) continue;
+                    for (Track candidate : loaded) {
+                        if (candidate != null && previous.equals(candidate.key())) {
+                            insertAt++;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        loaded.add(Math.max(0, Math.min(insertAt, loaded.size())), exact);
+    }
+
     private ArrayList<String> readStagedQueue(String token) {
         ArrayList<String> out = new ArrayList<>();
         if (prefs == null || token == null || token.trim().isEmpty()) return out;
@@ -236,7 +291,19 @@ public final class PlayerService extends Service {
         return f.isEmpty() ? "__ALL__" : f;
     }
 
-    private int findIndex(String key) {
+    private static String safeSource(String source) { return source == null ? "" : source.trim(); }
+
+    private int findIndex(String key) { return findIndex(key, ""); }
+
+    private int findIndex(String key, String exactSource) {
+        String source = safeSource(exactSource);
+        if (!source.isEmpty()) {
+            for (int i = 0; i < queue.size(); i++) {
+                Track t = queue.get(i);
+                if (t == null) continue;
+                if ((key == null || key.equals(t.key())) && source.equals(safeSource(t.localPath))) return i;
+            }
+        }
         if (key == null) return -1;
         for (int i = 0; i < queue.size(); i++) if (key.equals(queue.get(i).key())) return i;
         return -1;
