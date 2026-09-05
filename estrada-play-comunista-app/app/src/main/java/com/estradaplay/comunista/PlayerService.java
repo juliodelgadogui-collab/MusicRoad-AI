@@ -77,13 +77,13 @@ public final class PlayerService extends Service {
         return START_NOT_STICKY;
     }
 
-    // DEVICE_MUSIC_V2312: do not trigger a phone scan just to play an Estrada Play download.
-    // Phone MP3s are merged only after the user has already indexed them, or when a device track is requested.
+    // DEVICE_MUSIC_V2313: Estrada Play downloads never trigger a folder scan.
+    // The selected MP3 folder is merged only after it is cached, or when a tree track is requested.
     private ArrayList<Track> loadQueue(String folder, String requestedKey) {
         ArrayList<Track> loaded = new ArrayList<>();
         List<Track> appTracks = store.downloadedTracks();
-        boolean deviceTrackRequested = requestedKey != null && requestedKey.startsWith("device_");
-        List<Track> all = (DeviceMusicStore.hasCached() || deviceTrackRequested)
+        boolean folderTrackRequested = requestedKey != null && requestedKey.startsWith("tree_");
+        List<Track> all = (DeviceMusicStore.hasCached() || folderTrackRequested)
                 ? DeviceMusicStore.merge(this, appTracks)
                 : appTracks;
         String f = folder == null ? "" : folder.trim();
