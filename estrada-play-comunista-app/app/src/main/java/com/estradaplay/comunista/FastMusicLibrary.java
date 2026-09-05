@@ -10,9 +10,10 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * MUSIC_FAST_LOCAL_V2314
- * Reads only the already-saved local download index. It never reconciles folders,
- * walks storage or contacts the server. This keeps the Music screen responsive.
+ * MUSIC_FAST_LOCAL_V2315
+ * Reads only the already-saved Estrada Play download index. No filesystem walk,
+ * no descriptor-open per track and no server. A file is validated only when the
+ * user actually presses Play.
  */
 final class FastMusicLibrary {
     private static final String PREFS = "estradaplay_library_v1";
@@ -33,7 +34,7 @@ final class FastMusicLibrary {
                 JSONObject o = all.optJSONObject(it.next());
                 if (o == null) continue;
                 Track t = Track.fromStored(o);
-                if (t != null && PhoneMp3Store.readable(context, t.localPath)) out.add(t);
+                if (t != null && t.localPath != null && !t.localPath.trim().isEmpty()) out.add(t);
             }
         } catch (Throwable ignored) {}
         return out;
