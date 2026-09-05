@@ -21,18 +21,21 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * PHONE_MP3_V2315_PERSISTENT_INDEX
  * PHONE_MP3_SAFE_REFRESH_V242
+ * PHONE_MP3_INCREMENTAL_REFRESH_V244
  * The Music screen never scans storage. It opens a tiny local SQLite index.
  * MediaStore is touched only on first permission, explicit refresh or after
  * Android reports that the audio collection changed. No server is involved.
  *
- * 2.4.2 makes refresh fail-safe: timeout/provider/security failures never erase
- * the previous local index, and an unexpected empty result is confirmed before
- * replacing a non-empty library. Failed refreshes use a short retry backoff so
- * repeatedly opening Music cannot hammer MediaStore.
+ * 2.4.2 made full refresh fail-safe. 2.4.4 additionally handles precise
+ * MediaStore item notifications one row at a time: adding, editing or removing
+ * one MP3 no longer requires rebuilding the whole phone index. Generic provider
+ * notifications still fall back to the existing safe background full refresh.
  */
 final class PhoneMp3Store {
     private static final Object LOCK = new Object();
@@ -40,6 +43,7 @@ final class PhoneMp3Store {
     private static final long EMPTY_CONFIRM_TIMEOUT_MS = 900L;
     private static final long RETRY_BACKOFF_MS = 60_000L;
     private static final int MAX_TRACKS = 10000;
+    private static final ExecutorService OBSERVER_IO = Executors.newSingleThreadExecutor();
     private static ArrayList<Track> memory = new ArrayList<>();
     private static boolean memoryReady;
     private static boolean lastTimedOut;
@@ -71,19 +75,69 @@ final class PhoneMp3Store {
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                     true,
                     new ContentObserver(new Handler(Looper.getMainLooper())) {
-                        @Override public void onChange(boolean selfChange) { onAudioChanged(app); }
-                        @Override public void onChange(boolean selfChange, Uri uri) { onAudioChanged(app); }
+                        @Override public void onChange(boolean selfChange) { onAudioChanged(app, null); }
+                        @Override public void onChange(boolean selfChange, Uri uri) { onAudioChanged(app, uri); }
                     });
         } catch (Throwable ignored) {
             synchronized (LOCK) { observerInstalled = false; }
         }
     }
 
-    private static void onAudioChanged(Context context) {
+    private static void onAudioChanged(Context context, Uri uri) {
+        Long mediaId = mediaIdFromUri(uri);
+        if (mediaId == null) {
+            markBroadChange(context);
+            return;
+        }
+        OBSERVER_IO.execute(() -> refreshSingle(context, mediaId));
+    }
+
+    private static void markBroadChange(Context context) {
         try { PhoneMp3Index.get(context).markDirty(); } catch (Throwable ignored) {}
         synchronized (LOCK) {
             memoryReady = false;
             retryAfterMs = 0L;
+        }
+    }
+
+    private static void refreshSingle(Context context, long mediaId) {
+        if (context == null || !hasPermission(context)) {
+            markBroadChange(context);
+            return;
+        }
+        PhoneMp3Index db;
+        try { db = PhoneMp3Index.get(context); }
+        catch (Throwable ignored) { markBroadChange(context); return; }
+
+        boolean wasReady = db.isReady();
+        boolean wasDirty = db.isDirty();
+        SingleResult result = querySingle(context, mediaId);
+        if (!result.success) {
+            markBroadChange(context);
+            return;
+        }
+
+        boolean applied = result.track == null ? db.remove(mediaId) : db.upsert(result.track);
+        if (!applied) {
+            markBroadChange(context);
+            return;
+        }
+
+        if (wasReady && !wasDirty) db.markFresh();
+        else db.markDirty();
+
+        synchronized (LOCK) {
+            if (memoryReady) {
+                String key = "phone_" + mediaId;
+                for (int i = memory.size() - 1; i >= 0; i--) {
+                    Track t = memory.get(i);
+                    if (t != null && key.equals(t.id)) memory.remove(i);
+                }
+                if (result.track != null) memory.add(result.track);
+                memory.sort((a, b) -> safeText(a == null ? null : a.title).compareToIgnoreCase(safeText(b == null ? null : b.title)));
+            }
+            retryAfterMs = 0L;
+            lastTimedOut = false;
         }
     }
 
@@ -141,9 +195,6 @@ final class PhoneMp3Store {
             return previous;
         }
 
-        // A transient MediaStore/provider failure used to look like a valid zero-result
-        // query and could wipe a perfectly good local index. Confirm zero independently
-        // before clearing a library that was already populated.
         if (result.tracks.isEmpty() && !previous.isEmpty() && !confirmEmpty(context)) {
             scheduleRetry();
             return previous;
@@ -176,14 +227,7 @@ final class PhoneMp3Store {
         ArrayList<Track> out = new ArrayList<>();
         ContentResolver resolver = context.getContentResolver();
         Uri base = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-        ArrayList<String> projection = new ArrayList<>();
-        projection.add(MediaStore.Audio.Media._ID);
-        projection.add(MediaStore.Audio.Media.TITLE);
-        projection.add(MediaStore.Audio.Media.ARTIST);
-        projection.add(MediaStore.Audio.Media.DISPLAY_NAME);
-        projection.add(MediaStore.Audio.Media.SIZE);
-        if (Build.VERSION.SDK_INT >= 29) projection.add(MediaStore.Audio.Media.RELATIVE_PATH);
-
+        String[] projection = projection();
         String selection = MediaStore.Audio.Media.SIZE + ">0 AND " + MediaStore.Audio.Media.DISPLAY_NAME + " LIKE ?";
         String[] args = new String[]{"%.mp3"};
 
@@ -193,27 +237,12 @@ final class PhoneMp3Store {
         main.postDelayed(cancel, QUERY_TIMEOUT_MS);
         boolean timedOut = false;
         boolean success = false;
-        try (Cursor c = resolver.query(base, projection.toArray(new String[0]), selection, args, null, signal)) {
+        try (Cursor c = resolver.query(base, projection, selection, args, null, signal)) {
             if (c != null) {
-                int id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
-                int title = c.getColumnIndex(MediaStore.Audio.Media.TITLE);
-                int artist = c.getColumnIndex(MediaStore.Audio.Media.ARTIST);
-                int name = c.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME);
-                int size = c.getColumnIndex(MediaStore.Audio.Media.SIZE);
-                int path = Build.VERSION.SDK_INT >= 29 ? c.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) : -1;
+                RowColumns columns = new RowColumns(c);
                 while (c.moveToNext() && out.size() < MAX_TRACKS) {
-                    String display = value(c, name);
-                    if (!isMp3(display)) continue;
-                    long mediaId = c.getLong(id);
-                    long bytes = 0L;
-                    try { if (size >= 0 && !c.isNull(size)) bytes = Math.max(0L, c.getLong(size)); } catch (Throwable ignored) {}
-                    String rawTitle = value(c, title);
-                    if (rawTitle.isEmpty()) rawTitle = stripExtension(display);
-                    String rawArtist = value(c, artist);
-                    String folder = path >= 0 ? friendlyFolder(value(c, path)) : "Celular";
-                    Uri uri = ContentUris.withAppendedId(base, mediaId);
-                    out.add(new Track("phone_" + mediaId, rawTitle, rawArtist, "", folder, folder,
-                            "audio/mpeg", "", uri.toString(), bytes, 0L));
+                    Track track = rowTrack(c, columns, base);
+                    if (track != null) out.add(track);
                 }
                 success = true;
             }
@@ -227,6 +256,22 @@ final class PhoneMp3Store {
             main.removeCallbacks(cancel);
         }
         return new QueryResult(out, success, timedOut);
+    }
+
+    private static SingleResult querySingle(Context context, long mediaId) {
+        ContentResolver resolver = context.getContentResolver();
+        Uri base = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        String selection = MediaStore.Audio.Media._ID + "=? AND " + MediaStore.Audio.Media.SIZE + ">0 AND " + MediaStore.Audio.Media.DISPLAY_NAME + " LIKE ?";
+        String[] args = new String[]{Long.toString(mediaId), "%.mp3"};
+        try (Cursor c = resolver.query(base, projection(), selection, args, null)) {
+            if (c == null) return new SingleResult(null, false);
+            if (!c.moveToFirst()) return new SingleResult(null, true);
+            return new SingleResult(rowTrack(c, new RowColumns(c), base), true);
+        } catch (SecurityException ignored) {
+            return new SingleResult(null, false);
+        } catch (Throwable ignored) {
+            return new SingleResult(null, false);
+        }
     }
 
     private static boolean confirmEmpty(Context context) {
@@ -278,6 +323,44 @@ final class PhoneMp3Store {
         return f.isFile() && f.length() > 0;
     }
 
+    private static String[] projection() {
+        ArrayList<String> p = new ArrayList<>();
+        p.add(MediaStore.Audio.Media._ID);
+        p.add(MediaStore.Audio.Media.TITLE);
+        p.add(MediaStore.Audio.Media.ARTIST);
+        p.add(MediaStore.Audio.Media.DISPLAY_NAME);
+        p.add(MediaStore.Audio.Media.SIZE);
+        if (Build.VERSION.SDK_INT >= 29) p.add(MediaStore.Audio.Media.RELATIVE_PATH);
+        return p.toArray(new String[0]);
+    }
+
+    private static Track rowTrack(Cursor c, RowColumns columns, Uri base) {
+        if (c == null || columns == null) return null;
+        String display = value(c, columns.name);
+        if (!isMp3(display)) return null;
+        long mediaId;
+        try { mediaId = c.getLong(columns.id); } catch (Throwable ignored) { return null; }
+        long bytes = 0L;
+        try { if (columns.size >= 0 && !c.isNull(columns.size)) bytes = Math.max(0L, c.getLong(columns.size)); } catch (Throwable ignored) {}
+        String rawTitle = value(c, columns.title);
+        if (rawTitle.isEmpty()) rawTitle = stripExtension(display);
+        String rawArtist = value(c, columns.artist);
+        String folder = columns.path >= 0 ? friendlyFolder(value(c, columns.path)) : "Celular";
+        Uri uri = ContentUris.withAppendedId(base, mediaId);
+        return new Track("phone_" + mediaId, rawTitle, rawArtist, "", folder, folder,
+                "audio/mpeg", "", uri.toString(), bytes, 0L);
+    }
+
+    private static Long mediaIdFromUri(Uri uri) {
+        if (uri == null) return null;
+        String base = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI.toString();
+        String raw = uri.toString();
+        if (!raw.startsWith(base + "/")) return null;
+        String last = uri.getLastPathSegment();
+        if (last == null || last.trim().isEmpty()) return null;
+        try { return Long.parseLong(last.trim()); } catch (Throwable ignored) { return null; }
+    }
+
     private static String friendlyFolder(String raw) {
         String p = raw == null ? "" : raw.replace('\\', '/').trim();
         while (p.endsWith("/")) p = p.substring(0, p.length() - 1);
@@ -312,6 +395,20 @@ final class PhoneMp3Store {
         return n.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").trim();
     }
 
+    private static String safeText(String value) { return value == null ? "" : value; }
+
+    private static final class RowColumns {
+        final int id, title, artist, name, size, path;
+        RowColumns(Cursor c) {
+            id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+            title = c.getColumnIndex(MediaStore.Audio.Media.TITLE);
+            artist = c.getColumnIndex(MediaStore.Audio.Media.ARTIST);
+            name = c.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME);
+            size = c.getColumnIndex(MediaStore.Audio.Media.SIZE);
+            path = Build.VERSION.SDK_INT >= 29 ? c.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) : -1;
+        }
+    }
+
     private static final class QueryResult {
         final ArrayList<Track> tracks;
         final boolean success;
@@ -321,6 +418,15 @@ final class PhoneMp3Store {
             this.tracks = tracks == null ? new ArrayList<>() : tracks;
             this.success = success;
             this.timedOut = timedOut;
+        }
+    }
+
+    private static final class SingleResult {
+        final Track track;
+        final boolean success;
+        SingleResult(Track track, boolean success) {
+            this.track = track;
+            this.success = success;
         }
     }
 }
