@@ -23,6 +23,7 @@
     <application
         android:name=".EstradaPlayApplication"
         android:allowBackup="false"
+        android:enableOnBackInvokedCallback="false"
         android:hardwareAccelerated="true"
         android:resizeableActivity="false"
         android:label="${appLabel}"
@@ -31,6 +32,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.EstradaPlay"
         android:usesCleartextTraffic="false">
+
+        <!-- ANDROID16_COMPAT_V251: preserve the current fixed-orientation cockpit on sw600dp+
+             while the layouts are migrated incrementally to Android 16 adaptive-window behavior. -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
 
         <activity
             android:name=".GateActivity"
