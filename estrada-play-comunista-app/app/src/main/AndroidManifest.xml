@@ -64,6 +64,7 @@
         <activity android:name=".NearbyServicesActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".VoiceCommandActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".VoiceDiagnosticsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".SystemDiagnosticsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".DriveToolsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".OfflineCenterActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CollectiveRoadActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
