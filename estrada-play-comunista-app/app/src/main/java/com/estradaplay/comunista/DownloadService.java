@@ -331,8 +331,7 @@ public final class DownloadService extends Service {
     }
 
     private void updateNotification(Notification n) {
-        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (nm != null) nm.notify(NOTIFICATION_ID, n);
+        NotificationPermissionCompat.notify(this, NOTIFICATION_ID, n);
     }
 
     @Override public void onTimeout(int startId, int fgsType) {
