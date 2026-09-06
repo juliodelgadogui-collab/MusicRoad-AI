@@ -158,19 +158,15 @@ tar -xjf "$VOICE_MODEL" -C "$VOICE_ROOT"
 
 test "$(find app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
 
-log "Executando Android Lint, testes e compilando Universal + Horizontal TESTE"
+# UNIVERSAL_ONLY_BUILD_V300: Codespace test build intentionally targets only Universal.
+log "Executando Android Lint, testes e compilando somente Universal TESTE"
 "$GRADLE" --no-daemon \
   lintUniversalDebug \
-  lintHorizontalDebug \
   testUniversalDebugUnitTest \
-  testHorizontalDebugUnitTest \
-  assembleUniversalDebug \
-  assembleHorizontalDebug
+  assembleUniversalDebug
 
 U="app/build/outputs/apk/universal/debug/app-universal-debug.apk"
-H="app/build/outputs/apk/horizontal/debug/app-horizontal-debug.apk"
 test -f "$U"
-test -f "$H"
 
 AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
 APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
@@ -223,24 +219,18 @@ validate_apk(){
   "$APKSIGNER" verify --print-certs "$apk"
 }
 
-# EPC_DEBUG_ISOLATED_V300: debug IDs are intentionally different from production.
+# EPC_DEBUG_ISOLATED_V300: debug ID is intentionally different from production.
 validate_apk "$U" "com.estradaplay.comunista.universal.teste" "Universal Teste" /tmp/epc-v300-universal-teste.txt
-validate_apk "$H" "com.estradaplay.comunista.horizontal.teste" "Horizontal Teste" /tmp/epc-v300-horizontal-teste.txt
 
-log "Organizando APKs de teste"
+log "Organizando APK Universal de teste"
 rm -rf "$DIST"
 mkdir -p "$DIST"
 cp "$U" "$DIST/Estrada-Play-Comunista-Teste-Universal-3.0.0.apk"
-cp "$H" "$DIST/Estrada-Play-Comunista-Teste-Horizontal-3.0.0.apk"
 (
   cd "$DIST"
-  sha256sum \
-    Estrada-Play-Comunista-Teste-Universal-3.0.0.apk \
-    Estrada-Play-Comunista-Teste-Horizontal-3.0.0.apk \
-    | tee SHA256SUMS.txt
+  sha256sum Estrada-Play-Comunista-Teste-Universal-3.0.0.apk | tee SHA256SUMS.txt
 )
 
-log "BUILD TESTE 3.0.0 CONCLUÍDO"
-printf 'APKs em: %s\n' "$DIST"
+log "BUILD UNIVERSAL TESTE 3.0.0 CONCLUÍDO"
+printf 'APK em: %s\n' "$DIST"
 printf ' - %s\n' "$DIST/Estrada-Play-Comunista-Teste-Universal-3.0.0.apk"
-printf ' - %s\n' "$DIST/Estrada-Play-Comunista-Teste-Horizontal-3.0.0.apk"
