@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/bootstrap.php';
 require_once __DIR__.'/road_safety_pack_helpers.php';
 require_once __DIR__.'/road_hazard_db.php';
+require_once __DIR__.'/national_safety_sync_helpers.php';
 
 $allowed=PHP_SAPI==='cli';
 if(!$allowed){$given=trim((string)($_GET['key']??''));$allowed=$given!==''&&hash_equals(server_cron_key(),$given);}
@@ -17,16 +18,14 @@ $results=[];$allOk=true;
 
 try{
     for($i=0;$i<$batch;$i++){
-        $chunk=road_hazard_next_chunk_for_sync($onlyUf);
+        $chunk=national_safety_next_balanced_chunk($onlyUf);
         if($chunk===null)break;
         $r=road_hazard_sync_chunk($chunk);$results[]=$r;
         if(empty($r['ok'])){$allOk=false;break;}
     }
-    $next=road_hazard_next_chunk_for_sync($onlyUf);
+    $next=national_safety_next_balanced_chunk($onlyUf);
     $payload=[
-        'ok'=>$allOk&&!empty($results),
-        'mode'=>'chunked-national-sync',
-        'processed'=>$results,
+        'ok'=>$allOk&&!empty($results),'mode'=>'chunked-national-sync','processed'=>$results,
         'next_chunk'=>$next===null?null:['key'=>$next['key'],'uf'=>$next['uf']],
         'national'=>['types'=>road_hazard_stats(),'states_total'=>count(ep2_brazil_ufs())]
     ];
