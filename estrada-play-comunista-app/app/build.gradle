@@ -79,7 +79,14 @@ android {
     }
 
     buildTypes {
-        debug { signingConfig signingConfigs.debug }
+        // EPC_DEBUG_ISOLATED_V300: every debug APK is a separate test app and never
+        // upgrades/replaces the production package already installed on the device.
+        debug {
+            applicationIdSuffix '.teste'
+            versionNameSuffix '-teste'
+            manifestPlaceholders = [appLabel: 'Estrada Play Comunista Teste']
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             if (releaseSigningReady) signingConfig signingConfigs.release
