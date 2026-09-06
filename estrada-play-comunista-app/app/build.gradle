@@ -35,28 +35,19 @@ android {
         universal {
             dimension 'orientation'
             applicationIdSuffix '.universal'
-            manifestPlaceholders = [
-                appLabel: 'Estrada Play Comunista',
-                appOrientation: 'fullSensor'
-            ]
+            manifestPlaceholders = [appLabel: 'Estrada Play Comunista', appOrientation: 'fullSensor']
             buildConfigField 'String', 'FIXED_LAYOUT', '"universal"'
         }
         vertical {
             dimension 'orientation'
             applicationIdSuffix '.vertical'
-            manifestPlaceholders = [
-                appLabel: 'Estrada Play Comunista Vertical',
-                appOrientation: 'sensorPortrait'
-            ]
+            manifestPlaceholders = [appLabel: 'Estrada Play Comunista Vertical', appOrientation: 'sensorPortrait']
             buildConfigField 'String', 'FIXED_LAYOUT', '"vertical"'
         }
         horizontal {
             dimension 'orientation'
             applicationIdSuffix '.horizontal'
-            manifestPlaceholders = [
-                appLabel: 'Estrada Play Comunista Horizontal',
-                appOrientation: 'sensorLandscape'
-            ]
+            manifestPlaceholders = [appLabel: 'Estrada Play Comunista Horizontal', appOrientation: 'sensorLandscape']
             buildConfigField 'String', 'FIXED_LAYOUT', '"horizontal"'
         }
     }
@@ -79,8 +70,6 @@ android {
     }
 
     buildTypes {
-        // EPC_DEBUG_ISOLATED_V300: every debug APK is a separate test app and never
-        // upgrades/replaces the production package already installed on the device.
         debug {
             applicationIdSuffix '.teste'
             versionNameSuffix '-teste'
@@ -108,7 +97,7 @@ dependencies {
     implementation 'androidx.camera:camera-lifecycle:1.4.2'
     implementation 'androidx.camera:camera-view:1.4.2'
     implementation 'androidx.camera:camera-video:1.4.2'
-    implementation 'com.google.mlkit:text-recognition:16.0.1'
+    // CAMERA_RECORD_ONLY_V301: ML Kit/OCR removido; a câmera é somente dashcam.
     implementation 'io.github.webrtc-sdk:android:144.7559.09'
     testImplementation 'junit:junit:4.13.2'
 }
