@@ -25,6 +25,10 @@ final class RoadHazardSelector {
 
     static Selection select(List<RoadHazard> nearby, double lat, double lon, double heading,
                             double speedKmh, boolean rain, RoadAlertCooldown cooldown, long nowMs) {
+        // MOBILITY_MODE_V301: after one full minute classified as walking, automotive road
+        // warnings stay quiet. They become eligible again automatically when vehicle motion returns.
+        if (MobilityModeState.isPedestrian()) return Selection.empty();
+
         if (nearby == null || nearby.isEmpty() || !Double.isFinite(heading) || speedKmh < 3.0) {
             return Selection.empty();
         }
