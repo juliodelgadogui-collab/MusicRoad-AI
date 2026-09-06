@@ -58,9 +58,9 @@ final class SessionValidityGuardV300 implements Application.ActivityLifecycleCal
         lastCheckAt = now;
         io.execute(() -> {
             try {
-                // SESSION_ACCOUNT_SWITCH_GUARD_V300: capture the exact local account and auth
+                // SESSION_ACCOUNT_SWITCH_GUARD_V300: capture the exact local account and session
                 // generation immediately before the request. A late response from account A
-                // cannot overwrite/revoke account B or a newer login of the same account.
+                // cannot refresh/rewrite account B or a newer login.
                 String accountAtStart = localAccountSnapshot();
                 if (accountAtStart.isEmpty()) return;
                 String sessionAtStart = SessionValidationClientV300.sessionFingerprint(app);
@@ -73,14 +73,20 @@ final class SessionValidityGuardV300 implements Application.ActivityLifecycleCal
 
                 // Read-only transport deliberately does not capture Set-Cookie/auth or refresh.
                 ApiClient.Response response = SessionValidationClientV300.validate(app, payload);
-                if (!validationStillCurrent(accountAtStart, sessionAtStart)) return;
+                if (!validationStillCurrent(accountAtStart, sessionAtStart)) {
+                    lastCheckAt = 0L;
+                    return;
+                }
 
                 JSONObject body = response.json();
                 JSONObject freshAccount = body.optJSONObject("account");
                 if (response.ok() && body.optBoolean("ok", false) && freshAccount != null) {
-                    uiPrefs.edit().putString(KEY_ACCOUNT, freshAccount.toString()).apply();
-                } else if (SessionValidityPolicyV300.isExplicitRevocation(response.code)) {
-                    invalidateLocalSession();
+                    // SESSION_VALIDATION_NO_SUCCESS_WRITE_V300: success is confirmation only.
+                    // Never rewrite KEY_ACCOUNT from a background response.
+                    return;
+                }
+                if (SessionValidityPolicyV300.isExplicitRevocation(response.code)) {
+                    invalidateLocalSessionIfCurrent(accountAtStart, sessionAtStart);
                 }
             } catch (Exception ignored) {
                 // Offline-first invariant: timeout, DNS, TLS or any transient network failure keeps local access.
@@ -98,12 +104,18 @@ final class SessionValidityGuardV300 implements Application.ActivityLifecycleCal
                 SessionValidationClientV300.sessionFingerprint(app));
     }
 
-    private void invalidateLocalSession() {
+    private void invalidateLocalSessionIfCurrent(String accountAtStart, String sessionAtStart) {
+        // Recheck immediately before touching auth, then preserve a newer account if one appears
+        // while credentials are being cleared.
+        if (!validationStillCurrent(accountAtStart, sessionAtStart)) return;
         try { new ApiClient(app).clearSession(); } catch (Throwable ignored) {}
+        if (!accountAtStart.equals(localAccountSnapshot())) return;
         uiPrefs.edit().remove(KEY_ACCOUNT).commit();
         main.post(() -> {
             Activity current = resumed.get();
             if (current == null || current.isFinishing() || current.isDestroyed()) return;
+            // A newer account may have been saved between the worker commit and this UI turn.
+            if (hasLocalAccount()) return;
             Intent restart = new Intent(app, MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             app.startActivity(restart);
