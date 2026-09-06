@@ -1,6 +1,13 @@
 <?php
 declare(strict_types=1);
 
+/** National permanent-road-safety helpers. The app UI never exposes source/cache internals. */
+function ep2_brazil_ufs(): array {
+    return ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
+}
+
+function ep2_valid_uf(string $uf): bool { return in_array(strtoupper(trim($uf)), ep2_brazil_ufs(), true); }
+
 function ep2_haversine(float $lat1, float $lon1, float $lat2, float $lon2): float {
     $r = 6371000.0;
     $p1 = deg2rad($lat1); $p2 = deg2rad($lat2);
@@ -30,9 +37,17 @@ function ep2_type(array $tags): ?string {
     $calming = strtolower((string)($tags['traffic_calming'] ?? ''));
     $barrier = strtolower((string)($tags['barrier'] ?? ''));
     $rail = strtolower((string)($tags['railway'] ?? ''));
-    if ($highway === 'speed_camera' || $enf === 'maxspeed') return 'RADAR';
+    $manMade = strtolower((string)($tags['man_made'] ?? ''));
+    $surveillance = strtolower((string)($tags['surveillance'] ?? ''));
+    $surveillanceZone = strtolower((string)($tags['surveillance:zone'] ?? ''));
+    $cameraType = strtolower((string)($tags['camera:type'] ?? ''));
+
+    if ($highway === 'speed_camera' || str_contains($enf,'maxspeed')) return 'RADAR';
+    if (str_contains($enf,'redlight') || str_contains($enf,'traffic_signals')) return 'SEMAFORO_RADAR';
     if ($highway === 'traffic_signals') return 'SEMAFORO';
     if ($highway === 'speed_bump' || in_array($calming, ['bump','hump','table','cushion','yes'], true)) return 'QUEBRA_MOLAS';
+    if ($manMade === 'surveillance' && ($surveillance === 'traffic' || $surveillanceZone === 'traffic')) return 'CAMERA_MONITORAMENTO';
+    if ($cameraType === 'traffic') return 'CAMERA_MONITORAMENTO';
     if ($barrier === 'toll_booth' || strtolower((string)($tags['toll'] ?? '')) === 'yes') return 'PEDAGIO';
     if (in_array($rail, ['level_crossing','crossing'], true)) return 'PASSAGEM_NIVEL';
     return null;
@@ -78,14 +93,26 @@ function ep2_add(array &$items,array &$seen,array $h): void {
     $items[]=['id'=>$id,'type'=>$type,'lat'=>$lat,'lon'=>$lon,'road'=>trim((string)($h['road']??'')),'speed'=>isset($h['speed'])&&is_numeric($h['speed'])?(int)$h['speed']:null,'heading'=>isset($h['heading'])&&is_numeric($h['heading'])?round((float)$h['heading'],1):null,'source'=>(string)($h['source']??'BASE_LOCAL')];
 }
 
+/** Approximate bounding boxes are only a resilience fallback; normal sync uses exact OSM administrative areas. */
 function ep2_state_bounds(string $uf): array {
-    return match (strtoupper($uf)) {
-        'ES' => [-21.35, -41.95, -17.75, -39.55],
-        'RJ' => [-23.45, -44.95, -20.65, -40.75],
-        'SP' => [-25.45, -53.25, -19.65, -44.00],
-        'MG' => [-23.00, -51.15, -14.10, -39.75],
-        default => [-90.0, -180.0, 90.0, 180.0],
-    };
+    $map = [
+        'AC'=>[-11.20,-74.05,-7.05,-66.55], 'AL'=>[-10.55,-38.25,-8.75,-35.10],
+        'AP'=>[-1.30,-54.95,4.50,-49.80], 'AM'=>[-9.90,-73.85,2.30,-56.05],
+        'BA'=>[-18.40,-46.75,-8.45,-37.25], 'CE'=>[-7.95,-41.50,-2.70,-37.20],
+        'DF'=>[-16.10,-48.30,-15.45,-47.30], 'ES'=>[-21.35,-41.95,-17.75,-39.55],
+        'GO'=>[-19.55,-53.30,-12.35,-45.85], 'MA'=>[-10.35,-48.80,-0.95,-41.70],
+        'MT'=>[-18.10,-61.70,-7.30,-50.15], 'MS'=>[-24.15,-58.25,-17.10,-50.85],
+        'MG'=>[-23.00,-51.15,-14.10,-39.75], 'PA'=>[-9.90,-58.95,2.65,-45.95],
+        'PB'=>[-8.35,-38.85,-6.00,-34.75], 'PR'=>[-26.75,-54.70,-22.50,-48.00],
+        'PE'=>[-9.55,-41.40,-7.10,-34.75], 'PI'=>[-10.95,-45.95,-2.70,-40.30],
+        'RJ'=>[-23.45,-44.95,-20.65,-40.75], 'RN'=>[-7.00,-38.65,-4.80,-34.90],
+        'RS'=>[-33.80,-57.70,-27.00,-49.60], 'RO'=>[-13.75,-66.05,-7.90,-59.60],
+        'RR'=>[0.75,-64.85,5.35,-58.80], 'SC'=>[-29.40,-53.90,-25.90,-48.30],
+        'SP'=>[-25.45,-53.25,-19.65,-44.00], 'SE'=>[-11.60,-38.30,-9.45,-36.35],
+        'TO'=>[-13.55,-50.80,-5.05,-45.65],
+    ];
+    $uf=strtoupper(trim($uf));
+    return $map[$uf] ?? [-90.0,-180.0,90.0,180.0];
 }
 
 function ep2_is_es(float $lat,float $lon): bool {
@@ -95,21 +122,23 @@ function ep2_is_es(float $lat,float $lon): bool {
     if($lat > -21.0 && $lat <= -20.0 && $lon < -41.90)return false;
     if($lat <= -21.0){
         if($lon > -40.96)return $lat >= -21.33;
-        if($lon >= -41.75){
-            $border=-21.30 - 0.25*($lon+40.96);
-            return $lat >= $border;
-        }
+        if($lon >= -41.75){$border=-21.30 - 0.25*($lon+40.96);return $lat >= $border;}
         return $lat >= -20.92;
     }
     return true;
 }
 
+/** Best-effort fallback for rows without UF. Exact imports should always provide UF. */
 function ep2_guess_uf(float $lat,float $lon): string {
     if(ep2_is_es($lat,$lon))return 'ES';
-    if($lat>=-23.45&&$lat<=-20.65&&$lon>=-44.95&&$lon<=-40.75)return 'RJ';
-    if($lat>=-25.45&&$lat<=-19.65&&$lon>=-53.25&&$lon<=-44.00)return 'SP';
-    if($lat>=-23.00&&$lat<=-14.10&&$lon>=-51.15&&$lon<=-39.75)return 'MG';
-    return '';
+    $best='';$bestArea=INF;
+    foreach(ep2_brazil_ufs() as $uf){
+        [$s,$w,$n,$e]=ep2_state_bounds($uf);
+        if($lat<$s||$lat>$n||$lon<$w||$lon>$e)continue;
+        $area=max(0.001,($n-$s)*($e-$w));
+        if($area<$bestArea){$best=$uf;$bestArea=$area;}
+    }
+    return $best;
 }
 
 function ep2_overpass_json(string $query,int $timeout=90): ?array {
@@ -133,30 +162,32 @@ function ep2_overpass_json(string $query,int $timeout=90): ?array {
     return is_array($data)?$data:null;
 }
 
+function ep2_safety_query_body(string $area): string {
+    return 'node["highway"="speed_camera"]'.$area.';'
+        .'node["enforcement"~"maxspeed|traffic_signals|redlight"]'.$area.';'
+        .'node["highway"="traffic_signals"]'.$area.';'
+        .'node["highway"="speed_bump"]'.$area.';'
+        .'node["traffic_calming"~"^(bump|hump|table|cushion|yes)$"]'.$area.';'
+        .'node["man_made"="surveillance"]["surveillance"="traffic"]'.$area.';'
+        .'node["man_made"="surveillance"]["surveillance:zone"="traffic"]'.$area.';'
+        .'node["camera:type"="traffic"]'.$area.';'
+        .'node["barrier"="toll_booth"]'.$area.';'
+        .'node["railway"~"^(level_crossing|crossing)$"]'.$area.';';
+}
+
 function ep2_osm_query_for_area(string $selector): string {
-    return '[out:json][timeout:90];'.$selector.'('
-        .'node["highway"="speed_camera"](area.eparea);'
-        .'node["enforcement"="maxspeed"](area.eparea);'
-        .'node["highway"="traffic_signals"](area.eparea);'
-        .'node["highway"="speed_bump"](area.eparea);'
-        .'node["traffic_calming"~"^(bump|hump|table|cushion|yes)$"](area.eparea);'
-        .'node["barrier"="toll_booth"](area.eparea);'
-        .'node["railway"~"^(level_crossing|crossing)$"](area.eparea);'
-        .');out body qt;';
+    return '[out:json][timeout:90];'.$selector.'('.ep2_safety_query_body('(area.eparea)').');out body qt;';
+}
+
+function ep2_osm_query_for_bbox(float $south,float $west,float $north,float $east,int $timeout=55): string {
+    $bbox='('.$south.','.$west.','.$north.','.$east.')';
+    return '[out:json][timeout:'.max(20,min(90,$timeout)).'];('.ep2_safety_query_body($bbox).');out body qt;';
 }
 
 function ep2_osm_query_for_line(array $line,int $widthM): string {
     $parts=[];foreach($line as $p)$parts[]=rtrim(rtrim(number_format((float)$p[0],6,'.',''),'0'),'.').','.rtrim(rtrim(number_format((float)$p[1],6,'.',''),'0'),'.');
     $around='(around:'.max(8000,min(30000,$widthM)).','.implode(',',$parts).')';
-    return '[out:json][timeout:55];('
-        .'node["highway"="speed_camera"]'.$around.';'
-        .'node["enforcement"="maxspeed"]'.$around.';'
-        .'node["highway"="traffic_signals"]'.$around.';'
-        .'node["highway"="speed_bump"]'.$around.';'
-        .'node["traffic_calming"~"^(bump|hump|table|cushion|yes)$"]'.$around.';'
-        .'node["barrier"="toll_booth"]'.$around.';'
-        .'node["railway"~"^(level_crossing|crossing)$"]'.$around.';'
-        .');out body qt;';
+    return '[out:json][timeout:55];('.ep2_safety_query_body($around).');out body qt;';
 }
 
 function ep2_osm_to_hazard(array $el): ?array {
