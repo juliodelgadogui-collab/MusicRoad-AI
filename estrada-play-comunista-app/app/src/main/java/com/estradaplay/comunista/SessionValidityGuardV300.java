@@ -58,22 +58,29 @@ final class SessionValidityGuardV300 implements Application.ActivityLifecycleCal
         lastCheckAt = now;
         io.execute(() -> {
             try {
-                ApiClient api = new ApiClient(app);
+                // SESSION_ACCOUNT_SWITCH_GUARD_V300: capture the exact local account and auth
+                // generation immediately before the request. A late response from account A
+                // cannot overwrite/revoke account B or a newer login of the same account.
+                String accountAtStart = localAccountSnapshot();
+                if (accountAtStart.isEmpty()) return;
+                String sessionAtStart = SessionValidationClientV300.sessionFingerprint(app);
+                if (sessionAtStart.isEmpty()) return;
+
                 JSONObject payload = new JSONObject();
                 payload.put("device_token", DeviceIdentity.token(app));
                 payload.put("device_label", DeviceIdentity.label());
                 payload.put("app_version", BuildConfig.VERSION_NAME);
-                ApiClient.Response response = api.post("api/native_app.php?action=device_login", payload);
+
+                // Read-only transport deliberately does not capture Set-Cookie/auth or refresh.
+                ApiClient.Response response = SessionValidationClientV300.validate(app, payload);
+                if (!validationStillCurrent(accountAtStart, sessionAtStart)) return;
+
                 JSONObject body = response.json();
                 JSONObject freshAccount = body.optJSONObject("account");
                 if (response.ok() && body.optBoolean("ok", false) && freshAccount != null) {
-                    // LOGOUT_RACE_GUARD_V300: never resurrect a session that the driver removed
-                    // while this background request was still in flight.
-                    if (hasLocalAccount()) {
-                        uiPrefs.edit().putString(KEY_ACCOUNT, freshAccount.toString()).apply();
-                    }
+                    uiPrefs.edit().putString(KEY_ACCOUNT, freshAccount.toString()).apply();
                 } else if (SessionValidityPolicyV300.isExplicitRevocation(response.code)) {
-                    invalidateLocalSession(api);
+                    invalidateLocalSession();
                 }
             } catch (Exception ignored) {
                 // Offline-first invariant: timeout, DNS, TLS or any transient network failure keeps local access.
@@ -83,8 +90,16 @@ final class SessionValidityGuardV300 implements Application.ActivityLifecycleCal
         });
     }
 
-    private void invalidateLocalSession(ApiClient api) {
-        try { api.clearSession(); } catch (Throwable ignored) {}
+    private boolean validationStillCurrent(String accountAtStart, String sessionAtStart) {
+        return SessionValidityPolicyV300.sameValidationSubject(
+                accountAtStart,
+                localAccountSnapshot(),
+                sessionAtStart,
+                SessionValidationClientV300.sessionFingerprint(app));
+    }
+
+    private void invalidateLocalSession() {
+        try { new ApiClient(app).clearSession(); } catch (Throwable ignored) {}
         uiPrefs.edit().remove(KEY_ACCOUNT).commit();
         main.post(() -> {
             Activity current = resumed.get();
@@ -96,10 +111,14 @@ final class SessionValidityGuardV300 implements Application.ActivityLifecycleCal
     }
 
     private boolean hasLocalAccount() {
+        return !localAccountSnapshot().isEmpty();
+    }
+
+    private String localAccountSnapshot() {
         String raw = uiPrefs.getString(KEY_ACCOUNT, "{}");
-        if (raw == null || raw.trim().isEmpty()) return false;
-        try { return new JSONObject(raw).length() > 0; }
-        catch (Exception ignored) { return false; }
+        if (raw == null || raw.trim().isEmpty()) return "";
+        try { return new JSONObject(raw).length() > 0 ? raw.trim() : ""; }
+        catch (Exception ignored) { return ""; }
     }
 
     private boolean online() {
