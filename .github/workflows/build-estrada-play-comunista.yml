@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  build-universal-release:
+  build-universal-debug:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -32,15 +32,28 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Compile Universal release APK
-        working-directory: estrada-play-comunista-app
-        run: gradle --no-daemon --stacktrace assembleUniversalRelease
+      - name: Create temporary debug keystore
+        run: |
+          mkdir -p estrada-play-comunista-app/signing
+          keytool -genkeypair -v \
+            -keystore estrada-play-comunista-app/signing/estradaplay-dev.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
 
-      - name: Upload APK
+      - name: Compile signed Universal debug APK
+        working-directory: estrada-play-comunista-app
+        run: gradle --no-daemon --stacktrace assembleUniversalDebug
+
+      - name: Upload installable APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-Universal-release
-          path: estrada-play-comunista-app/app/build/outputs/apk/universal/release/*.apk
+          name: Estrada-Play-Comunista-Universal-INSTALAVEL
+          path: estrada-play-comunista-app/app/build/outputs/apk/universal/debug/*.apk
           if-no-files-found: error
           retention-days: 3
