@@ -24,12 +24,63 @@ log "Pré-validando fonte EPC 3.0.0"
 python3 -m py_compile tools/validate_v300.py
 python3 tools/validate_v300.py
 
-log "Conferindo Java 17"
-java -version 2>&1 | tee /tmp/epc-java-version.txt
-if ! grep -Eq 'version "17\.|openjdk version "17\.' /tmp/epc-java-version.txt; then
-  echo "Java 17 não encontrado. No Codespace, instale/ative o JDK 17 antes de continuar." >&2
+# JAVA17_AUTO_BOOTSTRAP_V300: Codespaces may open with a newer JDK (for example Java 25).
+# The Android toolchain for this project is pinned to Java 17, so locate it or install it automatically.
+find_java17_home(){
+  local candidate version current
+
+  if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/java" ]; then
+    version="$("${JAVA_HOME}/bin/java" -version 2>&1 || true)"
+    if printf '%s\n' "$version" | grep -Eq 'version "17\.|openjdk version "17\.'; then
+      printf '%s\n' "$JAVA_HOME"
+      return 0
+    fi
+  fi
+
+  if command -v java >/dev/null 2>&1; then
+    current="$(readlink -f "$(command -v java)" 2>/dev/null || command -v java)"
+    candidate="$(cd "$(dirname "$current")/.." 2>/dev/null && pwd || true)"
+    if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ]; then
+      version="$("$candidate/bin/java" -version 2>&1 || true)"
+      if printf '%s\n' "$version" | grep -Eq 'version "17\.|openjdk version "17\.'; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
+    fi
+  fi
+
+  for candidate in /usr/lib/jvm/*; do
+    [ -x "$candidate/bin/java" ] || continue
+    version="$("$candidate/bin/java" -version 2>&1 || true)"
+    if printf '%s\n' "$version" | grep -Eq 'version "17\.|openjdk version "17\.'; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+log "Preparando Java 17 automaticamente"
+JAVA17_HOME="$(find_java17_home || true)"
+if [ -z "$JAVA17_HOME" ]; then
+  log "Java 17 não encontrado; instalando OpenJDK 17"
+  sudo apt-get update
+  sudo apt-get install -y openjdk-17-jdk
+  JAVA17_HOME="$(find_java17_home || true)"
+fi
+if [ -z "$JAVA17_HOME" ]; then
+  echo "Não foi possível localizar o Java 17 após a instalação automática." >&2
   exit 1
 fi
+export JAVA_HOME="$JAVA17_HOME"
+export PATH="$JAVA_HOME/bin:$PATH"
+hash -r
+"$JAVA_HOME/bin/java" -version 2>&1 | tee /tmp/epc-java-version.txt
+if ! grep -Eq 'version "17\.|openjdk version "17\.' /tmp/epc-java-version.txt; then
+  echo "Falha ao ativar Java 17 automaticamente." >&2
+  exit 1
+fi
+printf 'Java 17 ativo em: %s\n' "$JAVA_HOME"
 
 need_apt=0
 command -v unzip >/dev/null 2>&1 || need_apt=1
