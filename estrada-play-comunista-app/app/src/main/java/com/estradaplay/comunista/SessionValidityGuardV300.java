@@ -67,7 +67,11 @@ final class SessionValidityGuardV300 implements Application.ActivityLifecycleCal
                 JSONObject body = response.json();
                 JSONObject freshAccount = body.optJSONObject("account");
                 if (response.ok() && body.optBoolean("ok", false) && freshAccount != null) {
-                    uiPrefs.edit().putString(KEY_ACCOUNT, freshAccount.toString()).apply();
+                    // LOGOUT_RACE_GUARD_V300: never resurrect a session that the driver removed
+                    // while this background request was still in flight.
+                    if (hasLocalAccount()) {
+                        uiPrefs.edit().putString(KEY_ACCOUNT, freshAccount.toString()).apply();
+                    }
                 } else if (SessionValidityPolicyV300.isExplicitRevocation(response.code)) {
                     invalidateLocalSession(api);
                 }
