@@ -48,8 +48,6 @@ public final class PlayerService extends Service {
     private static final String CHANNEL = "estradaplay_player";
     private static final int NOTIFICATION_ID = 4501;
 
-    // PLAYER_SESSION_V242: last local track, folder and position survive service/app recreation.
-    // Restoring never starts music by itself; playback resumes only after an explicit user action.
     private static final String PREFS = "epc_player_session_v242";
     private static final String KEY_TRACK = "track_key";
     private static final String KEY_FOLDER = "folder";
@@ -61,6 +59,8 @@ public final class PlayerService extends Service {
     private static final String KEY_STAGED_SOURCES = "staged_queue_sources_json_v2410";
     private static final long CHECKPOINT_MS = 5000L;
 
+    // PLAYER_SESSION_V242: last local track, folder and position survive service/app recreation.
+    // Restoring never starts music by itself; playback resumes only after an explicit user action.
     // PLAYER_MEDIA_SESSION_V243: Bluetooth/headset/car controls and the Android media
     // notification use the same local queue as the in-app player. No UI layout changes.
     // PLAYER_EXACT_QUEUE_V245: the visible search/folder result becomes the real queue,
@@ -106,11 +106,6 @@ public final class PlayerService extends Service {
         }
     };
 
-    /**
-     * Stages a potentially large visible queue in same-process SharedPreferences instead
-     * of putting thousands of tracks in an Intent/Binder transaction. Keys preserve order;
-     * the compact source object preserves the exact local URI/path for every key.
-     */
     static String stageQueue(Context context, List<Track> tracks) {
         if (context == null) return "";
         JSONArray a = new JSONArray();
@@ -182,13 +177,8 @@ public final class PlayerService extends Service {
         return START_NOT_STICKY;
     }
 
-    // PLAYER_LOCAL_INDEX_V2315: playback never asks MediaStore to rebuild anything.
-    // Queue comes from the saved Estrada Play index + persistent phone MP3 SQLite index.
     private ArrayList<Track> loadQueue(String folder) { return loadQueue(folder, null, null); }
-
-    private ArrayList<Track> loadQueue(String folder, List<String> preferredKeys) {
-        return loadQueue(folder, preferredKeys, null);
-    }
+    private ArrayList<Track> loadQueue(String folder, List<String> preferredKeys) { return loadQueue(folder, preferredKeys, null); }
 
     private ArrayList<Track> loadQueue(String folder, List<String> preferredKeys, Map<String, String> preferredSources) {
         ArrayList<Track> all = loadLocalTracks();
@@ -202,39 +192,27 @@ public final class PlayerService extends Service {
                 Track chosen = null;
                 if (!wantedSource.isEmpty()) {
                     for (Track candidate : all) {
-                        if (candidate != null && key.equals(candidate.key())
-                                && wantedSource.equals(safeSource(candidate.localPath))) {
-                            chosen = candidate;
-                            break;
-                        }
+                        if (candidate != null && key.equals(candidate.key()) && wantedSource.equals(safeSource(candidate.localPath))) { chosen = candidate; break; }
                     }
                     if (chosen != null) exact.add(chosen);
                     continue;
                 }
                 for (Track candidate : all) {
-                    if (candidate != null && key.equals(candidate.key())) {
-                        chosen = candidate;
-                        break;
-                    }
+                    if (candidate != null && key.equals(candidate.key())) { chosen = candidate; break; }
                 }
                 if (chosen != null) exact.add(chosen);
             }
             if (!exact.isEmpty() || strictPreferredSources) return exact;
         }
-
         ArrayList<Track> loaded = new ArrayList<>();
         String f = normalizeFolder(folder);
-        for (Track t : all) {
-            if ("__ALL__".equals(f) || f.equals(LibraryStore.folderKey(t))) loaded.add(t);
-        }
+        for (Track t : all) if ("__ALL__".equals(f) || f.equals(LibraryStore.folderKey(t))) loaded.add(t);
         return loaded;
     }
 
     private ArrayList<Track> loadLocalTracks() {
         List<Track> appTracks = FastMusicLibrary.downloadedTracks(this);
-        List<Track> all = PhoneMp3Store.hasPermission(this)
-                ? PhoneMp3Store.mergeCached(this, appTracks)
-                : appTracks;
+        List<Track> all = PhoneMp3Store.hasPermission(this) ? PhoneMp3Store.mergeCached(this, appTracks) : appTracks;
         return new ArrayList<>(all);
     }
 
@@ -254,19 +232,14 @@ public final class PlayerService extends Service {
         if (loaded == null || exact == null || exact.localPath == null || exact.localPath.trim().isEmpty()) return;
         String key = requestedKey == null || requestedKey.trim().isEmpty() ? exact.key() : requestedKey;
         String source = exact.localPath.trim();
-
         for (int i = 0; i < loaded.size(); i++) {
             Track candidate = loaded.get(i);
             if (candidate != null && key.equals(candidate.key()) && source.equals(safeSource(candidate.localPath))) return;
         }
         for (int i = 0; i < loaded.size(); i++) {
             Track candidate = loaded.get(i);
-            if (candidate != null && key.equals(candidate.key())) {
-                loaded.set(i, exact);
-                return;
-            }
+            if (candidate != null && key.equals(candidate.key())) { loaded.set(i, exact); return; }
         }
-
         int insertAt = 0;
         if (preferredKeys != null && !preferredKeys.isEmpty()) {
             int wanted = preferredKeys.indexOf(key);
@@ -274,12 +247,7 @@ public final class PlayerService extends Service {
                 for (int p = 0; p < wanted; p++) {
                     String previous = preferredKeys.get(p);
                     if (previous == null) continue;
-                    for (Track candidate : loaded) {
-                        if (candidate != null && previous.equals(candidate.key())) {
-                            insertAt++;
-                            break;
-                        }
-                    }
+                    for (Track candidate : loaded) if (candidate != null && previous.equals(candidate.key())) { insertAt++; break; }
                 }
             }
         }
@@ -353,13 +321,8 @@ public final class PlayerService extends Service {
         return sources.toString();
     }
 
-    private String normalizeFolder(String folder) {
-        String f = folder == null ? "" : folder.trim();
-        return f.isEmpty() ? "__ALL__" : f;
-    }
-
+    private String normalizeFolder(String folder) { String f = folder == null ? "" : folder.trim(); return f.isEmpty() ? "__ALL__" : f; }
     private static String safeSource(String source) { return source == null ? "" : source.trim(); }
-
     private int findIndex(String key) { return findIndex(key, ""); }
 
     private int findIndex(String key, String exactSource) {
@@ -395,18 +358,11 @@ public final class PlayerService extends Service {
     private Track current() { return index >= 0 && index < queue.size() ? queue.get(index) : null; }
 
     private void restoreSession(boolean autoPlay) {
-        if (restoring) {
-            if (autoPlay) playAfterRestore = true;
-            return;
-        }
+        if (restoring) { if (autoPlay) playAfterRestore = true; return; }
         if (current() != null) {
-            if (!autoPlay) {
-                broadcastCurrent();
-            } else if (player != null && prepared) {
-                resumePlayback();
-            } else {
-                prepareCurrent(true, pendingSeekMs, false);
-            }
+            if (!autoPlay) broadcastCurrent();
+            else if (player != null && prepared) resumePlayback();
+            else prepareCurrent(true, pendingSeekMs, false);
             return;
         }
         String key = prefs.getString(KEY_TRACK, "");
@@ -414,10 +370,7 @@ public final class PlayerService extends Service {
         int position = Math.max(0, prefs.getInt(KEY_POSITION, 0));
         ArrayList<String> savedKeys = parseQueueKeys(prefs.getString(KEY_QUEUE, "[]"));
         LinkedHashMap<String, String> savedSources = parseQueueSources(prefs.getString(KEY_QUEUE_SOURCES, "{}"));
-        if (key == null || key.trim().isEmpty()) {
-            broadcast("", false, "PRONTO");
-            return;
-        }
+        if (key == null || key.trim().isEmpty()) { broadcast("", false, "PRONTO"); return; }
         restoring = true;
         io.execute(() -> {
             ArrayList<Track> loaded = loadQueue(folder, savedKeys, savedSources);
@@ -425,18 +378,11 @@ public final class PlayerService extends Service {
                 restoring = false;
                 boolean shouldAutoPlay = autoPlay || playAfterRestore;
                 playAfterRestore = false;
-                queue.clear();
-                queue.addAll(loaded);
-                currentFolder = folder;
+                queue.clear(); queue.addAll(loaded); currentFolder = folder;
                 String restoredSource = savedSources.get(key);
                 index = findIndex(key, restoredSource == null ? "" : restoredSource);
                 if (index < 0) index = findRestoreIndex(key, savedKeys);
-                if (index < 0) {
-                    clearSnapshot();
-                    queue.clear();
-                    broadcast("", false, "Última fila indisponível");
-                    return;
-                }
+                if (index < 0) { clearSnapshot(); queue.clear(); broadcast("", false, "Última fila indisponível"); return; }
                 pendingSeekMs = key.equals(current().key()) ? position : 0;
                 saveSnapshot();
                 prepareCurrent(shouldAutoPlay, pendingSeekMs, true);
@@ -444,9 +390,7 @@ public final class PlayerService extends Service {
         });
     }
 
-    private void prepareCurrent(boolean autoPlay, int seekMs, boolean restoringSession) {
-        prepareCurrent(autoPlay, seekMs, restoringSession, false);
-    }
+    private void prepareCurrent(boolean autoPlay, int seekMs, boolean restoringSession) { prepareCurrent(autoPlay, seekMs, restoringSession, false); }
 
     private void prepareCurrent(boolean autoPlay, int seekMs, boolean restoringSession, boolean explicitSelection) {
         final long generation = ++playerGeneration;
@@ -458,36 +402,24 @@ public final class PlayerService extends Service {
             if (source.startsWith("content://")) PhoneMp3Store.invalidate(this);
             postIfGenerationActive(generation, null, () -> {
                 if (explicitSelection) failExplicitSelection(t, "Música selecionada indisponível");
-                else skipCurrentUnavailable(autoPlay,
-                        restoringSession ? "Última música indisponível" : "Pulando arquivo indisponível");
+                else skipCurrentUnavailable(autoPlay, restoringSession ? "Última música indisponível" : "Pulando arquivo indisponível");
             });
             return;
         }
         try {
             player = new MediaPlayer();
             player.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
-            if (source.startsWith("content://")) player.setDataSource(this, Uri.parse(source));
-            else player.setDataSource(new File(source).getAbsolutePath());
+            if (source.startsWith("content://")) player.setDataSource(this, Uri.parse(source)); else player.setDataSource(new File(source).getAbsolutePath());
             player.setOnPreparedListener(mp -> {
                 if (!isGenerationActive(generation, mp)) return;
                 prepared = true;
                 int target = Math.max(0, seekMs);
-                try {
-                    int duration = mp.getDuration();
-                    if (duration > 0 && target >= duration - 1500) target = 0;
-                    if (target > 0) mp.seekTo(target);
-                } catch (Throwable ignored) {}
+                try { int duration = mp.getDuration(); if (duration > 0 && target >= duration - 1500) target = 0; if (target > 0) mp.seekTo(target); } catch (Throwable ignored) {}
                 pendingSeekMs = target;
-                requestFocus();
-                applyVolume();
+                requestFocus(); applyVolume();
                 if (autoPlay) {
-                    try {
-                        mp.start();
-                    } catch (Throwable startError) {
-                        postIfGenerationActive(generation, mp, () -> {
-                            if (explicitSelection) failExplicitSelection(t, "Não foi possível tocar esta música");
-                            else skipCurrentUnavailable(true, "Pulando arquivo inválido");
-                        });
+                    try { mp.start(); } catch (Throwable startError) {
+                        postIfGenerationActive(generation, mp, () -> { if (explicitSelection) failExplicitSelection(t, "Não foi possível tocar esta música"); else skipCurrentUnavailable(true, "Pulando arquivo inválido"); });
                         return;
                     }
                     if (!isGenerationActive(generation, mp)) return;
@@ -501,264 +433,111 @@ public final class PlayerService extends Service {
                 }
                 saveSnapshot();
             });
-            player.setOnCompletionListener(mp -> {
-                if (isGenerationActive(generation, mp)) next();
-            });
-            player.setOnErrorListener((mp, what, extra) -> {
-                postIfGenerationActive(generation, mp, () -> {
-                    if (explicitSelection) failExplicitSelection(t, "Não foi possível tocar esta música");
-                    else skipCurrentUnavailable(true, "Pulando arquivo inválido");
-                });
-                return true;
-            });
+            player.setOnCompletionListener(mp -> { if (isGenerationActive(generation, mp)) next(); });
+            player.setOnErrorListener((mp, what, extra) -> { postIfGenerationActive(generation, mp, () -> { if (explicitSelection) failExplicitSelection(t, "Não foi possível tocar esta música"); else skipCurrentUnavailable(true, "Pulando arquivo inválido"); }); return true; });
             if (autoPlay) startForeground(NOTIFICATION_ID, notification(t, false));
             broadcast(t.title, false, restoringSession ? "Restaurando" : "Carregando local");
             player.prepareAsync();
         } catch (Exception e) {
             final MediaPlayer failedPlayer = player;
-            postIfGenerationActive(generation, failedPlayer, () -> {
-                if (explicitSelection) failExplicitSelection(t, "Não foi possível tocar esta música");
-                else skipCurrentUnavailable(autoPlay, "Pulando arquivo inválido");
-            });
+            postIfGenerationActive(generation, failedPlayer, () -> { if (explicitSelection) failExplicitSelection(t, "Não foi possível tocar esta música"); else skipCurrentUnavailable(autoPlay, "Pulando arquivo inválido"); });
         }
     }
 
-    private boolean isGenerationActive(long generation, MediaPlayer expectedPlayer) {
-        if (generation != playerGeneration) return false;
-        return expectedPlayer == null || player == expectedPlayer;
-    }
-
-    private void postIfGenerationActive(long generation, MediaPlayer expectedPlayer, Runnable action) {
-        if (action == null) return;
-        main.post(() -> {
-            if (!isGenerationActive(generation, expectedPlayer)) return;
-            action.run();
-        });
-    }
+    private boolean isGenerationActive(long generation, MediaPlayer expectedPlayer) { return generation == playerGeneration && (expectedPlayer == null || player == expectedPlayer); }
+    private void postIfGenerationActive(long generation, MediaPlayer expectedPlayer, Runnable action) { if (action != null) main.post(() -> { if (isGenerationActive(generation, expectedPlayer)) action.run(); }); }
 
     private void failExplicitSelection(Track selected, String state) {
-        playerGeneration++;
-        releasePlayerOnly();
+        playerGeneration++; releasePlayerOnly();
         Track broken = selected == null ? current() : selected;
-        if (broken != null && broken.localPath != null && broken.localPath.startsWith("content://")) {
-            PhoneMp3Store.invalidate(this);
-        }
+        if (broken != null && broken.localPath != null && broken.localPath.startsWith("content://")) PhoneMp3Store.invalidate(this);
         if (index >= 0 && index < queue.size()) queue.remove(index);
-        index = -1;
-        clearSnapshot();
+        index = -1; clearSnapshot();
         try { stopForeground(true); } catch (Throwable ignored) {}
         String title = broken == null ? "" : broken.title;
         broadcast(title, false, state == null || state.trim().isEmpty() ? "Música indisponível" : state);
     }
 
     private void skipCurrentUnavailable(boolean autoPlay, String emptyState) {
-        playerGeneration++;
-        releasePlayerOnly();
+        playerGeneration++; releasePlayerOnly();
         Track broken = current();
-        if (broken != null && broken.localPath != null && broken.localPath.startsWith("content://")) {
-            PhoneMp3Store.invalidate(this);
-        }
+        if (broken != null && broken.localPath != null && broken.localPath.startsWith("content://")) PhoneMp3Store.invalidate(this);
         if (index >= 0 && index < queue.size()) queue.remove(index);
         if (queue.isEmpty()) {
-            index = -1;
-            clearSnapshot();
-            updateNotification(notification(null, false));
+            index = -1; clearSnapshot(); updateNotification(notification(null, false));
             broadcast("", false, emptyState == null || emptyState.isEmpty() ? "Fila vazia" : emptyState);
-            if (autoPlay) stopSelf();
-            return;
+            if (autoPlay) stopSelf(); return;
         }
         if (index < 0 || index >= queue.size()) index = 0;
-        pendingSeekMs = 0;
-        saveSnapshot();
-        main.post(() -> prepareCurrent(autoPlay, 0, false));
+        pendingSeekMs = 0; saveSnapshot(); main.post(() -> prepareCurrent(autoPlay, 0, false));
     }
 
-    private void toggle() {
-        if (isPlaying()) pausePlayback("Pausado");
-        else resumePlayback();
-    }
+    private void toggle() { if (isPlaying()) pausePlayback("Pausado"); else resumePlayback(); }
 
     private void resumePlayback() {
-        if (player == null || !prepared) {
-            restoreSession(true);
-            return;
-        }
-        if (isPlaying()) {
-            broadcastCurrent();
-            return;
-        }
+        if (player == null || !prepared) { restoreSession(true); return; }
+        if (isPlaying()) { broadcastCurrent(); return; }
         try {
-            Track t = current();
-            requestFocus();
-            focusDuck = 1f;
-            applyVolume();
-            player.start();
-            resumeOnFocus = false;
-            scheduleCheckpoint();
-            if (t != null) {
-                startForeground(NOTIFICATION_ID, notification(t, true));
-                broadcast(t.title, true, "LOCAL");
-            }
+            Track t = current(); requestFocus(); focusDuck = 1f; applyVolume(); player.start(); resumeOnFocus = false; scheduleCheckpoint();
+            if (t != null) { startForeground(NOTIFICATION_ID, notification(t, true)); broadcast(t.title, true, "LOCAL"); }
         } catch (Exception ignored) {}
     }
 
     private void pausePlayback(String reason) {
         if (player == null || !prepared) return;
         try {
-            Track t = current();
-            if (player.isPlaying()) player.pause();
-            stopCheckpoint();
-            saveSnapshot();
-            if (t != null) {
-                updateNotification(notification(t, false));
-                broadcast(t.title, false, reason == null || reason.isEmpty() ? "Pausado" : reason);
-            }
+            Track t = current(); if (player.isPlaying()) player.pause(); stopCheckpoint(); saveSnapshot();
+            if (t != null) { updateNotification(notification(t, false)); broadcast(t.title, false, reason == null || reason.isEmpty() ? "Pausado" : reason); }
         } catch (Exception ignored) {}
     }
 
-    private void next() {
-        if (queue.isEmpty()) {
-            restoreSession(true);
-            return;
-        }
-        saveSnapshot();
-        index = (index + 1) % queue.size();
-        pendingSeekMs = 0;
-        saveSnapshot();
-        prepareCurrent(true, 0, false);
-    }
+    private void next() { if (queue.isEmpty()) { restoreSession(true); return; } saveSnapshot(); index = (index + 1) % queue.size(); pendingSeekMs = 0; saveSnapshot(); prepareCurrent(true, 0, false); }
 
     private void previous() {
-        if (queue.isEmpty()) {
-            restoreSession(true);
-            return;
-        }
-        try {
-            if (player != null && prepared && player.getCurrentPosition() > 5000) {
-                player.seekTo(0);
-                pendingSeekMs = 0;
-                saveSnapshot();
-                updateMediaSession(current(), isPlaying());
-                return;
-            }
-        } catch (Exception ignored) {}
-        saveSnapshot();
-        index = (index - 1 + queue.size()) % queue.size();
-        pendingSeekMs = 0;
-        saveSnapshot();
-        prepareCurrent(true, 0, false);
+        if (queue.isEmpty()) { restoreSession(true); return; }
+        try { if (player != null && prepared && player.getCurrentPosition() > 5000) { player.seekTo(0); pendingSeekMs = 0; saveSnapshot(); updateMediaSession(current(), isPlaying()); return; } } catch (Exception ignored) {}
+        saveSnapshot(); index = (index - 1 + queue.size()) % queue.size(); pendingSeekMs = 0; saveSnapshot(); prepareCurrent(true, 0, false);
     }
 
     private void seekTo(long positionMs) {
         if (player == null || !prepared) return;
-        try {
-            int duration = Math.max(0, player.getDuration());
-            int target = (int) Math.max(0L, Math.min(positionMs, duration > 0 ? duration : Integer.MAX_VALUE));
-            player.seekTo(target);
-            pendingSeekMs = target;
-            saveSnapshot();
-            updateMediaSession(current(), isPlaying());
-        } catch (Throwable ignored) {}
+        try { int duration = Math.max(0, player.getDuration()); int target = (int)Math.max(0L, Math.min(positionMs, duration > 0 ? duration : Integer.MAX_VALUE)); player.seekTo(target); pendingSeekMs = target; saveSnapshot(); updateMediaSession(current(), isPlaying()); } catch (Throwable ignored) {}
     }
 
-    private void scheduleCheckpoint() {
-        main.removeCallbacks(checkpoint);
-        main.postDelayed(checkpoint, CHECKPOINT_MS);
-    }
-
+    private void scheduleCheckpoint() { main.removeCallbacks(checkpoint); main.postDelayed(checkpoint, CHECKPOINT_MS); }
     private void stopCheckpoint() { main.removeCallbacks(checkpoint); }
-
-    private boolean isPlaying() {
-        try { return player != null && prepared && player.isPlaying(); }
-        catch (Throwable ignored) { return false; }
-    }
+    private boolean isPlaying() { try { return player != null && prepared && player.isPlaying(); } catch (Throwable ignored) { return false; } }
 
     private void saveSnapshot() {
-        Track t = current();
-        if (t == null || prefs == null) return;
+        Track t = current(); if (t == null || prefs == null) return;
         int position = pendingSeekMs;
-        try { if (player != null && prepared) position = Math.max(0, player.getCurrentPosition()); }
-        catch (Throwable ignored) {}
+        try { if (player != null && prepared) position = Math.max(0, player.getCurrentPosition()); } catch (Throwable ignored) {}
         pendingSeekMs = position;
-        prefs.edit()
-                .putString(KEY_TRACK, t.key())
-                .putString(KEY_FOLDER, normalizeFolder(currentFolder))
-                .putInt(KEY_POSITION, position)
-                .putString(KEY_QUEUE, queueJson())
-                .putString(KEY_QUEUE_SOURCES, queueSourcesJson())
-                .apply();
+        prefs.edit().putString(KEY_TRACK, t.key()).putString(KEY_FOLDER, normalizeFolder(currentFolder)).putInt(KEY_POSITION, position).putString(KEY_QUEUE, queueJson()).putString(KEY_QUEUE_SOURCES, queueSourcesJson()).apply();
     }
 
     private void clearSnapshot() {
         pendingSeekMs = 0;
-        if (prefs != null) prefs.edit()
-                .remove(KEY_TRACK).remove(KEY_FOLDER).remove(KEY_POSITION).remove(KEY_QUEUE)
-                .remove(KEY_QUEUE_SOURCES)
-                .remove(KEY_STAGED_TOKEN).remove(KEY_STAGED_QUEUE).remove(KEY_STAGED_SOURCES).apply();
+        if (prefs != null) prefs.edit().remove(KEY_TRACK).remove(KEY_FOLDER).remove(KEY_POSITION).remove(KEY_QUEUE).remove(KEY_QUEUE_SOURCES).remove(KEY_STAGED_TOKEN).remove(KEY_STAGED_QUEUE).remove(KEY_STAGED_SOURCES).apply();
     }
 
-    private void applyVolume() {
-        if (player == null) return;
-        float volume = Math.max(0f, Math.min(1f, alertDuck * focusDuck));
-        try { player.setVolume(volume, volume); } catch (Throwable ignored) {}
-    }
-
-    private void requestFocus() {
-        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-        if (am != null) {
-            try { am.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN); }
-            catch (Throwable ignored) {}
-        }
-    }
-
-    private void abandonFocus() {
-        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-        if (am != null) {
-            try { am.abandonAudioFocus(focusListener); } catch (Throwable ignored) {}
-        }
-    }
+    private void applyVolume() { if (player != null) { float volume = Math.max(0f, Math.min(1f, alertDuck * focusDuck)); try { player.setVolume(volume, volume); } catch (Throwable ignored) {} } }
+    private void requestFocus() { AudioManager am = (AudioManager)getSystemService(AUDIO_SERVICE); if (am != null) try { am.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN); } catch (Throwable ignored) {} }
+    private void abandonFocus() { AudioManager am = (AudioManager)getSystemService(AUDIO_SERVICE); if (am != null) try { am.abandonAudioFocus(focusListener); } catch (Throwable ignored) {} }
 
     private void handleAudioFocusChange(int change) {
-        if (change == AudioManager.AUDIOFOCUS_GAIN) {
-            focusDuck = 1f;
-            applyVolume();
-            if (resumeOnFocus) {
-                resumeOnFocus = false;
-                resumePlayback();
-            }
-        } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-            focusDuck = 0.25f;
-            applyVolume();
-        } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-            if (isPlaying()) {
-                resumeOnFocus = true;
-                pausePlayback("Pausado por outro áudio");
-            }
-        } else if (change == AudioManager.AUDIOFOCUS_LOSS) {
-            resumeOnFocus = false;
-            focusDuck = 1f;
-            if (isPlaying()) pausePlayback("Pausado");
-        }
+        if (change == AudioManager.AUDIOFOCUS_GAIN) { focusDuck = 1f; applyVolume(); if (resumeOnFocus) { resumeOnFocus = false; resumePlayback(); } }
+        else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) { focusDuck = 0.25f; applyVolume(); }
+        else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) { if (isPlaying()) { resumeOnFocus = true; pausePlayback("Pausado por outro áudio"); } }
+        else if (change == AudioManager.AUDIOFOCUS_LOSS) { resumeOnFocus = false; focusDuck = 1f; if (isPlaying()) pausePlayback("Pausado"); }
     }
 
-    private void broadcastCurrent() {
-        Track t = current();
-        boolean playing = isPlaying();
-        broadcast(t == null ? "" : t.title, playing, t == null ? "PRONTO" : (playing ? "LOCAL" : "PAUSADO"));
-    }
+    private void broadcastCurrent() { Track t = current(); boolean playing = isPlaying(); broadcast(t == null ? "" : t.title, playing, t == null ? "PRONTO" : (playing ? "LOCAL" : "PAUSADO")); }
 
     private void broadcast(String title, boolean playing, String state) {
-        Track t = current();
-        updateMediaSession(t, playing);
+        Track t = current(); updateMediaSession(t, playing);
         Intent i = new Intent(ACTION_STATE).setPackage(getPackageName());
-        i.putExtra("title", title == null ? "" : title);
-        i.putExtra("artist", t == null ? "" : t.artist);
-        i.putExtra("playing", playing);
-        i.putExtra("state", state == null ? "" : state);
-        i.putExtra("track_key", t == null ? "" : t.key());
-        i.putExtra("queue_size", queue.size());
-        i.putExtra("queue_index", index);
-        sendBroadcast(i);
+        i.putExtra("title", title == null ? "" : title); i.putExtra("artist", t == null ? "" : t.artist); i.putExtra("playing", playing); i.putExtra("state", state == null ? "" : state); i.putExtra("track_key", t == null ? "" : t.key()); i.putExtra("queue_size", queue.size()); i.putExtra("queue_index", index); sendBroadcast(i);
     }
 
     private void createMediaSession() {
@@ -773,45 +552,20 @@ public final class PlayerService extends Service {
                 @Override public void onSeekTo(long pos) { seekTo(pos); }
                 @Override public void onStop() { pausePlayback("Pausado"); }
             }, main);
-            mediaSession.setActive(true);
-            updateMediaSession(null, false);
-        } catch (Throwable ignored) {
-            mediaSession = null;
-        }
+            mediaSession.setActive(true); updateMediaSession(null, false);
+        } catch (Throwable ignored) { mediaSession = null; }
     }
 
     private void updateMediaSession(Track t, boolean playing) {
         if (mediaSession == null) return;
         try {
-            long position = Math.max(0, pendingSeekMs);
-            long duration = 0L;
-            if (player != null && prepared) {
-                try { position = Math.max(0, player.getCurrentPosition()); } catch (Throwable ignored) {}
-                try { duration = Math.max(0, player.getDuration()); } catch (Throwable ignored) {}
-            }
-            long actions = PlaybackState.ACTION_PLAY
-                    | PlaybackState.ACTION_PAUSE
-                    | PlaybackState.ACTION_PLAY_PAUSE
-                    | PlaybackState.ACTION_SKIP_TO_NEXT
-                    | PlaybackState.ACTION_SKIP_TO_PREVIOUS
-                    | PlaybackState.ACTION_SEEK_TO;
+            long position = Math.max(0, pendingSeekMs), duration = 0L;
+            if (player != null && prepared) { try { position = Math.max(0, player.getCurrentPosition()); } catch (Throwable ignored) {} try { duration = Math.max(0, player.getDuration()); } catch (Throwable ignored) {} }
+            long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO;
             int sessionState = t == null ? PlaybackState.STATE_NONE : (playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED);
-            PlaybackState playbackState = new PlaybackState.Builder()
-                    .setActions(actions)
-                    .setState(sessionState, position, playing ? 1f : 0f)
-                    .build();
-            mediaSession.setPlaybackState(playbackState);
-
-            if (t == null) {
-                mediaSession.setMetadata(null);
-            } else {
-                MediaMetadata.Builder meta = new MediaMetadata.Builder()
-                        .putString(MediaMetadata.METADATA_KEY_TITLE, safe(t.title))
-                        .putString(MediaMetadata.METADATA_KEY_ARTIST, safe(t.artist))
-                        .putString(MediaMetadata.METADATA_KEY_ALBUM, safe(t.album));
-                if (duration > 0) meta.putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
-                mediaSession.setMetadata(meta.build());
-            }
+            mediaSession.setPlaybackState(new PlaybackState.Builder().setActions(actions).setState(sessionState, position, playing ? 1f : 0f).build());
+            if (t == null) mediaSession.setMetadata(null);
+            else { MediaMetadata.Builder meta = new MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, safe(t.title)).putString(MediaMetadata.METADATA_KEY_ARTIST, safe(t.artist)).putString(MediaMetadata.METADATA_KEY_ALBUM, safe(t.album)); if (duration > 0) meta.putLong(MediaMetadata.METADATA_KEY_DURATION, duration); mediaSession.setMetadata(meta.build()); }
             if (!mediaSession.isActive()) mediaSession.setActive(true);
         } catch (Throwable ignored) {}
     }
@@ -827,84 +581,29 @@ public final class PlayerService extends Service {
 
     private Notification notification(Track t, boolean playing) {
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
-        b.setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle(t == null ? "Estrada Play Comunista" : safe(t.title))
-                .setContentText(notificationSubtitle(t, playing))
-                .setContentIntent(openPlayerIntent())
-                .setCategory(Notification.CATEGORY_TRANSPORT)
-                .setVisibility(Notification.VISIBILITY_PUBLIC)
-                .setOngoing(playing)
-                .setOnlyAlertOnce(true)
-                .addAction(android.R.drawable.ic_media_previous, "Anterior", serviceAction(1, ACTION_PREVIOUS))
-                .addAction(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
-                        playing ? "Pausar" : "Tocar", serviceAction(2, ACTION_TOGGLE))
-                .addAction(android.R.drawable.ic_media_next, "Próxima", serviceAction(3, ACTION_NEXT));
-        if (mediaSession != null) {
-            try {
-                b.setStyle(new Notification.MediaStyle()
-                        .setMediaSession(mediaSession.getSessionToken())
-                        .setShowActionsInCompactView(0, 1, 2));
-            } catch (Throwable ignored) {}
-        }
+        b.setSmallIcon(android.R.drawable.ic_media_play).setContentTitle(t == null ? "Estrada Play Comunista" : safe(t.title)).setContentText(notificationSubtitle(t, playing)).setContentIntent(openPlayerIntent()).setCategory(Notification.CATEGORY_TRANSPORT).setVisibility(Notification.VISIBILITY_PUBLIC).setOngoing(playing).setOnlyAlertOnce(true).addAction(android.R.drawable.ic_media_previous, "Anterior", serviceAction(1, ACTION_PREVIOUS)).addAction(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play, playing ? "Pausar" : "Tocar", serviceAction(2, ACTION_TOGGLE)).addAction(android.R.drawable.ic_media_next, "Próxima", serviceAction(3, ACTION_NEXT));
+        if (mediaSession != null) try { b.setStyle(new Notification.MediaStyle().setMediaSession(mediaSession.getSessionToken()).setShowActionsInCompactView(0, 1, 2)); } catch (Throwable ignored) {}
         return b.build();
     }
 
-    private String notificationSubtitle(Track t, boolean playing) {
-        if (t == null) return "Música local";
-        String artist = safe(t.artist);
-        String suffix = playing ? "Tocando no aparelho" : "Pausado";
-        return artist.isEmpty() ? suffix : artist + " · " + suffix;
-    }
+    private String notificationSubtitle(Track t, boolean playing) { if (t == null) return "Música local"; String artist = safe(t.artist); String suffix = playing ? "Tocando no aparelho" : "Pausado"; return artist.isEmpty() ? suffix : artist + " · " + suffix; }
+    private PendingIntent serviceAction(int requestCode, String action) { Intent i = new Intent(this, PlayerService.class).setAction(action); return PendingIntent.getService(this, requestCode, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE); }
+    private PendingIntent openPlayerIntent() { Intent i = new Intent(this, MusicPlayerActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP); return PendingIntent.getActivity(this, 10, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE); }
 
-    private PendingIntent serviceAction(int requestCode, String action) {
-        Intent i = new Intent(this, PlayerService.class).setAction(action);
-        return PendingIntent.getService(this, requestCode, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-    }
-
-    private PendingIntent openPlayerIntent() {
-        Intent i = new Intent(this, MusicPlayerActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        return PendingIntent.getActivity(this, 10, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-    }
-
-    private void updateNotification(Notification n) {
-        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (nm != null) nm.notify(NOTIFICATION_ID, n);
-    }
+    private void updateNotification(Notification n) { NotificationPermissionCompat.notify(this, NOTIFICATION_ID, n); }
 
     private void releasePlayerOnly() {
-        stopCheckpoint();
-        prepared = false;
-        if (player != null) {
-            try { player.stop(); } catch (Exception ignored) {}
-            try { player.release(); } catch (Exception ignored) {}
-            player = null;
-        }
+        stopCheckpoint(); prepared = false;
+        if (player != null) { try { player.stop(); } catch (Exception ignored) {} try { player.release(); } catch (Exception ignored) {} player = null; }
     }
 
-    private static final class StagedQueue {
-        final ArrayList<String> keys = new ArrayList<>();
-        final LinkedHashMap<String, String> sources = new LinkedHashMap<>();
-    }
+    private static final class StagedQueue { final ArrayList<Track> unused = null; final ArrayList<String> keys = new ArrayList<>(); final LinkedHashMap<String, String> sources = new LinkedHashMap<>(); }
 
-    @Override public void onTaskRemoved(Intent rootIntent) {
-        saveSnapshot();
-        stopSelf();
-        super.onTaskRemoved(rootIntent);
-    }
+    @Override public void onTaskRemoved(Intent rootIntent) { saveSnapshot(); stopSelf(); super.onTaskRemoved(rootIntent); }
 
     @Override public void onDestroy() {
-        saveSnapshot();
-        io.shutdownNow();
-        playerGeneration++;
-        releasePlayerOnly();
-        abandonFocus();
-        if (mediaSession != null) {
-            try { mediaSession.setActive(false); } catch (Throwable ignored) {}
-            try { mediaSession.release(); } catch (Throwable ignored) {}
-            mediaSession = null;
-        }
-        stopForeground(true);
-        super.onDestroy();
+        saveSnapshot(); io.shutdownNow(); playerGeneration++; releasePlayerOnly(); abandonFocus();
+        if (mediaSession != null) { try { mediaSession.setActive(false); } catch (Throwable ignored) {} try { mediaSession.release(); } catch (Throwable ignored) {} mediaSession = null; }
+        stopForeground(true); super.onDestroy();
     }
 }
