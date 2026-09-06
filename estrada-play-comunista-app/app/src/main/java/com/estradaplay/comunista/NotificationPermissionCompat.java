@@ -1,6 +1,7 @@
 package com.estradaplay.comunista;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -18,6 +19,7 @@ final class NotificationPermissionCompat {
                 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
+    @SuppressLint("MissingPermission") // Guarded above and SecurityException is handled for revocation races.
     static boolean notify(Context context, int id, Notification notification) {
         if (context == null || notification == null || !canPost(context)) return false;
         try {
