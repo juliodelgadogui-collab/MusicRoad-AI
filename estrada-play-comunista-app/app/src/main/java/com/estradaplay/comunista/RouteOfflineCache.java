@@ -154,7 +154,6 @@ final class RouteOfflineCache {
                     JSONObject o = a.optJSONObject(i);
                     if (o == null) continue;
                     double along = o.optDouble("along_m", 0);
-                    if (Math.abs(scale - 1.0) > 0.01) along *= scale;
                     steps.add(new RouteEngine.Step(
                             o.optString("instruction", ""), o.optString("road", ""),
                             o.optString("type", ""), o.optString("modifier", ""),
