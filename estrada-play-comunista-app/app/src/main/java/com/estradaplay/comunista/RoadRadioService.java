@@ -433,8 +433,7 @@ public final class RoadRadioService extends Service {
     }
 
     private void updateNotification(){
-        NotificationManager n=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-        if(n!=null)n.notify(NOTIF,notification(identity==null?"Rádio da rodovia":identity.road,ptt?"Transmitindo PTT":(joined?participants+" no trecho":"Desligado")));
+        NotificationPermissionCompat.notify(this,NOTIF,notification(identity==null?"Rádio da rodovia":identity.road,ptt?"Transmitindo PTT":(joined?participants+" no trecho":"Desligado")));
     }
 
     @Override public void onTaskRemoved(Intent root){wanted=false;io.execute(this::leave);stopSelf();super.onTaskRemoved(root);}
