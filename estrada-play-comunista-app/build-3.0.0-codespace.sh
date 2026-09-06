@@ -107,7 +107,7 @@ tar -xjf "$VOICE_MODEL" -C "$VOICE_ROOT"
 
 test "$(find app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
 
-log "Executando Android Lint, testes e compilando Universal + Horizontal"
+log "Executando Android Lint, testes e compilando Universal + Horizontal TESTE"
 "$GRADLE" --no-daemon \
   lintUniversalDebug \
   lintHorizontalDebug \
@@ -164,30 +164,32 @@ validate_apk(){
   local apk="$1" package="$2" label="$3" dump="$4"
   log "Validando APK $label"
   "$AAPT" dump badging "$apk" | tee "$dump"
-  grep -q "package: name='$package' versionCode='300' versionName='3.0.0'" "$dump"
+  grep -q "package: name='$package' versionCode='300' versionName='3.0.0-teste'" "$dump"
   grep -q "targetSdkVersion:'36'" "$dump"
+  grep -q "application-label:'Estrada Play Comunista Teste'" "$dump"
   "$ZIPALIGN" -c -P 16 -v 4 "$apk"
   audit_elf_16k "$apk" "$label"
   "$APKSIGNER" verify --print-certs "$apk"
 }
 
-validate_apk "$U" "com.estradaplay.comunista.universal" "Universal" /tmp/epc-v300-universal.txt
-validate_apk "$H" "com.estradaplay.comunista.horizontal" "Horizontal" /tmp/epc-v300-horizontal.txt
+# EPC_DEBUG_ISOLATED_V300: debug IDs are intentionally different from production.
+validate_apk "$U" "com.estradaplay.comunista.universal.teste" "Universal Teste" /tmp/epc-v300-universal-teste.txt
+validate_apk "$H" "com.estradaplay.comunista.horizontal.teste" "Horizontal Teste" /tmp/epc-v300-horizontal-teste.txt
 
-log "Organizando APKs"
+log "Organizando APKs de teste"
 rm -rf "$DIST"
 mkdir -p "$DIST"
-cp "$U" "$DIST/Estrada-Play-Comunista-Universal-3.0.0.apk"
-cp "$H" "$DIST/Estrada-Play-Comunista-Horizontal-3.0.0.apk"
+cp "$U" "$DIST/Estrada-Play-Comunista-Teste-Universal-3.0.0.apk"
+cp "$H" "$DIST/Estrada-Play-Comunista-Teste-Horizontal-3.0.0.apk"
 (
   cd "$DIST"
   sha256sum \
-    Estrada-Play-Comunista-Universal-3.0.0.apk \
-    Estrada-Play-Comunista-Horizontal-3.0.0.apk \
+    Estrada-Play-Comunista-Teste-Universal-3.0.0.apk \
+    Estrada-Play-Comunista-Teste-Horizontal-3.0.0.apk \
     | tee SHA256SUMS.txt
 )
 
-log "BUILD 3.0.0 CONCLUÍDO"
+log "BUILD TESTE 3.0.0 CONCLUÍDO"
 printf 'APKs em: %s\n' "$DIST"
-printf ' - %s\n' "$DIST/Estrada-Play-Comunista-Universal-3.0.0.apk"
-printf ' - %s\n' "$DIST/Estrada-Play-Comunista-Horizontal-3.0.0.apk"
+printf ' - %s\n' "$DIST/Estrada-Play-Comunista-Teste-Universal-3.0.0.apk"
+printf ' - %s\n' "$DIST/Estrada-Play-Comunista-Teste-Horizontal-3.0.0.apk"
