@@ -35,6 +35,13 @@ require(APP_GRADLE, "targetSdk 36", "targetSdk esperado: 36")
 require(APP_GRADLE, "versionCode 300", "versionCode esperado: 300")
 require(APP_GRADLE, "versionName '3.0.0'", "versionName esperado: 3.0.0")
 require(APP_GRADLE, "com.google.mlkit:text-recognition:16.0.1", "OCR local bundled esperado")
+for marker in (
+    "EPC_DEBUG_ISOLATED_V300",
+    "applicationIdSuffix '.teste'",
+    "versionNameSuffix '-teste'",
+    "appLabel: 'Estrada Play Comunista Teste'",
+):
+    require(APP_GRADLE, marker)
 
 server_store = JAVA / "ServerEndpointStore.java"
 server_settings = JAVA / "ServerSettingsActivity.java"
@@ -43,6 +50,7 @@ shell = JAVA / "UnifiedAppShell.java"
 gate = JAVA / "GateActivity.java"
 api = JAVA / "ApiClient.java"
 application = JAVA / "EstradaPlayApplication.java"
+device_identity = JAVA / "DeviceIdentity.java"
 session_guard = JAVA / "SessionValidityGuardV300.java"
 session_policy = JAVA / "SessionValidityPolicyV300.java"
 session_test = TEST_JAVA / "SessionValidityPolicyV300Test.java"
@@ -133,6 +141,13 @@ for marker in (
     require(api, marker)
 
 for marker in (
+    "EPC_DEBUG_DEVICE_ISOLATED_V300",
+    'BuildConfig.DEBUG ? "|debug|" + BuildConfig.APPLICATION_ID : ""',
+    "Estrada Play Teste",
+):
+    require(device_identity, marker)
+
+for marker in (
     "SESSION_VALIDITY_GUARD_V300",
     "NET_CAPABILITY_VALIDATED",
     "SessionValidityPolicyV300.isExplicitRevocation(response.code)",
@@ -191,8 +206,10 @@ for marker in (
     'EPC_STRICT_16K:-1',
     "python3-venv",
     "bzip2",
-    "Estrada-Play-Comunista-Universal-3.0.0.apk",
-    "Estrada-Play-Comunista-Horizontal-3.0.0.apk",
+    "com.estradaplay.comunista.universal.teste",
+    "com.estradaplay.comunista.horizontal.teste",
+    "Estrada-Play-Comunista-Teste-Universal-3.0.0.apk",
+    "Estrada-Play-Comunista-Teste-Horizontal-3.0.0.apk",
 ):
     require(BUILD_SCRIPT, marker)
 forbid(BUILD_SCRIPT, 'EPC_STRICT_16K:-0', "auditoria 16 KB não pode voltar a ser permissiva por padrão")
@@ -222,6 +239,7 @@ print(" - conexões HTTP são encerradas também em falhas")
 print(" - player mantém fonte/fila exatas")
 print(" - download trata timeout dataSync")
 print(" - edge-to-edge respeita barras/cutout")
+print(" - build debug usa pacote, nome e identidade de dispositivo de TESTE")
 print(" - build Codespaces executa Android Lint antes dos APKs")
 print(" - build Codespaces bloqueia 16 KB incompatível por padrão")
 print(" - sem WebView")
