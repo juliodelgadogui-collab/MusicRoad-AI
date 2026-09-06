@@ -15,7 +15,8 @@ VOICE_VENV="$HOME/.cache/epc-v300-voice-venv"
 VOICE_MODEL="$HOME/.cache/vits-piper-pt_BR-faber-medium.tar.bz2"
 VOICE_ROOT="$HOME/.cache/epc-v300-voice-model"
 DIST="$APP_DIR/dist"
-STRICT_16K="${EPC_STRICT_16K:-0}"
+# 16 KB is release-blocking by default. Set EPC_STRICT_16K=0 only for an intentional diagnostic build.
+STRICT_16K="${EPC_STRICT_16K:-1}"
 
 log(){ printf '\n==> %s\n' "$*"; }
 
@@ -33,10 +34,16 @@ fi
 need_apt=0
 command -v unzip >/dev/null 2>&1 || need_apt=1
 command -v readelf >/dev/null 2>&1 || need_apt=1
+command -v bzip2 >/dev/null 2>&1 || need_apt=1
+rm -rf /tmp/epc-venv-probe
+if ! python3 -m venv /tmp/epc-venv-probe >/dev/null 2>&1; then
+  need_apt=1
+fi
+rm -rf /tmp/epc-venv-probe
 if [ "$need_apt" -eq 1 ]; then
   log "Instalando utilitários de validação"
   sudo apt-get update
-  sudo apt-get install -y unzip binutils
+  sudo apt-get install -y unzip binutils bzip2 python3-venv
 fi
 
 if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
@@ -100,8 +107,10 @@ tar -xjf "$VOICE_MODEL" -C "$VOICE_ROOT"
 
 test "$(find app/src/main/res/raw -maxdepth 1 -name 'ep_*.wav' | wc -l)" -ge 77
 
-log "Executando testes e compilando Universal + Horizontal"
+log "Executando Android Lint, testes e compilando Universal + Horizontal"
 "$GRADLE" --no-daemon \
+  lintUniversalDebug \
+  lintHorizontalDebug \
   testUniversalDebugUnitTest \
   testHorizontalDebugUnitTest \
   assembleUniversalDebug \
@@ -116,8 +125,8 @@ AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
 APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
 ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
 
-# NATIVE_16K_AUDIT_V300: every build is inspected. Set EPC_STRICT_16K=1 to make
-# any native LOAD segment below 0x4000 block the build instead of only reporting it.
+# NATIVE_16K_AUDIT_V300: every build is inspected. Strict mode is on by default so
+# any native LOAD segment below 0x4000 blocks the candidate APK before distribution.
 audit_elf_16k(){
   local apk="$1" label="$2" tmp bad so align value
   tmp="$(mktemp -d)"
@@ -130,7 +139,7 @@ audit_elf_16k(){
           *) continue ;;
         esac
         if [ "$value" -lt $((0x4000)) ]; then
-          printf 'AVISO 16 KB [%s]: %s tem LOAD align %s\n' "$label" "${so#"$tmp/"}" "$align" >&2
+          printf 'ERRO 16 KB [%s]: %s tem LOAD align %s\n' "$label" "${so#"$tmp/"}" "$align" >&2
           bad=1
           break
         fi
@@ -144,9 +153,10 @@ audit_elf_16k(){
   fi
   printf 'ELF 16 KB [%s]: há SDK nativo a migrar.\n' "$label" >&2
   if [ "$STRICT_16K" = "1" ]; then
-    printf 'EPC_STRICT_16K=1: bloqueando build incompatível.\n' >&2
+    printf 'EPC_STRICT_16K=1: bloqueando APK incompatível.\n' >&2
     return 1
   fi
+  printf 'EPC_STRICT_16K=0: diagnóstico permitido, APK não deve ser publicado.\n' >&2
   return 0
 }
 
