@@ -13,6 +13,7 @@ BUILD_SCRIPT = ROOT / "build-3.0.0-codespace.sh"
 
 errors = []
 
+
 def text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -20,20 +21,25 @@ def text(path: Path) -> str:
         errors.append(f"não consegui ler {path}: {exc}")
         return ""
 
+
 def require(path: Path, needle: str, label: str | None = None) -> None:
     if needle not in text(path):
         errors.append(label or f"faltando {needle!r} em {path.name}")
+
 
 def forbid(path: Path, needle: str, label: str | None = None) -> None:
     if needle in text(path):
         errors.append(label or f"conteúdo proibido {needle!r} em {path.name}")
 
+
+# Toolchain / isolated debug identity.
 require(ROOT_GRADLE, "version '8.10.1'", "Android Gradle Plugin esperado: 8.10.1")
 require(APP_GRADLE, "EPC_300_PRODUCTION_BASELINE")
 require(APP_GRADLE, "compileSdk 36", "compileSdk esperado: 36")
 require(APP_GRADLE, "targetSdk 36", "targetSdk esperado: 36")
 require(APP_GRADLE, "versionCode 300", "versionCode esperado: 300")
 require(APP_GRADLE, "versionName '3.0.0'", "versionName esperado: 3.0.0")
+require(APP_GRADLE, "JavaVersion.VERSION_17", "Java 17 deve permanecer fixado no Android")
 require(APP_GRADLE, "com.google.mlkit:text-recognition:16.0.1", "OCR local bundled esperado")
 for marker in (
     "EPC_DEBUG_ISOLATED_V300",
@@ -52,14 +58,20 @@ api = JAVA / "ApiClient.java"
 application = JAVA / "EstradaPlayApplication.java"
 device_identity = JAVA / "DeviceIdentity.java"
 session_guard = JAVA / "SessionValidityGuardV300.java"
+session_client = JAVA / "SessionValidationClientV300.java"
 session_policy = JAVA / "SessionValidityPolicyV300.java"
 session_test = TEST_JAVA / "SessionValidityPolicyV300Test.java"
+notification_guard = JAVA / "NotificationPermissionCompat.java"
+obd = JAVA / "Obd2Activity.java"
 player = JAVA / "PlayerService.java"
 music = JAVA / "MusicPlayerActivity.java"
 road_map = JAVA / "RoadMapActivity.java"
 download = JAVA / "DownloadService.java"
+road_safety = JAVA / "RoadSafetyService.java"
+road_radio = JAVA / "RoadRadioService.java"
 system_bars = JAVA / "SystemBarsCompatV251.java"
 
+# Server / HTTPS hardening.
 for marker in (
     "SERVER_ENDPOINT_HTTPS_V260",
     "Servidor precisa usar HTTPS válido",
@@ -82,6 +94,7 @@ for marker in (
 ):
     require(diagnostics, marker)
 
+# Android 16 adaptive-window baseline.
 for marker in (
     "ANDROID16_ADAPTIVE_V280",
     "cfg.screenWidthDp >= 600",
@@ -94,8 +107,6 @@ require(MANIFEST, 'android:name=".SystemDiagnosticsActivity"')
 require(MANIFEST, "ANDROID16_CONFIG_RECREATE_V300")
 forbid(MANIFEST, "PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY", "opt-out antigo de tela grande ainda presente")
 
-# ANDROID16_CONFIG_RECREATE_V300: screens without an explicit configuration handler must
-# let Android recreate them. Camera recreation also forces CameraX/OCR to rebind to the new rotation.
 try:
     manifest_root = ET.parse(MANIFEST).getroot()
     android = "{http://schemas.android.com/apk/res/android}"
@@ -127,9 +138,12 @@ except Exception as exc:
 require(road_map, "onConfigurationChanged")
 require(music, "onConfigurationChanged")
 
+# Offline-first Gate: comments may mention device login; executable network code may not exist here.
 require(gate, "STARTUP_OFFLINE_FIRST_V290")
-forbid(gate, "device_login", "Gate não pode voltar a bloquear abertura com device_login")
+forbid(gate, "new ApiClient(", "Gate não pode criar cliente de rede")
+forbid(gate, "native_app.php?action=device_login", "Gate não pode executar device_login")
 
+# General API redirect/connection hardening.
 for marker in (
     "API_REDIRECT_GUARD_V300",
     "API_CONNECTION_CLEANUP_V300",
@@ -140,6 +154,7 @@ for marker in (
 ):
     require(api, marker)
 
+# Debug APK must remain isolated from production identity.
 for marker in (
     "EPC_DEBUG_DEVICE_ISOLATED_V300",
     'BuildConfig.DEBUG ? "|debug|" + BuildConfig.APPLICATION_ID : ""',
@@ -147,47 +162,85 @@ for marker in (
 ):
     require(device_identity, marker)
 
+# Background remembered-session validation must be read-only and race-safe.
 for marker in (
     "SESSION_VALIDITY_GUARD_V300",
     "NET_CAPABILITY_VALIDATED",
+    "SESSION_ACCOUNT_SWITCH_GUARD_V300",
+    "SessionValidationClientV300.sessionFingerprint(app)",
+    "SessionValidationClientV300.validate(app, payload)",
+    "validationStillCurrent(accountAtStart, sessionAtStart)",
     "SessionValidityPolicyV300.isExplicitRevocation(response.code)",
-    "LOGOUT_RACE_GUARD_V300",
-    "if (hasLocalAccount())",
     "FLAG_ACTIVITY_CLEAR_TASK",
 ):
     require(session_guard, marker)
 require(application, "SessionValidityGuardV300.register(this)")
+
+for marker in (
+    "SESSION_VALIDATION_READ_ONLY_V300",
+    "setInstanceFollowRedirects(false)",
+    "X-EstradaPlay-Device-Secret",
+    "sessionFingerprint",
+    "SHA-256",
+):
+    require(session_client, marker)
+forbid(session_client, "captureCookies(", "validação read-only não pode capturar cookies")
+forbid(session_client, "captureAuth(", "validação read-only não pode capturar tokens")
+forbid(session_client, "refreshIfPossible(", "validação read-only não pode renovar sessão")
+
 for marker in (
     "httpCode == 401",
     "httpCode == 403",
+    "SESSION_ACCOUNT_SWITCH_GUARD_V300",
+    "sameValidationSubject",
 ):
     require(session_policy, marker)
 for marker in (
     "isExplicitRevocation(401)",
     "isExplicitRevocation(403)",
     "isExplicitRevocation(500)",
+    "sameValidationSubject",
+    '"session-a", "session-b"',
 ):
     require(session_test, marker)
 
+# Android 13+ notification updates: runtime guard + SecurityException race handling.
+for marker in (
+    "NOTIFICATION_PERMISSION_GUARD_V300",
+    "POST_NOTIFICATIONS",
+    '@SuppressLint("MissingPermission")',
+    "catch (SecurityException ignored)",
+):
+    require(notification_guard, marker)
+for service in (player, download, road_safety, road_radio):
+    require(service, "NotificationPermissionCompat.notify", f"{service.name} deve atualizar notificações pelo guard central")
+
+# Bluetooth OBD2 keeps real runtime checks; suppression only documents the guard to Lint.
+for marker in (
+    "OBD2_PERMISSION_GUARD_V300",
+    "hasBluetoothConnectPermission()",
+    "BLUETOOTH_CONNECT",
+    "catch(SecurityException",
+):
+    require(obd, marker)
+
+# Music/download protections carried from 2.5.1.
 for marker in (
     "PLAYER_EXACT_SELECTED_SOURCE_V246",
     "PLAYER_PREPARE_GENERATION_V249",
     "PLAYER_QUEUE_SOURCE_STRICT_V251",
 ):
     require(player, marker)
-
 for marker in (
     "MUSIC_EXACT_SELECTED_SOURCE_V246",
     "MUSIC_FAILURE_AUTO_REFRESH_V250",
 ):
     require(music, marker)
-
 for marker in (
     "MUSIC_DOWNLOAD_TIMEOUT_V251",
     "onTimeout(int startId, int fgsType)",
 ):
     require(download, marker)
-
 for marker in (
     "ANDROID15_SAFE_INSETS_V251",
     "WindowInsets.Type.systemBars()",
@@ -195,51 +248,55 @@ for marker in (
 ):
     require(system_bars, marker)
 
+# Codespaces test build is intentionally Universal-only.
 for marker in (
+    "JAVA17_AUTO_BOOTSTRAP_V300",
     "gradle-8.11.1-bin.zip",
     'platforms;android-36',
     "validate_v300.py",
+    "UNIVERSAL_ONLY_BUILD_V300",
     "lintUniversalDebug",
-    "lintHorizontalDebug",
+    "testUniversalDebugUnitTest",
+    "assembleUniversalDebug",
     "NATIVE_16K_AUDIT_V300",
     "audit_elf_16k",
     'EPC_STRICT_16K:-1',
     "python3-venv",
     "bzip2",
     "com.estradaplay.comunista.universal.teste",
-    "com.estradaplay.comunista.horizontal.teste",
     "Estrada-Play-Comunista-Teste-Universal-3.0.0.apk",
-    "Estrada-Play-Comunista-Teste-Horizontal-3.0.0.apk",
 ):
     require(BUILD_SCRIPT, marker)
+for forbidden in (
+    "lintHorizontalDebug",
+    "testHorizontalDebugUnitTest",
+    "assembleHorizontalDebug",
+    "com.estradaplay.comunista.horizontal.teste",
+    "Estrada-Play-Comunista-Teste-Horizontal-3.0.0.apk",
+):
+    forbid(BUILD_SCRIPT, forbidden, f"build Universal-only ainda contém {forbidden}")
 forbid(BUILD_SCRIPT, 'EPC_STRICT_16K:-0', "auditoria 16 KB não pode voltar a ser permissiva por padrão")
 
+# Native app invariant.
 for path in JAVA.rglob("*.java"):
     source = text(path)
     if "android.webkit.WebView" in source or "new WebView" in source:
         errors.append(f"WebView detectado em {path.relative_to(ROOT)}")
 
 if errors:
-    print("EPC 3.0.0: pré-validação FALHOU", file=sys.stderr)
+    print("EPC 3.0.0 Universal: pré-validação FALHOU", file=sys.stderr)
     for error in errors:
         print(f" - {error}", file=sys.stderr)
     sys.exit(1)
 
-print("EPC 3.0.0: pré-validação OK")
+print("EPC 3.0.0 Universal: pré-validação OK")
 print(" - servidor personalizado exige HTTPS e API pronta")
-print(" - diagnóstico local registrado")
-print(" - janelas adaptáveis Android 16 habilitadas")
-print(" - telas sem handler próprio deixam Android recriar a configuração")
-print(" - câmera é recriada/revinculada pelo sistema quando a configuração muda")
 print(" - Gate abre sem depender da rede")
-print(" - conta salva é validada em background; somente 401/403 revoga")
-print(" - logout não pode ser desfeito por validação concorrente")
-print(" - redirects autenticados são controlados")
-print(" - conexões HTTP são encerradas também em falhas")
-print(" - player mantém fonte/fila exatas")
-print(" - download trata timeout dataSync")
+print(" - validação de conta em background é read-only e protegida contra troca de conta")
+print(" - notificações e OBD2 mantêm checagens de permissão compatíveis com Lint")
+print(" - redirects autenticados são controlados e conexões são encerradas")
+print(" - player mantém fonte/fila exatas e download trata timeout dataSync")
 print(" - edge-to-edge respeita barras/cutout")
-print(" - build debug usa pacote, nome e identidade de dispositivo de TESTE")
-print(" - build Codespaces executa Android Lint antes dos APKs")
-print(" - build Codespaces bloqueia 16 KB incompatível por padrão")
+print(" - debug usa pacote, nome e identidade de dispositivo de TESTE")
+print(" - Codespaces compila somente Universal e bloqueia 16 KB incompatível por padrão")
 print(" - sem WebView")
