@@ -60,7 +60,6 @@ final class RouteEngine {
     static final class Route {
         final String geoJson;
         final double distanceM, durationS;
-        // Legacy fields retained for older cockpit helpers.
         final double nextDistanceM;
         final String nextInstruction, nextRoad, maneuverType, maneuverModifier;
         final List<Step> steps;
@@ -188,12 +187,19 @@ final class RouteEngine {
 
     private RouteEngine() {}
 
-    // NAVIGATION_REAL_COMPAT_V208: legacy planner overload during consolidation.
     static Route fetch(double fromLat, double fromLon, double toLat, double toLon) throws Exception {
         return fetchOsrmFallback(fromLat, fromLon, toLat, toLon);
     }
 
+    // ROUTE_RECOVERY_V310: online routing remains primary; an already-calculated route is the
+    // deterministic fallback during temporary connection loss, process recreation or offline test.
     static Route fetch(Context context, double fromLat, double fromLon, double toLat, double toLon) throws Exception {
+        Route cached = RouteOfflineCache.load(context, fromLat, fromLon, toLat, toLon);
+        if (DriveSettings.offlineTestMode(context)) {
+            if (cached != null) return cached;
+            throw new Exception("Nenhuma rota preparada para uso offline");
+        }
+
         Exception serverError = null;
         try {
             JSONObject body = new JSONObject();
@@ -205,19 +211,36 @@ final class RouteEngine {
             ApiClient.Response response = new ApiClient(context).post("api/navigation_route.php", body);
             JSONObject root = response.json();
             JSONObject route = root.optJSONObject("route");
-            if (response.ok() && root.optBoolean("ok") && route != null) return parseRoute(route);
+            if (response.ok() && root.optBoolean("ok") && route != null) {
+                Route parsed = parseRoute(route);
+                cacheResolved(context, fromLat, fromLon, toLat, toLon, parsed);
+                return parsed;
+            }
             serverError = new Exception(root.optString("error", "Servidor de rota indisponível"));
         } catch (Exception e) {
             serverError = e;
         }
 
-        // Compatibility fallback while a 2.0.7 server is being upgraded to 2.0.8.
         try {
-            return fetchOsrmFallback(fromLat, fromLon, toLat, toLon);
+            Route fallbackRoute = fetchOsrmFallback(fromLat, fromLon, toLat, toLon);
+            cacheResolved(context, fromLat, fromLon, toLat, toLon, fallbackRoute);
+            return fallbackRoute;
         } catch (Exception fallback) {
+            if (cached != null) return cached;
             if (serverError != null) fallback.addSuppressed(serverError);
             throw fallback;
         }
+    }
+
+    private static void cacheResolved(Context context, double fromLat, double fromLon,
+                                      double toLat, double toLon, Route route) {
+        if (context == null || route == null) return;
+        String label = "Destino";
+        try {
+            DestinationStore.Destination d = DestinationStore.read(context);
+            if (d != null && distanceM(d.lat, d.lon, toLat, toLon) <= 300) label = d.label;
+        } catch (Throwable ignored) {}
+        RouteOfflineCache.save(context, fromLat, fromLon, toLat, toLon, label, route, false);
     }
 
     private static Route fetchOsrmFallback(double fromLat, double fromLon, double toLat, double toLon) throws Exception {
@@ -229,7 +252,7 @@ final class RouteEngine {
         c.setReadTimeout(25000);
         c.setInstanceFollowRedirects(true);
         c.setRequestProperty("Accept", "application/json");
-        c.setRequestProperty("User-Agent", "EstradaPlayComunista/2.0.8 Android");
+        c.setRequestProperty("User-Agent", "EstradaPlayComunista/3.1 Android");
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) {
             c.disconnect();
