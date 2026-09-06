@@ -328,11 +328,8 @@ public final class RoadSafetyService extends Service {
         if (mode == RoadThoughts.MODE_SCREEN_VOICE && VoiceSettings.mode(this) == VoiceSettings.MODE_ANDROID && ttsReady) speakThought(RoadThoughts.spoken(e));
     }
 
-    private void interruptThoughtForSafety() {
-        lastSafetyVoiceAt = System.currentTimeMillis();
-    }
+    private void interruptThoughtForSafety() { lastSafetyVoiceAt = System.currentTimeMillis(); }
 
-    // CLIMA_ROTA_V191: voice warning for current/near-future/route rain. Safety alerts keep priority.
     private void maybeAnnounceWeatherForecast() {
         RoadWeatherMonitor.Snapshot wx=RoadWeatherMonitor.snapshot(this);
         if(!wx.shouldAnnounce()||voiceBusy())return;
@@ -357,9 +354,7 @@ public final class RoadSafetyService extends Service {
         if (!roadLimitResolving.compareAndSet(false, true)) return;
         limitIo.execute(() -> {
             int limit = 0;
-            try {
-                if (mapRoads != null) limit = mapRoads.speedLimitAt(lat, lon, heading);
-            } catch (Throwable ignored) {}
+            try { if (mapRoads != null) limit = mapRoads.speedLimitAt(lat, lon, heading); } catch (Throwable ignored) {}
             final int resolved = limit;
             main.post(() -> applyRoadLimit(resolved));
             roadLimitResolving.set(false);
@@ -368,16 +363,12 @@ public final class RoadSafetyService extends Service {
 
     private void applyRoadLimit(int limitKmh) {
         if (!roadLimitPolicy.applyLimit(limitKmh)) return;
-        if (roadLimitPolicy.shouldAnnounceLimit() && speakRoadLimitVoice(roadLimitPolicy.currentLimit())) {
-            roadLimitPolicy.markLimitAnnounced();
-        }
+        if (roadLimitPolicy.shouldAnnounceLimit() && speakRoadLimitVoice(roadLimitPolicy.currentLimit())) roadLimitPolicy.markLimitAnnounced();
     }
 
     private void evaluateRoadLimit(double speedKmh) {
         int limit = roadLimitPolicy.currentLimit();
-        if (roadLimitPolicy.observeSpeedAndShouldWarn(speedKmh) && speakOverspeedVoice(limit)) {
-            roadLimitPolicy.markOverspeedWarned();
-        }
+        if (roadLimitPolicy.observeSpeedAndShouldWarn(speedKmh) && speakOverspeedVoice(limit)) roadLimitPolicy.markOverspeedWarned();
     }
 
     private void ensureCoverage(double lat, double lon, float heading) {
@@ -396,16 +387,13 @@ public final class RoadSafetyService extends Service {
                 boolean alertOk = !alertNeeds || packs.prepareTravelReserve(api, lat, lon, heading);
                 boolean mapOk = !mapNeeds || mapRoads.prepare(api, lat, lon, heading);
                 if (!alertOk || !mapOk) {
-                    // Cookie can exist locally while PHP session already expired.
                     ensureApiSession(true);
                     if (alertNeeds && !alertOk) packs.prepareTravelReserve(api, lat, lon, heading);
                     if (mapNeeds && !mapOk) mapRoads.prepare(api, lat, lon, heading);
                 }
             } finally {
                 fetching.set(false);
-                String text = packs.hasAnyCoverage(lat, lon)
-                        ? packs.status(lat, lon) + " · " + mapRoads.status(lat, lon)
-                        : "Não consegui atualizar agora; usando o que já está salvo";
+                String text = packs.hasAnyCoverage(lat, lon) ? packs.status(lat, lon) + " · " + mapRoads.status(lat, lon) : "Não consegui atualizar agora; usando o que já está salvo";
                 updateNotification("Proteção na estrada ativa", text, false);
                 broadcastSynthetic(lat, lon, text);
             }
@@ -423,36 +411,19 @@ public final class RoadSafetyService extends Service {
             d.put("device_label", DeviceIdentity.label());
             d.put("app_version", BuildConfig.VERSION_NAME);
             ApiClient.Response response = api.post("api/native_app.php?action=device_login", d);
-            if (!response.ok() || !response.json().optBoolean("ok", false)) {
-                if (force) api.clearSession();
-            }
-        } catch (Exception ignored) {
-            if (force) api.clearSession();
-        }
+            if (!response.ok() || !response.json().optBoolean("ok", false)) { if (force) api.clearSession(); }
+        } catch (Exception ignored) { if (force) api.clearSession(); }
     }
 
-    private boolean shouldAlert(RoadHazard h) {
-        return h != null && alertCooldown.shouldAlert(h.id, System.currentTimeMillis());
-    }
-
-    private void rememberAlert(RoadHazard h) {
-        if (h != null) alertCooldown.remember(h.id, System.currentTimeMillis());
-    }
+    private boolean shouldAlert(RoadHazard h) { return h != null && alertCooldown.shouldAlert(h.id, System.currentTimeMillis()); }
+    private void rememberAlert(RoadHazard h) { if (h != null) alertCooldown.remember(h.id, System.currentTimeMillis()); }
 
     private float heading(Location loc) {
-        // Bearing and speed are independent Android Location fields. Some head units
-        // provide a good bearing while speed is present-but-zero, so never discard it.
-        if (loc.hasBearing()) {
-            lastHeading = normalize(loc.getBearing());
-            return lastHeading;
-        }
+        if (loc.hasBearing()) { lastHeading = normalize(loc.getBearing()); return lastHeading; }
         if (previous != null) {
             float moved = previous.distanceTo(loc);
             long dt = Math.max(1L, loc.getTime() - previous.getTime());
-            if (moved >= 4f && dt <= 15000L) {
-                lastHeading = normalize(previous.bearingTo(loc));
-                return lastHeading;
-            }
+            if (moved >= 4f && dt <= 15000L) { lastHeading = normalize(previous.bearingTo(loc)); return lastHeading; }
         }
         return lastHeading;
     }
@@ -461,7 +432,6 @@ public final class RoadSafetyService extends Service {
         long nowWall = System.currentTimeMillis();
         double sensor = Double.NaN;
         if (loc.hasSpeed()) sensor = Math.max(0.0, loc.getSpeed() * 3.6);
-
         double derived = Double.NaN;
         long dt = 0L;
         float moved = 0f;
@@ -475,49 +445,28 @@ public final class RoadSafetyService extends Service {
                 if (moved >= noiseGate) derived = moved / (dt / 1000.0) * 3.6;
             }
         }
-
-        // A single GPS jump is not movement. Compare the current point with an
-        // anchor over several seconds. While parked, net displacement remains inside
-        // the GPS accuracy cloud even when consecutive fixes jump around.
         if (motionAnchor == null) {
-            motionAnchor = new Location(loc);
-            motionAnchorWallMs = nowWall;
-            // Fail safe: an automotive receiver can expose a stale speed on its
-            // first fix. Only actual displacement is allowed to leave this state.
-            stationaryConfirmed = true;
+            motionAnchor = new Location(loc); motionAnchorWallMs = nowWall; stationaryConfirmed = true;
         } else {
             long anchorAge = nowWall - motionAnchorWallMs;
             if (anchorAge >= 2500L) {
                 float anchorMoved = motionAnchor.distanceTo(loc);
                 float accNow = loc.hasAccuracy() ? loc.getAccuracy() : 20f;
                 float accAnchor = motionAnchor.hasAccuracy() ? motionAnchor.getAccuracy() : 20f;
-                float stationaryRadius = Math.max(6.0f,
-                        Math.min(12.0f, Math.max(accNow, accAnchor) * 0.45f));
+                float stationaryRadius = Math.max(6.0f, Math.min(12.0f, Math.max(accNow, accAnchor) * 0.45f));
                 stationaryConfirmed = anchorMoved <= stationaryRadius;
-                if (anchorAge >= 5000L || anchorMoved > stationaryRadius * 1.5f) {
-                    motionAnchor = new Location(loc);
-                    motionAnchorWallMs = nowWall;
-                }
+                if (anchorAge >= 5000L || anchorMoved > stationaryRadius * 1.5f) { motionAnchor = new Location(loc); motionAnchorWallMs = nowWall; }
             }
         }
-
         double chosen;
         if (Double.isFinite(sensor) && sensor >= 2.0) chosen = sensor;
         else if (Double.isFinite(derived) && derived >= 2.0) chosen = derived;
         else if (Double.isFinite(sensor)) chosen = sensor;
         else if (Double.isFinite(derived)) chosen = derived;
         else chosen = 0.0;
-
-        // Multi-sample stationary evidence wins over stale speed reported by the ROM.
         if (stationaryConfirmed) chosen = 0.0;
-
-        // Reject impossible spikes. Only preserve one short zero sample if we have
-        // actual displacement and have NOT confirmed the vehicle is stationary.
         if (chosen > 260.0) chosen = stationaryConfirmed ? 0.0 : lastSpeedKmh;
-        if (!stationaryConfirmed && chosen < 1.0 && lastSpeedKmh >= 5.0 &&
-                dt > 0L && dt <= 2500L && moved >= 3f) {
-            chosen = lastSpeedKmh * 0.70;
-        }
+        if (!stationaryConfirmed && chosen < 1.0 && lastSpeedKmh >= 5.0 && dt > 0L && dt <= 2500L && moved >= 3f) chosen = lastSpeedKmh * 0.70;
         if (chosen < 1.5) chosen = 0.0;
         return chosen;
     }
@@ -525,256 +474,136 @@ public final class RoadSafetyService extends Service {
     private void selectEstradaPlayVoice() {
         if (tts == null || Build.VERSION.SDK_INT < 21) return;
         try {
-            java.util.Set<Voice> voices = tts.getVoices();
-            if (voices == null || voices.isEmpty()) return;
+            java.util.Set<Voice> voices = tts.getVoices(); if (voices == null || voices.isEmpty()) return;
             ArrayList<Voice> pt = new ArrayList<>();
             for (Voice v : voices) {
                 if (v == null || v.getLocale() == null) continue;
-                String lang = v.getLocale().getLanguage();
-                String country = v.getLocale().getCountry();
+                String lang = v.getLocale().getLanguage(); String country = v.getLocale().getCountry();
                 if (!"pt".equalsIgnoreCase(lang)) continue;
                 if (!country.isEmpty() && !"BR".equalsIgnoreCase(country)) continue;
                 pt.add(v);
             }
             if (pt.isEmpty()) return;
-            pt.sort(Comparator
-                    .comparing((Voice v) -> v.isNetworkConnectionRequired())
-                    .thenComparing((Voice v) -> -v.getQuality())
-                    .thenComparing(Voice::getName));
+            pt.sort(Comparator.comparing((Voice v) -> v.isNetworkConnectionRequired()).thenComparing((Voice v) -> -v.getQuality()).thenComparing(Voice::getName));
             tts.setVoice(pt.get(0));
         } catch (Throwable ignored) {}
     }
 
-    private boolean voiceBusy() {
-        return activeVoiceToken > 0 && System.currentTimeMillis() < voiceBusyUntil;
-    }
+    private boolean voiceBusy() { return activeVoiceToken > 0 && System.currentTimeMillis() < voiceBusyUntil; }
 
     private int openVoiceSession(String kind, boolean interrupt) {
         if (!interrupt && voiceBusy()) return 0;
         int token = ++voiceSessionCounter;
-        activeVoiceToken = token;
-        activeVoiceKind = kind == null ? "" : kind;
-        voiceBusyUntil = System.currentTimeMillis() + 15_000L;
-        if (interrupt) {
-            try { if (offlineVoice != null) offlineVoice.stop(); } catch (Throwable ignored) {}
-            try { if (tts != null) tts.stop(); } catch (Throwable ignored) {}
-        }
+        activeVoiceToken = token; activeVoiceKind = kind == null ? "" : kind; voiceBusyUntil = System.currentTimeMillis() + 15_000L;
+        if (interrupt) { try { if (offlineVoice != null) offlineVoice.stop(); } catch (Throwable ignored) {} try { if (tts != null) tts.stop(); } catch (Throwable ignored) {} }
         return token;
     }
 
     private void beginVoiceDucking(int token) {
         if (token <= 0 || token != activeVoiceToken) return;
-        sendSafetyAudioState(true);
-        duckOwnPlayer(true);
-        voiceBusyUntil = System.currentTimeMillis() + 15_000L;
+        sendSafetyAudioState(true); duckOwnPlayer(true); voiceBusyUntil = System.currentTimeMillis() + 15_000L;
         if (voiceRestoreWatchdog != null) main.removeCallbacks(voiceRestoreWatchdog);
-        voiceRestoreWatchdog = () -> restoreAudioAfterVoice(token);
-        main.postDelayed(voiceRestoreWatchdog, 15_000L);
+        voiceRestoreWatchdog = () -> restoreAudioAfterVoice(token); main.postDelayed(voiceRestoreWatchdog, 15_000L);
     }
 
     private void restoreAudioAfterVoice(int token) {
         if (token <= 0 || token != activeVoiceToken) return;
         if (voiceRestoreWatchdog != null) { main.removeCallbacks(voiceRestoreWatchdog); voiceRestoreWatchdog = null; }
-        activeVoiceToken = 0;
-        activeVoiceKind = "";
-        voiceBusyUntil = 0L;
-        forceRestoreAudio();
+        activeVoiceToken = 0; activeVoiceKind = ""; voiceBusyUntil = 0L; forceRestoreAudio();
     }
 
-    private void restoreAudioAfterVoice() {
-        int token = activeVoiceToken;
-        if (token > 0) restoreAudioAfterVoice(token); else forceRestoreAudio();
-    }
+    private void restoreAudioAfterVoice() { int token = activeVoiceToken; if (token > 0) restoreAudioAfterVoice(token); else forceRestoreAudio(); }
 
     private void forceRestoreAudio() {
-        sendSafetyAudioState(false);
-        duckOwnPlayer(false);
+        sendSafetyAudioState(false); duckOwnPlayer(false);
         if (audioManager == null) return;
-        try {
-            if (Build.VERSION.SDK_INT >= 26 && alertFocusRequest != null) audioManager.abandonAudioFocusRequest(alertFocusRequest);
-            else audioManager.abandonAudioFocus(null);
-        } catch (Throwable ignored) {}
+        try { if (Build.VERSION.SDK_INT >= 26 && alertFocusRequest != null) audioManager.abandonAudioFocusRequest(alertFocusRequest); else audioManager.abandonAudioFocus(null); } catch (Throwable ignored) {}
     }
 
-    private int voiceTokenFromId(String id) {
-        if (id == null || !id.startsWith("ep-voice-")) return -1;
-        try { return Integer.parseInt(id.substring("ep-voice-".length())); }
-        catch (Throwable ignored) { return -1; }
-    }
+    private int voiceTokenFromId(String id) { if (id == null || !id.startsWith("ep-voice-")) return -1; try { return Integer.parseInt(id.substring("ep-voice-".length())); } catch (Throwable ignored) { return -1; } }
 
     private boolean speakRoadLimitVoice(int limitKmh) {
         if (voiceBusy() && !"thought".equals(activeVoiceKind)) return false;
-        interruptThoughtForSafety();
-        int token = openVoiceSession("limit", true);
-        int mode = VoiceSettings.mode(this);
-        if (mode != VoiceSettings.MODE_ANDROID && offlineVoice != null &&
-                offlineVoice.playRoadLimit(limitKmh, () -> beginVoiceDucking(token), () -> restoreAudioAfterVoice(token))) return true;
+        interruptThoughtForSafety(); int token = openVoiceSession("limit", true); int mode = VoiceSettings.mode(this);
+        if (mode != VoiceSettings.MODE_ANDROID && offlineVoice != null && offlineVoice.playRoadLimit(limitKmh, () -> beginVoiceDucking(token), () -> restoreAudioAfterVoice(token))) return true;
         if (mode != VoiceSettings.MODE_EMBEDDED && ttsReady && copilot != null && speakWithToken(copilot.roadLimit(limitKmh), token)) return true;
-        restoreAudioAfterVoice(token);
-        return false;
+        restoreAudioAfterVoice(token); return false;
     }
 
     private boolean speakOverspeedVoice(int limitKmh) {
         if (voiceBusy() && !"thought".equals(activeVoiceKind)) return false;
-        interruptThoughtForSafety();
-        int token = openVoiceSession("overspeed", true);
-        int mode = VoiceSettings.mode(this);
-        if (mode != VoiceSettings.MODE_ANDROID && offlineVoice != null &&
-                offlineVoice.playOverspeed(limitKmh, () -> beginVoiceDucking(token), () -> restoreAudioAfterVoice(token))) return true;
+        interruptThoughtForSafety(); int token = openVoiceSession("overspeed", true); int mode = VoiceSettings.mode(this);
+        if (mode != VoiceSettings.MODE_ANDROID && offlineVoice != null && offlineVoice.playOverspeed(limitKmh, () -> beginVoiceDucking(token), () -> restoreAudioAfterVoice(token))) return true;
         if (mode != VoiceSettings.MODE_EMBEDDED && ttsReady && copilot != null && speakWithToken(copilot.overspeed(limitKmh), token)) return true;
-        restoreAudioAfterVoice(token);
-        return false;
+        restoreAudioAfterVoice(token); return false;
     }
 
     private void speakHazardVoice(RoadHazard h, double forwardM) {
-        interruptThoughtForSafety();
-        int token = openVoiceSession("hazard", true);
-        int mode = VoiceSettings.mode(this);
-        if (mode != VoiceSettings.MODE_ANDROID && offlineVoice != null && h != null &&
-                offlineVoice.playHazard(h.type, forwardM, h.speed, () -> beginVoiceDucking(token), () -> restoreAudioAfterVoice(token))) return;
+        interruptThoughtForSafety(); int token = openVoiceSession("hazard", true); int mode = VoiceSettings.mode(this);
+        if (mode != VoiceSettings.MODE_ANDROID && offlineVoice != null && h != null && offlineVoice.playHazard(h.type, forwardM, h.speed, () -> beginVoiceDucking(token), () -> restoreAudioAfterVoice(token))) return;
         if (mode != VoiceSettings.MODE_EMBEDDED && ttsReady && copilot != null && h != null && speakWithToken(copilot.hazard(h.type, forwardM, h.speed), token)) return;
         if (mode != VoiceSettings.MODE_EMBEDDED && speakWithToken(voice(h, forwardM), token)) return;
         restoreAudioAfterVoice(token);
     }
 
-    private boolean speakThought(String text) {
-        if (!ttsReady || voiceBusy()) return false;
-        int token = openVoiceSession("thought", false);
-        if (token <= 0) return false;
-        if (speakWithToken(text, token)) return true;
-        restoreAudioAfterVoice(token);
-        return false;
-    }
+    private boolean speakThought(String text) { if (!ttsReady || voiceBusy()) return false; int token = openVoiceSession("thought", false); if (token <= 0) return false; if (speakWithToken(text, token)) return true; restoreAudioAfterVoice(token); return false; }
 
     private boolean speakWithToken(String text, int token) {
         if (!ttsReady || tts == null || token <= 0 || token != activeVoiceToken || text == null || text.trim().isEmpty()) return false;
-        try {
-            int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ep-voice-" + token);
-            if (result == TextToSpeech.ERROR) return false;
-            // No duck here. Android's onStart is the proof that audible playback actually began.
-            return true;
-        } catch (Throwable ignored) { return false; }
+        try { int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ep-voice-" + token); return result != TextToSpeech.ERROR; } catch (Throwable ignored) { return false; }
     }
 
     private String voice(RoadHazard h, double forward) {
         String distance = distanceSpeech(forward);
         switch (h.type) {
-            case "SEMAFORO":
-                return "Atenção. Semáforo à frente. " + distance + ".";
-            case "QUEBRA_MOLAS":
-                return "Reduza. Quebra-molas à frente. " + distance + ".";
-            case "PEDAGIO":
-                return "Pedágio à frente. " + distance + ".";
-            case "PASSAGEM_NIVEL":
-                return "Atenção. Passagem de nível à frente. " + distance + ". Reduza.";
-            case "CAMERA_MONITORAMENTO":
-                return "Atenção. Câmera de monitoramento de tráfego à frente. " + distance + ".";
+            case "SEMAFORO": return "Atenção. Semáforo à frente. " + distance + ".";
+            case "QUEBRA_MOLAS": return "Reduza. Quebra-molas à frente. " + distance + ".";
+            case "PEDAGIO": return "Pedágio à frente. " + distance + ".";
+            case "PASSAGEM_NIVEL": return "Atenção. Passagem de nível à frente. " + distance + ". Reduza.";
+            case "CAMERA_MONITORAMENTO": return "Atenção. Câmera de monitoramento de tráfego à frente. " + distance + ".";
             default:
                 if (h.speed > 0) return "Radar à frente, a " + distance + ". Limite do radar, " + h.speed + " quilômetros por hora.";
                 return "Radar à frente. " + distance + ".";
         }
     }
 
-    private void duckOwnPlayer(boolean duck) {
-        try {
-            Intent i = new Intent(this, PlayerService.class).setAction(duck ? PlayerService.ACTION_DUCK : PlayerService.ACTION_UNDUCK);
-            startService(i);
-        } catch (Throwable ignored) {}
-    }
-
-    private void sendSafetyAudioState(boolean active) {
-        try {
-            Intent i = new Intent(ACTION_SAFETY_AUDIO).setPackage(getPackageName());
-            i.putExtra("active", active);
-            sendBroadcast(i);
-        } catch (Throwable ignored) {}
-    }
+    private void duckOwnPlayer(boolean duck) { try { Intent i = new Intent(this, PlayerService.class).setAction(duck ? PlayerService.ACTION_DUCK : PlayerService.ACTION_UNDUCK); startService(i); } catch (Throwable ignored) {} }
+    private void sendSafetyAudioState(boolean active) { try { Intent i = new Intent(ACTION_SAFETY_AUDIO).setPackage(getPackageName()); i.putExtra("active", active); sendBroadcast(i); } catch (Throwable ignored) {} }
 
     private void requestVoiceFocus() {
         if (audioManager == null) return;
         try {
             if (Build.VERSION.SDK_INT >= 26) {
                 if (alertFocusRequest == null) {
-                    AudioAttributes attrs = new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build();
-                    alertFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                            .setAudioAttributes(attrs)
-                            .setAcceptsDelayedFocusGain(false)
-                            .setWillPauseWhenDucked(false)
-                            .build();
+                    AudioAttributes attrs = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
+                    alertFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).setAcceptsDelayedFocusGain(false).setWillPauseWhenDucked(false).build();
                 }
                 audioManager.requestAudioFocus(alertFocusRequest);
-            } else {
-                audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
-            }
+            } else audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
         } catch (Throwable ignored) {}
     }
 
-
     private String distanceSpeech(double m) { return RoadSafetyFormat.distanceSpeech(m); }
-
     private String distanceText(double m) { return RoadSafetyFormat.distanceText(m); }
 
-    private void broadcast(Location loc, double speedKmh, RoadHazard h, double distance, String status,
-                           RoadHazard next, double nextDistance) {
+    private void broadcast(Location loc, double speedKmh, RoadHazard h, double distance, String status, RoadHazard next, double nextDistance) {
         Intent i = baseBroadcast(loc.getLatitude(), loc.getLongitude(), speedKmh, status);
         if (h != null) {
-            i.putExtra("hazard_id", h.id);
-            i.putExtra("hazard_type", h.type);
-            i.putExtra("hazard_label", h.label());
-            i.putExtra("road", h.road);
-            i.putExtra("source", h.source);
-            i.putExtra("hazard_confidence", h.confidenceLabel());
-            i.putExtra("distance_m", distance);
-            i.putExtra("limit_kmh", h.speed);
-            i.putExtra("radar_limit_kmh", h.speed);
-            int delta = h.speed > 0 ? Math.max(0, (int)Math.round(speedKmh - h.speed)) : 0;
-            i.putExtra("overspeed_delta_kmh", delta);
-            int level = ("RADAR".equals(h.type) && delta >= 10) ||
-                    ("QUEBRA_MOLAS".equals(h.type) && distance <= 130) ? 2 : 1;
-            i.putExtra("alert_level", level);
+            i.putExtra("hazard_id", h.id); i.putExtra("hazard_type", h.type); i.putExtra("hazard_label", h.label()); i.putExtra("road", h.road); i.putExtra("source", h.source); i.putExtra("hazard_confidence", h.confidenceLabel()); i.putExtra("distance_m", distance); i.putExtra("limit_kmh", h.speed); i.putExtra("radar_limit_kmh", h.speed);
+            int delta = h.speed > 0 ? Math.max(0, (int)Math.round(speedKmh - h.speed)) : 0; i.putExtra("overspeed_delta_kmh", delta);
+            int level = ("RADAR".equals(h.type) && delta >= 10) || ("QUEBRA_MOLAS".equals(h.type) && distance <= 130) ? 2 : 1; i.putExtra("alert_level", level);
         }
-        if (next != null) {
-            i.putExtra("next_hazard_type", next.type);
-            i.putExtra("next_hazard_label", next.label());
-            i.putExtra("next_distance_m", nextDistance);
-            i.putExtra("next_limit_kmh", next.speed);
-        }
+        if (next != null) { i.putExtra("next_hazard_type", next.type); i.putExtra("next_hazard_label", next.label()); i.putExtra("next_distance_m", nextDistance); i.putExtra("next_limit_kmh", next.speed); }
         sendBroadcast(i);
     }
 
-    private void broadcastSynthetic(double lat, double lon, String status) {
-        // Coverage refresh is not a new GPS sample. Never overwrite a valid vehicle
-        // speed with zero just because a network/package operation finished.
-        sendBroadcast(baseBroadcast(lat, lon, lastSpeedKmh, status));
-    }
+    private void broadcastSynthetic(double lat, double lon, String status) { sendBroadcast(baseBroadcast(lat, lon, lastSpeedKmh, status)); }
 
     private Intent baseBroadcast(double lat, double lon, double speedKmh, String status) {
         Intent i = new Intent(ACTION_STATE).setPackage(getPackageName());
-        i.putExtra("lat", lat);
-        i.putExtra("lon", lon);
-        i.putExtra("speed_kmh", speedKmh);
-        i.putExtra("road_limit_kmh", roadLimitPolicy.currentLimit());
-        i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f);
-        i.putExtra("pack_count", packs.packCount());
-        i.putExtra("state_pack_count", packs.statePackCount());
-        i.putExtra("core_state_count", packs.coreStatePackCount());
-        i.putExtra("core_states_status", packs.coreStatesStatus());
-        i.putExtra("thermal_status", thermalStatus());
-        i.putExtra("rain_mode", DriveSettings.rainNow(this));
-        i.putExtra("weather_status", RoadWeatherMonitor.compactStatus(this));
-        i.putExtra("weather_rain_ahead", RoadWeatherMonitor.snapshot(this).shouldAnnounce());
-        i.putExtra("night_mode", DriveSettings.nightNow(this));
-        i.putExtra("offline_test_mode", DriveSettings.offlineTestMode(this));
-        i.putExtra("reserve_km", 250);
-        i.putExtra("hazard_count", packs.hazardCount());
-        i.putExtra("map_pack_count", mapRoads.packCount());
+        i.putExtra("lat", lat); i.putExtra("lon", lon); i.putExtra("speed_kmh", speedKmh); i.putExtra("road_limit_kmh", roadLimitPolicy.currentLimit()); i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f); i.putExtra("pack_count", packs.packCount()); i.putExtra("state_pack_count", packs.statePackCount()); i.putExtra("core_state_count", packs.coreStatePackCount()); i.putExtra("core_states_status", packs.coreStatesStatus()); i.putExtra("thermal_status", thermalStatus()); i.putExtra("rain_mode", DriveSettings.rainNow(this)); i.putExtra("weather_status", RoadWeatherMonitor.compactStatus(this)); i.putExtra("weather_rain_ahead", RoadWeatherMonitor.snapshot(this).shouldAnnounce()); i.putExtra("night_mode", DriveSettings.nightNow(this)); i.putExtra("offline_test_mode", DriveSettings.offlineTestMode(this)); i.putExtra("reserve_km", 250); i.putExtra("hazard_count", packs.hazardCount()); i.putExtra("map_pack_count", mapRoads.packCount());
         if(collectiveStore!=null){i.putExtra("collective_impact_count",collectiveStore.impactCount());i.putExtra("collective_queue_count",collectiveStore.queuedCount());}
-        i.putExtra("upcoming_text",upcomingCache);
-        i.putExtra("status", status == null ? "" : status);
-        return i;
+        i.putExtra("upcoming_text",upcomingCache); i.putExtra("status", status == null ? "" : status); return i;
     }
 
     private void handleRoadImpact(RoadSurfaceMonitor.Impact impact) {
@@ -782,8 +611,7 @@ public final class RoadSafetyService extends Service {
         if(tripRecorder!=null)tripRecorder.onRoadImpact(impact);
         if(roadQualityStore!=null)roadQualityStore.record(impact);
         if(collectiveStore!=null){collectiveStore.recordImpact(impact);io.execute(()->{try{ensureApiSession(false);collectiveStore.flush(api);}catch(Throwable ignored){}});}
-        Intent i=baseBroadcast(impact.lat,impact.lon,impact.speedKmh,"Irregularidade detectada pela suspensão/sensor");
-        i.putExtra("road_surface_event",true);i.putExtra("road_surface_force",impact.force);sendBroadcast(i);
+        Intent i=baseBroadcast(impact.lat,impact.lon,impact.speedKmh,"Irregularidade detectada pela suspensão/sensor"); i.putExtra("road_surface_event",true);i.putExtra("road_surface_force",impact.force);sendBroadcast(i);
     }
 
     private void updateRestClock(Location loc,double speedKmh){
@@ -796,61 +624,36 @@ public final class RoadSafetyService extends Service {
         try{List<RoadHazard> list=packs.nearby(lat,lon,7000);ArrayList<String> rows=new ArrayList<>();ArrayList<Double> ds=new ArrayList<>();double rad=Math.toRadians(heading);for(RoadHazard h:list){double north=(h.lat-lat)*110540.0;double east=(h.lon-lon)*111320.0*Math.max(.25,Math.cos(Math.toRadians(lat)));double forward=east*Math.sin(rad)+north*Math.cos(rad);double lateral=Math.abs(east*Math.cos(rad)-north*Math.sin(rad));if(forward<150||forward>7000||lateral>220)continue;int at=0;while(at<ds.size()&&ds.get(at)<forward)at++;ds.add(at,forward);String d=forward>=1000?String.format(Locale.getDefault(),"%.1f km",forward/1000.0):Math.round(forward)+" m";String label=h.label()+(h.speed>0&&"RADAR".equals(h.type)?" "+h.speed:"")+" · "+d;rows.add(at,label);if(rows.size()>3){rows.remove(3);ds.remove(3);}}StringBuilder out=new StringBuilder();for(int i=0;i<rows.size();i++){if(i>0)out.append(" → ");out.append(rows.get(i));}upcomingCache=out.toString();return upcomingCache;}catch(Throwable ignored){upcomingCache="";return "";}
     }
 
-    private int thermalStatus() {
-        if (Build.VERSION.SDK_INT < 29) return 0;
-        try {
-            android.os.PowerManager pm = (android.os.PowerManager)getSystemService(POWER_SERVICE);
-            return pm == null ? 0 : pm.getCurrentThermalStatus();
-        } catch (Throwable ignored) { return 0; }
-    }
+    private int thermalStatus() { if (Build.VERSION.SDK_INT < 29) return 0; try { android.os.PowerManager pm = (android.os.PowerManager)getSystemService(POWER_SERVICE); return pm == null ? 0 : pm.getCurrentThermalStatus(); } catch (Throwable ignored) { return 0; } }
 
     private void createChannel() {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationManager nm = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         if (nm == null) return;
         NotificationChannel ch = new NotificationChannel(CHANNEL, "Alertas da estrada", NotificationManager.IMPORTANCE_LOW);
-        ch.setDescription("GPS, alertas e mapa livre offline da estrada.");
-        ch.setSound(null, null);
-        nm.createNotificationChannel(ch);
+        ch.setDescription("GPS, alertas e mapa livre offline da estrada."); ch.setSound(null, null); nm.createNotificationChannel(ch);
     }
 
     private Notification notification(String title, String text, boolean alert) {
         Intent open = new Intent(this, AutomotiveActivity.class);
         PendingIntent pi = PendingIntent.getActivity(this, 10, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
-        b.setSmallIcon(android.R.drawable.ic_menu_mylocation)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setContentIntent(pi)
-                .setOngoing(true)
-                .setOnlyAlertOnce(!alert)
-                .setCategory(Notification.CATEGORY_SERVICE)
-                .setVisibility(Notification.VISIBILITY_PUBLIC);
+        b.setSmallIcon(android.R.drawable.ic_menu_mylocation).setContentTitle(title).setContentText(text).setContentIntent(pi).setOngoing(true).setOnlyAlertOnce(!alert).setCategory(Notification.CATEGORY_SERVICE).setVisibility(Notification.VISIBILITY_PUBLIC);
         return b.build();
     }
 
     private void updateNotification(String title, String text, boolean alert) {
         lastNotificationAt = System.currentTimeMillis();
-        NotificationManager nm = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-        if (nm != null) nm.notify(NOTIFICATION_ID, notification(title, text, alert));
+        NotificationPermissionCompat.notify(this, NOTIFICATION_ID, notification(title, text, alert));
     }
 
-    private static float normalize(float deg) {
-        float v = deg % 360f;
-        return v < 0 ? v + 360f : v;
-    }
+    private static float normalize(float deg) { float v = deg % 360f; return v < 0 ? v + 360f : v; }
+    private static double angleDiff(double a, double b) { double d = Math.abs(a - b) % 360.0; return d > 180.0 ? 360.0 - d : d; }
 
-    private static double angleDiff(double a, double b) {
-        double d = Math.abs(a - b) % 360.0;
-        return d > 180.0 ? 360.0 - d : d;
-    }
-
-    // STABILITY_V152_TASK_REMOVED: closing the app task means closing protection.
     @Override public void onTaskRemoved(Intent rootIntent) {
         try { stopService(new Intent(this, PlayerService.class)); } catch (Throwable ignored) {}
         try { stopService(new Intent(this, DownloadService.class)); } catch (Throwable ignored) {}
-        stopSelf();
-        super.onTaskRemoved(rootIntent);
+        stopSelf(); super.onTaskRemoved(rootIntent);
     }
 
     @Override public void onDestroy() {
@@ -863,9 +666,6 @@ public final class RoadSafetyService extends Service {
         try { if (surfaceMonitor != null) surfaceMonitor.stop(); } catch (Throwable ignored) {}
         try { if (tripRecorder != null) tripRecorder.finish("serviço encerrado"); } catch (Throwable ignored) {}
         try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Throwable ignored) {}
-        io.shutdownNow();
-        limitIo.shutdownNow();
-        super.onDestroy();
+        io.shutdownNow(); limitIo.shutdownNow(); super.onDestroy();
     }
-
 }
