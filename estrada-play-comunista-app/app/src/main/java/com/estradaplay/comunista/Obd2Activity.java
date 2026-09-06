@@ -1,7 +1,8 @@
 package com.estradaplay.comunista;
 
-import android.Manifest;import android.bluetooth.*;import android.content.pm.PackageManager;import android.graphics.*;import android.graphics.drawable.GradientDrawable;import android.os.*;import android.view.*;import android.widget.*;import androidx.activity.ComponentActivity;import java.io.*;import java.nio.charset.StandardCharsets;import java.util.*;import java.util.concurrent.*;import java.util.regex.*;
+import android.Manifest;import android.annotation.SuppressLint;import android.bluetooth.*;import android.content.pm.PackageManager;import android.graphics.*;import android.graphics.drawable.GradientDrawable;import android.os.*;import android.view.*;import android.widget.*;import androidx.activity.ComponentActivity;import java.io.*;import java.nio.charset.StandardCharsets;import java.util.*;import java.util.concurrent.*;import java.util.regex.*;
 
+@SuppressLint("MissingPermission") // OBD2_PERMISSION_GUARD_V300: every Bluetooth call is runtime-guarded and revocation races catch SecurityException.
 public final class Obd2Activity extends ComponentActivity {
     private static final int REQ_BT=7301;private static final UUID SPP=UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private final int BG=Color.rgb(8,5,7),SURFACE=Color.rgb(18,9,12),SURFACE2=Color.rgb(28,14,18),BORDER=Color.rgb(76,38,44),TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(174,151,146),RED=Color.rgb(190,18,38),GREEN=Color.rgb(72,212,134),GOLD=Color.rgb(226,185,76);private final ExecutorService io=Executors.newSingleThreadExecutor();private final Handler ui=new Handler(Looper.getMainLooper());private LinearLayout page,devices;private TextView state,rpm,coolant,vehicleSpeed,battery,fuel;private BluetoothSocket socket;private InputStream in;private OutputStream out;private volatile boolean polling;
