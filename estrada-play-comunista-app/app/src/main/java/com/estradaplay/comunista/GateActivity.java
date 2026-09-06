@@ -79,7 +79,7 @@ public final class GateActivity extends ComponentActivity {
     private void openApp() {
         if (launched || isFinishing()) return;
 
-        // STARTUP_OFFLINE_FIRST_V290: Gate never waits for server/device_login.
+        // STARTUP_OFFLINE_FIRST_V290: Gate never waits for server/device login.
         // MainActivity opens remembered local state immediately. When an online request is
         // actually needed, ApiClient already performs refresh/device recovery after a 401.
         launchMain();
