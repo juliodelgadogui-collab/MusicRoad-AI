@@ -25,25 +25,16 @@ final class RoadHazard {
 
     static RoadHazard fromJson(JSONObject o) {
         if (o == null) return null;
-        // MUSICROAD_RADARS_V174: accept both schemas without conversion server-side.
         double lat = o.has("lat") ? o.optDouble("lat", Double.NaN) : o.optDouble("latitude", Double.NaN);
         double lon = o.has("lon") ? o.optDouble("lon", Double.NaN) : o.optDouble("longitude", Double.NaN);
         if (!Double.isFinite(lat) || !Double.isFinite(lon)) return null;
         String id = o.optString("id", o.optString("external_id", ""));
+        if (id == null || id.trim().isEmpty()) id = "geo-" + Math.round(lat * 100000) + "-" + Math.round(lon * 100000);
         String type = normalizeType(o.optString("type", o.optString("tipo", "RADAR")));
         String road = o.optString("road", o.optString("rodovia", ""));
         int speed = o.has("speed") ? o.optInt("speed", 0) : o.optInt("velocidade", 0);
         String source = o.optString("source", o.optString("fonte", "MusicRoad"));
-        return new RoadHazard(
-                id,
-                type,
-                lat,
-                lon,
-                road,
-                speed,
-                o.isNull("heading") ? Double.NaN : o.optDouble("heading", Double.NaN),
-                source
-        );
+        return new RoadHazard(id,type,lat,lon,road,speed,o.isNull("heading")?Double.NaN:o.optDouble("heading",Double.NaN),source);
     }
 
     private static String normalizeType(String raw) {
@@ -53,19 +44,20 @@ final class RoadHazard {
                 .replace('Ô','O').replace('Õ','O').replace('Ú','U').replace('Ç','C')
                 .replace('-', '_').replace(' ', '_');
         if (key.isEmpty()) return "RADAR";
-        if (key.contains("RADAR") || key.contains("SPEED_CAMERA") || key.contains("MAXSPEED") || key.contains("ENFORCEMENT")) return "RADAR";
+        boolean signal = key.contains("SEMAFOR") || key.contains("TRAFFIC_SIGNAL") || key.contains("REDLIGHT");
+        if (signal && (key.contains("RADAR") || key.contains("CAMERA") || key.contains("ENFORCEMENT") || key.contains("REDLIGHT"))) return "SEMAFORO_RADAR";
+        if (key.contains("RADAR") || key.contains("SPEED_CAMERA") || key.contains("MAXSPEED") || key.contains("SPEED_CONTROL") || key.contains("CONTROLADOR") || key.contains("REDUTOR")) return "RADAR";
         if (key.contains("QUEBRA") || key.contains("LOMBADA") || key.contains("SPEED_BUMP") || key.contains("SPEED_HUMP")) return "QUEBRA_MOLAS";
-        if (key.contains("SEMAFOR") || key.contains("TRAFFIC_SIGNAL")) return "SEMAFORO";
+        if (signal) return "SEMAFORO";
         if (key.contains("PEDAG") || key.contains("TOLL")) return "PEDAGIO";
         if (key.contains("PASSAGEM_NIVEL") || key.contains("LEVEL_CROSSING")) return "PASSAGEM_NIVEL";
-        if (key.contains("CAMERA") || key.contains("CCTV") || key.contains("SURVEILLANCE") || key.contains("MONITORAMENTO")) return "CAMERA_MONITORAMENTO";
+        if (key.contains("CAMERA") || key.contains("CCTV") || key.contains("SURVEILLANCE") || key.contains("MONITORAMENTO") || key.contains("VIDEO")) return "CAMERA_MONITORAMENTO";
         return key;
     }
 
-    // UNIVERSAL_CONFIDENCE_V160: provenance label; never invents an official status.
     String confidenceLabel() {
         String s = source == null ? "" : source.toUpperCase(java.util.Locale.ROOT);
-        if (s.contains("DER-") || s.contains("DNIT") || s.contains("PRF") || s.contains("OFICIAL")) return "OFICIAL";
+        if (s.contains("DER-") || s.contains("DNIT") || s.contains("ANTT") || s.contains("PRF") || s.contains("DETRAN") || s.contains("PREFEITURA") || s.contains("OFICIAL")) return "OFICIAL";
         if (s.contains("OPENSTREETMAP") || s.contains("OSM")) return "MAPA · A CONFIRMAR";
         if (s.contains("USU") || s.contains("COLET") || s.contains("COMUN")) return "COMUNIDADE";
         if (!s.isEmpty()) return "BASE LOCAL";
@@ -74,6 +66,7 @@ final class RoadHazard {
 
     String label() {
         switch (type) {
+            case "SEMAFORO_RADAR": return "Semáforo fiscalizado";
             case "SEMAFORO": return "Semáforo";
             case "QUEBRA_MOLAS": return "Quebra-molas";
             case "PEDAGIO": return "Pedágio";
