@@ -12,6 +12,7 @@ import java.util.List;
 public final class EstradaPlayApplication extends Application {
     private RouteContextV7BackgroundReceiver contextReceiver;
     private ConvoyLiveBridge convoyReceiver;
+    private MobilityModeState.Receiver mobilityReceiver;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -59,6 +60,21 @@ public final class EstradaPlayApplication extends Application {
         ConvoyIntegrationV237.install(this);
 
         IntentFilter roadState = new IntentFilter(RoadSafetyService.ACTION_STATE);
+
+        // MOBILITY_MODE_V301: infer walking/vehicle/stopped from the GPS state already emitted by
+        // RoadSafetyService. No second GPS listener is created and the mode stays internal.
+        try {
+            MobilityModeState.restore(this);
+            mobilityReceiver = new MobilityModeState.Receiver();
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(mobilityReceiver, roadState, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                registerReceiver(mobilityReceiver, roadState);
+            }
+        } catch (Throwable ignored) {
+            try { if (mobilityReceiver != null) unregisterReceiver(mobilityReceiver); } catch (Throwable ignored2) {}
+            mobilityReceiver = null;
+        }
 
         try {
             contextReceiver = new RouteContextV7BackgroundReceiver();
