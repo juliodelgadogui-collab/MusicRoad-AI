@@ -54,9 +54,11 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".AutomotiveActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
+        <!-- ANDROID16_CONFIG_RECREATE_V300: only screens with their own onConfigurationChanged
+             implementation keep configChanges. The rest let Android recreate/rebind the UI. -->
+        <activity android:name=".AutomotiveActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadMapActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
-        <activity android:name=".DestinationActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".DestinationActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".NearbyServicesActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".VoiceCommandActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".VoiceDiagnosticsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
@@ -65,7 +67,7 @@
         <activity android:name=".OfflineCenterActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CollectiveRoadActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".EstradaVivaActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
-        <activity android:name=".ConvoyActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".ConvoyActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".VehicleCostActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".MaintenanceActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".FuelCommunityActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
@@ -78,14 +80,14 @@
         <activity android:name=".RoadRadioActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".ServerSettingsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".MusicPlayerActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
-        <activity android:name=".MusicStorageActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".MusicStorageActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".TripHistoryActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".HudActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadReportActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".VideoLibraryActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
-        <activity android:name=".CameraActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".CameraActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".ThoughtsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
-        <activity android:name=".MainActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".MainActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
 
         <service android:name=".DownloadService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="dataSync" />
         <service android:name=".PlayerService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="mediaPlayback" />
