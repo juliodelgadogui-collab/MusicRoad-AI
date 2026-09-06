@@ -31,14 +31,19 @@ final class RouteOfflineCache {
         if (context == null || route == null || route.geoJson == null || route.geoJson.trim().isEmpty()) return;
         if (!Double.isFinite(toLat) || !Double.isFinite(toLon)) return;
         try {
-            File target=file(context);boolean keepPrepared=prepared;long preparedAt=prepared?System.currentTimeMillis():0L;
+            File target=file(context);boolean keepPrepared=prepared;long preparedAt=prepared?System.currentTimeMillis():0L;int routeHash=route.geoJson.hashCode();
             if(!keepPrepared&&validFile(target)){
-                try{JSONObject old=new JSONObject(read(target));double a=old.optDouble("to_lat",Double.NaN),b=old.optDouble("to_lon",Double.NaN);if(!stale(old)&&old.optBoolean("prepared",false)&&Double.isFinite(a)&&Double.isFinite(b)&&RouteEngine.distanceM(a,b,toLat,toLon)<=DEST_TOLERANCE_M){keepPrepared=true;preparedAt=old.optLong("prepared_at",old.optLong("saved_at",System.currentTimeMillis()));}}catch(Throwable ignored){}
+                try{
+                    JSONObject old=new JSONObject(read(target));double a=old.optDouble("to_lat",Double.NaN),b=old.optDouble("to_lon",Double.NaN);boolean sameDest=!stale(old)&&old.optBoolean("prepared",false)&&Double.isFinite(a)&&Double.isFinite(b)&&RouteEngine.distanceM(a,b,toLat,toLon)<=DEST_TOLERANCE_M;
+                    int oldHash=old.optInt("route_hash",0);double oldFromLat=old.optDouble("from_lat",Double.NaN),oldFromLon=old.optDouble("from_lon",Double.NaN),oldDistance=old.optDouble("distance_m",0);boolean sameOrigin=Double.isFinite(fromLat)&&Double.isFinite(fromLon)&&Double.isFinite(oldFromLat)&&Double.isFinite(oldFromLon)&&RouteEngine.distanceM(fromLat,fromLon,oldFromLat,oldFromLon)<=3000;boolean similarDistance=oldDistance>0&&Math.abs(oldDistance-route.distanceM)/Math.max(oldDistance,route.distanceM)<.03;boolean materiallySame=(oldHash!=0&&oldHash==routeHash)||(sameOrigin&&similarDistance);
+                    if(sameDest&&materiallySame){keepPrepared=true;preparedAt=old.optLong("prepared_at",old.optLong("saved_at",System.currentTimeMillis()));}
+                }catch(Throwable ignored){}
             }
             JSONObject root = new JSONObject();
             root.put("version", 310);
             root.put("saved_at", System.currentTimeMillis());
             root.put("prepared", keepPrepared);
+            root.put("route_hash",routeHash);
             if(keepPrepared)root.put("prepared_at",preparedAt>0?preparedAt:System.currentTimeMillis());
             if(Double.isFinite(fromLat))root.put("from_lat",fromLat);
             if(Double.isFinite(fromLon))root.put("from_lon",fromLon);
