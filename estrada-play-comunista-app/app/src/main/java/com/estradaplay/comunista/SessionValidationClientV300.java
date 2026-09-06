@@ -80,15 +80,17 @@ final class SessionValidationClientV300 {
         }
     }
 
-    /** Fingerprint only; raw cookie/tokens never leave process memory or enter logs. */
+    /**
+     * Pure read-only generation marker. device_login is identified by the current cookie plus
+     * this app/device identity; no access/refresh-token getter is invoked here.
+     */
     static String sessionFingerprint(Context context) {
         try {
             Context app = context.getApplicationContext();
             ApiClient api = new ApiClient(app);
-            SecureDeviceCredential credential = new SecureDeviceCredential(app);
             String raw = safe(api.cookie()) + "\n"
-                    + safe(credential.accessToken()) + "\n"
-                    + safe(credential.refreshToken());
+                    + DeviceIdentity.token(app) + "\n"
+                    + BuildConfig.APPLICATION_ID;
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(raw.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(digest.length * 2);
