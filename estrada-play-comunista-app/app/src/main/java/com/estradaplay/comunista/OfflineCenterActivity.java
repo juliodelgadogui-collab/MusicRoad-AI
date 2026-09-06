@@ -1,8 +1,11 @@
 package com.estradaplay.comunista;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
-import android.os.Build;
+import android.location.Location;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -48,23 +51,37 @@ public final class OfflineCenterActivity extends ComponentActivity {
         page.addView(state,new LinearLayout.LayoutParams(-1,-2));
 
         if(routeStatus!=null&&!routeStatus.startsWith("Nenhuma")){
-            LinearLayout route=box();
-            route.addView(t("VIAGEM PREPARADA",11,GOLD,true));
-            route.addView(t("Sua última rota pode ser retomada se a conexão oscilar.",14,TEXT,true));
-            page.addView(route,new LinearLayout.LayoutParams(-1,-2));
+            LinearLayout route=box();route.addView(t("VIAGEM PREPARADA",11,GOLD,true));route.addView(t("Sua última rota pode ser retomada se a conexão oscilar.",14,TEXT,true));page.addView(route,new LinearLayout.LayoutParams(-1,-2));
         }
 
         Button test=new Button(this);test.setText(DriveSettings.offlineTestMode(this)?"ENCERRAR TESTE OFFLINE":"TESTAR SEM INTERNET");test.setTextColor(TEXT);test.setBackgroundColor(DriveSettings.offlineTestMode(this)?Color.rgb(55,85,65):RED);page.addView(test,new LinearLayout.LayoutParams(-1,dp(58)));
         test.setOnClickListener(v->{boolean on=!DriveSettings.offlineTestMode(this);DriveSettings.toggle(this,"offline_test_mode",on);Toast.makeText(this,on?"Teste offline ativado.":"Conexão normal restaurada.",Toast.LENGTH_LONG).show();load();});
 
         Button update=new Button(this);update.setText("ATUALIZAR DADOS OFFLINE");page.addView(update,new LinearLayout.LayoutParams(-1,dp(54)));
-        update.setOnClickListener(v->{if(DriveSettings.offlineTestMode(this)){Toast.makeText(this,"Encerre o teste offline para atualizar.",Toast.LENGTH_LONG).show();return;}Intent i=new Intent(this,RoadSafetyService.class).setAction(RoadSafetyService.ACTION_PREFETCH_CORE);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);Toast.makeText(this,"Atualização iniciada.",Toast.LENGTH_LONG).show();});
+        update.setOnClickListener(v->updateNearbyProtection(update));
 
         Button planner=new Button(this);planner.setText("PREPARAR VIAGEM OFFLINE");planner.setOnClickListener(v->startActivity(new Intent(this,TripPlannerActivity.class)));page.addView(planner,new LinearLayout.LayoutParams(-1,dp(54)));
         Button reload=new Button(this);reload.setText("VERIFICAR NOVAMENTE");reload.setOnClickListener(v->load());page.addView(reload,new LinearLayout.LayoutParams(-1,dp(50)));
     }
 
+    private void updateNearbyProtection(Button button){
+        if(DriveSettings.offlineTestMode(this)){toast("Encerre o teste offline para atualizar.");return;}
+        Location l=lastLocation();if(l==null){toast("Abra o modo Estrada por alguns segundos para obter sua localização.");return;}
+        button.setEnabled(false);button.setText("ATUALIZANDO PROTEÇÃO…");
+        final double lat=l.getLatitude(),lon=l.getLongitude();
+        io.execute(()->{
+            boolean ok=false;try{ok=new RoadPackStore(getApplicationContext()).fetchCoverage(new ApiClient(getApplicationContext()),lat,lon);}catch(Throwable ignored){}
+            final boolean done=ok;runOnUiThread(()->{button.setEnabled(true);button.setText("ATUALIZAR DADOS OFFLINE");toast(done?"Proteção desta região atualizada.":"Não foi possível atualizar agora. Os dados já salvos continuam disponíveis.");if(done)load();});
+        });
+    }
+
+    private Location lastLocation(){
+        if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED)return null;
+        try{LocationManager lm=(LocationManager)getSystemService(LOCATION_SERVICE);if(lm==null)return null;Location best=null;for(String p:new String[]{LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER}){try{Location x=lm.getLastKnownLocation(p);if(x!=null&&(best==null||x.getTime()>best.getTime()))best=x;}catch(Throwable ignored){}}return best;}catch(Throwable e){return null;}
+    }
+
     private LinearLayout box(){LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setPadding(dp(14),dp(12),dp(14),dp(12));b.setBackgroundColor(Color.rgb(20,11,14));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(12),0,dp(10));b.setLayoutParams(p);return b;}
     private TextView t(String v,float s,int c,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);if(b)t.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);return t;}
+    private void toast(String v){Toast.makeText(this,v,Toast.LENGTH_LONG).show();}
     private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}
 }
