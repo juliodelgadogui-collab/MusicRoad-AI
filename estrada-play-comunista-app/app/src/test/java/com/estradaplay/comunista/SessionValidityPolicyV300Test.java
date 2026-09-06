@@ -15,4 +15,17 @@ public final class SessionValidityPolicyV300Test {
         assertFalse(SessionValidityPolicyV300.isExplicitRevocation(500));
         assertFalse(SessionValidityPolicyV300.isExplicitRevocation(503));
     }
+
+    @Test public void validationResponseOnlyAppliesToSameAccountAndSessionGeneration() {
+        assertTrue(SessionValidityPolicyV300.sameValidationSubject(
+                "{\"id\":1}", "{\"id\":1}", "session-a", "session-a"));
+        assertFalse(SessionValidityPolicyV300.sameValidationSubject(
+                "{\"id\":1}", "{\"id\":2}", "session-a", "session-a"));
+        assertFalse(SessionValidityPolicyV300.sameValidationSubject(
+                "{\"id\":1}", "{\"id\":1}", "session-a", "session-b"));
+        assertFalse(SessionValidityPolicyV300.sameValidationSubject(
+                "", "", "session-a", "session-a"));
+        assertFalse(SessionValidityPolicyV300.sameValidationSubject(
+                "{\"id\":1}", "{\"id\":1}", "", ""));
+    }
 }
