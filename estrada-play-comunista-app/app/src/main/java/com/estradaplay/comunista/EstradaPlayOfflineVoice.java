@@ -28,9 +28,6 @@ final class EstradaPlayOfflineVoice {
     private final AudioManager audioManager;
     private AudioFocusRequest focusRequest;
     private boolean focusHeld;
-    // VOICE_FULL_ALERT_V192: automotive ROMs can swallow the first short clip while
-    // audio focus/ducking is still changing. Prime focus before speech and leave a
-    // small gap between clips so the whole sentence is audible, not only distance.
     private static final long FIRST_CLIP_PREROLL_MS = 240L;
     private static final long BETWEEN_CLIPS_MS = 65L;
 
@@ -73,6 +70,13 @@ final class EstradaPlayOfflineVoice {
         ArrayList<String> clips = new ArrayList<>();
         String t = type == null ? "" : type.trim().toUpperCase(Locale.ROOT);
         switch (t) {
+            case "SEMAFORO_RADAR":
+                // Reuse the existing traffic-light voice bank instead of falling through to a generic radar alert.
+                // The on-screen/Android-TTS label still says "Semáforo fiscalizado".
+                clips.add("ep_atencao");
+                clips.add("ep_semaforo_frente");
+                clips.add(distance);
+                break;
             case "SEMAFORO":
                 clips.add("ep_atencao");
                 clips.add("ep_semaforo_frente");
@@ -112,9 +116,7 @@ final class EstradaPlayOfflineVoice {
         return play(clips, onStarted, onFinished);
     }
 
-    void stop() {
-        main.post(() -> cancelCurrent(true));
-    }
+    void stop() { main.post(() -> cancelCurrent(true)); }
 
     void release() {
         main.post(() -> {
@@ -138,11 +140,8 @@ final class EstradaPlayOfflineVoice {
     }
 
     private int rawId(String name) {
-        try {
-            return app.getResources().getIdentifier(name, "raw", app.getPackageName());
-        } catch (Throwable ignored) {
-            return 0;
-        }
+        try { return app.getResources().getIdentifier(name, "raw", app.getPackageName()); }
+        catch (Throwable ignored) { return 0; }
     }
 
     private void startSequence(List<Integer> ids, Runnable onStarted, Runnable onFinished) {
@@ -154,9 +153,6 @@ final class EstradaPlayOfflineVoice {
         started = onStarted;
         finished = onFinished;
         startNotified = false;
-        // Acquire navigation focus and duck the app/player BEFORE the first word.
-        // Calling the service callback after playback starts made head units miss
-        // phrases such as 'Radar a frente' and only reproduce '500 metros'.
         requestLocalFocus();
         startNotified = true;
         Runnable begin = started;
@@ -183,10 +179,7 @@ final class EstradaPlayOfflineVoice {
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build();
             MediaPlayer mp = MediaPlayer.create(app, id, attrs, 0);
-            if (mp == null) {
-                failSequence(token);
-                return;
-            }
+            if (mp == null) { failSequence(token); return; }
             player = mp;
             mp.setOnCompletionListener(donePlayer -> {
                 safeRelease(donePlayer);
@@ -211,9 +204,7 @@ final class EstradaPlayOfflineVoice {
                 started = null;
                 if (begin != null) begin.run();
             }
-        } catch (Throwable ignored) {
-            failSequence(token);
-        }
+        } catch (Throwable ignored) { failSequence(token); }
     }
 
     private void failSequence(int token) {
@@ -238,10 +229,7 @@ final class EstradaPlayOfflineVoice {
         if (done != null) done.run();
     }
 
-    private void stopInternal() {
-        queue.clear();
-        stopPlayerOnly();
-    }
+    private void stopInternal() { queue.clear(); stopPlayerOnly(); }
 
     private void stopPlayerOnly() {
         MediaPlayer p = player;
@@ -251,7 +239,6 @@ final class EstradaPlayOfflineVoice {
             safeRelease(p);
         }
     }
-
 
     private void requestLocalFocus() {
         if (audioManager == null || focusHeld) return;
