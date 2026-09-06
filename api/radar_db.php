@@ -34,7 +34,8 @@ function radar_ensure_tables(): void {
             INDEX idx_radars_geo (latitude,longitude),
             INDEX idx_radars_uf (uf),
             INDEX idx_radars_external (external_id),
-            INDEX idx_radars_active (ativo)
+            INDEX idx_radars_active (ativo),
+            INDEX idx_radars_type (tipo)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         db()->exec("CREATE TABLE IF NOT EXISTS radar_sources (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -56,6 +57,7 @@ function radar_ensure_tables(): void {
             errors LONGTEXT NULL,
             created_at DATETIME NOT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        try{db()->exec('CREATE INDEX idx_radars_type ON radars(tipo)');}catch(Throwable $e){}
     }else{
         db()->exec("CREATE TABLE IF NOT EXISTS radars (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,12 +102,13 @@ function radar_ensure_tables(): void {
         )");
         db()->exec('CREATE INDEX IF NOT EXISTS idx_radars_geo ON radars(latitude,longitude)');
         db()->exec('CREATE INDEX IF NOT EXISTS idx_radars_uf ON radars(uf)');
+        db()->exec('CREATE INDEX IF NOT EXISTS idx_radars_type ON radars(tipo)');
     }
 }
 
 function radar_normalize_uf($raw,float $lat,float $lon): ?string {
     $uf=strtoupper(trim((string)$raw));
-    if(in_array($uf,['SP','RJ','MG','ES'],true))return $uf;
+    if(ep2_valid_uf($uf))return $uf;
     $guess=ep2_guess_uf($lat,$lon);
     return $guess!==''?$guess:null;
 }
