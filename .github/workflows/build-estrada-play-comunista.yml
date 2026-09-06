@@ -1,12 +1,6 @@
 name: Build Estrada Play Comunista
 
 on:
-  push:
-    branches:
-      - agent/estrada-play-comunista
-    paths:
-      - 'estrada-play-comunista-app/**'
-      - '.github/workflows/build-estrada-play-comunista.yml'
   workflow_dispatch:
 
 permissions:
