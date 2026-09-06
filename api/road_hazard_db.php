@@ -25,7 +25,8 @@ function road_hazard_ensure_tables(): void {
             INDEX idx_road_hazards_uf (uf),
             INDEX idx_road_hazards_type (type),
             INDEX idx_road_hazards_geo (latitude,longitude),
-            INDEX idx_road_hazards_active (active)
+            INDEX idx_road_hazards_active (active),
+            INDEX idx_road_hazards_last_seen (last_seen)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         db()->exec("CREATE TABLE IF NOT EXISTS road_hazard_sync (
             uf VARCHAR(2) NOT NULL PRIMARY KEY,
@@ -34,12 +35,14 @@ function road_hazard_ensure_tables(): void {
             item_count INT NOT NULL DEFAULT 0,
             last_error VARCHAR(500) NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        try{db()->exec('CREATE INDEX idx_road_hazards_last_seen ON road_hazards(last_seen)');}catch(Throwable $e){}
     }else{
         db()->exec("CREATE TABLE IF NOT EXISTS road_hazards (id INTEGER PRIMARY KEY AUTOINCREMENT,hazard_key TEXT NOT NULL UNIQUE,type TEXT NOT NULL,latitude REAL NOT NULL,longitude REAL NOT NULL,uf TEXT,road TEXT,speed INTEGER,heading REAL,source TEXT NOT NULL DEFAULT 'OPENSTREETMAP',last_seen TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1)");
         db()->exec("CREATE TABLE IF NOT EXISTS road_hazard_sync (uf TEXT PRIMARY KEY,last_attempt TEXT,last_success TEXT,item_count INTEGER NOT NULL DEFAULT 0,last_error TEXT)");
         db()->exec('CREATE INDEX IF NOT EXISTS idx_road_hazards_uf ON road_hazards(uf)');
         db()->exec('CREATE INDEX IF NOT EXISTS idx_road_hazards_type ON road_hazards(type)');
         db()->exec('CREATE INDEX IF NOT EXISTS idx_road_hazards_geo ON road_hazards(latitude,longitude)');
+        db()->exec('CREATE INDEX IF NOT EXISTS idx_road_hazards_last_seen ON road_hazards(last_seen)');
     }
 }
 
@@ -61,7 +64,7 @@ function road_hazard_overpass_request(string $query,int $timeout=70): ?array {
     global $config;
     $timeout=max(20,min(140,$timeout));
     $body='data='.urlencode($query);
-    $ua=(string)($config['routing']['user_agent']??'EstradaPlay/1.6.1');
+    $ua=(string)($config['routing']['user_agent']??'EstradaPlay/3.0');
     foreach(road_hazard_overpass_urls() as $url){
         try{
             $headers=['User-Agent: '.$ua,'Accept: application/json','Content-Type: application/x-www-form-urlencoded'];
@@ -82,16 +85,7 @@ function road_hazard_overpass_request(string $query,int $timeout=70): ?array {
 }
 
 function road_hazard_bbox_query_values(float $south,float $west,float $north,float $east): string {
-    $bbox=$south.','.$west.','.$north.','.$east;
-    return '[out:json][timeout:55];('
-        .'node["highway"="speed_camera"]('.$bbox.');'
-        .'node["enforcement"="maxspeed"]('.$bbox.');'
-        .'node["highway"="traffic_signals"]('.$bbox.');'
-        .'node["highway"="speed_bump"]('.$bbox.');'
-        .'node["traffic_calming"~"^(bump|hump|table|cushion|yes)$"]('.$bbox.');'
-        .'node["barrier"="toll_booth"]('.$bbox.');'
-        .'node["railway"~"^(level_crossing|crossing)$"]('.$bbox.');'
-        .');out body qt;';
+    return ep2_osm_query_for_bbox($south,$west,$north,$east,60);
 }
 
 function road_hazard_bbox_query(string $uf): string {
@@ -112,75 +106,77 @@ function road_hazard_set_sync(string $uf,bool $ok,int $count,string $error=''): 
 
 function road_hazard_collect_elements(array $elements,string $uf,bool $exactArea,array &$items,array &$seen): void {
     foreach($elements as $el){
-        if(count($items)>=65000)break;
+        if(count($items)>=250000)break;
         $h=ep2_osm_to_hazard($el);if($h===null)continue;
         if(!$exactArea){$guess=ep2_guess_uf((float)$h['lat'],(float)$h['lon']);if($guess!==''&&$guess!==$uf)continue;}
         ep2_add($items,$seen,$h);
     }
 }
 
-function road_hazard_sync_es_chunks(array &$items,array &$seen): bool {
-    [$s,$w,$n,$e]=ep2_state_bounds('ES');
-    $lat1=$s+($n-$s)/3.0;$lat2=$s+2.0*($n-$s)/3.0;$midLon=($w+$e)/2.0;$ok=false;
-    $chunks=[
-        [$s,$w,$lat1,$midLon],[$s,$midLon,$lat1,$e],
-        [$lat1,$w,$lat2,$midLon],[$lat1,$midLon,$lat2,$e],
-        [$lat2,$w,$n,$midLon],[$lat2,$midLon,$n,$e]
-    ];
+/** Six-box resilience fallback used only when the exact administrative-area query fails. */
+function road_hazard_sync_bbox_chunks(string $uf,array &$items,array &$seen): bool {
+    [$s,$w,$n,$e]=ep2_state_bounds($uf);$latMid=($s+$n)/2.0;$lon1=$w+($e-$w)/3.0;$lon2=$w+2.0*($e-$w)/3.0;$ok=false;
+    $chunks=[[$s,$w,$latMid,$lon1],[$s,$lon1,$latMid,$lon2],[$s,$lon2,$latMid,$e],[$latMid,$w,$n,$lon1],[$latMid,$lon1,$n,$lon2],[$latMid,$lon2,$n,$e]];
     foreach($chunks as $b){
-        $osm=road_hazard_overpass_request(road_hazard_bbox_query_values($b[0],$b[1],$b[2],$b[3]),45);
+        $osm=road_hazard_overpass_request(road_hazard_bbox_query_values($b[0],$b[1],$b[2],$b[3]),55);
         if(!is_array($osm)||empty($osm['elements']))continue;
-        $ok=true;
-        // Rescue chunks intentionally do not run the old approximate UF filter.
-        // It was excluding valid western/northern ES points. A small border spill
-        // is preferable to silently losing real road alerts.
-        road_hazard_collect_elements($osm['elements'],'ES',true,$items,$seen);
+        $ok=true;road_hazard_collect_elements($osm['elements'],$uf,false,$items,$seen);
     }
     return $ok;
 }
 
+function road_hazard_store_state_snapshot(string $uf,array $items): int {
+    $now=road_hazard_now();$driver=(string)db()->getAttribute(PDO::ATTR_DRIVER_NAME);$stored=0;
+    db()->beginTransaction();
+    try{
+        if($driver==='mysql'){
+            $up=db()->prepare("INSERT INTO road_hazards (hazard_key,type,latitude,longitude,uf,road,speed,heading,source,last_seen,active) VALUES (?,?,?,?,?,?,?,?,?,?,1) ON DUPLICATE KEY UPDATE type=VALUES(type),latitude=VALUES(latitude),longitude=VALUES(longitude),uf=VALUES(uf),road=VALUES(road),speed=VALUES(speed),heading=VALUES(heading),source=VALUES(source),last_seen=VALUES(last_seen),active=1");
+            foreach($items as $h){$up->execute([(string)$h['id'],(string)$h['type'],(float)$h['lat'],(float)$h['lon'],$uf,trim((string)($h['road']??''))?:null,isset($h['speed'])&&is_numeric($h['speed'])?(int)$h['speed']:null,isset($h['heading'])&&is_numeric($h['heading'])?(float)$h['heading']:null,(string)($h['source']??'OPENSTREETMAP'),$now]);$stored++;}
+        }else{
+            $find=db()->prepare('SELECT id FROM road_hazards WHERE hazard_key=? LIMIT 1');
+            $upd=db()->prepare('UPDATE road_hazards SET type=?,latitude=?,longitude=?,uf=?,road=?,speed=?,heading=?,source=?,last_seen=?,active=1 WHERE id=?');
+            $ins=db()->prepare('INSERT INTO road_hazards (hazard_key,type,latitude,longitude,uf,road,speed,heading,source,last_seen,active) VALUES (?,?,?,?,?,?,?,?,?,?,1)');
+            foreach($items as $h){
+                $key=(string)$h['id'];$find->execute([$key]);$id=$find->fetchColumn();$args=[(string)$h['type'],(float)$h['lat'],(float)$h['lon'],$uf,trim((string)($h['road']??''))?:null,isset($h['speed'])&&is_numeric($h['speed'])?(int)$h['speed']:null,isset($h['heading'])&&is_numeric($h['heading'])?(float)$h['heading']:null,(string)($h['source']??'OPENSTREETMAP'),$now];
+                if($id){$upd->execute(array_merge($args,[(int)$id]));}else{$ins->execute(array_merge([$key],$args));}$stored++;
+            }
+        }
+        // Only OSM rows not seen in this successful full-state snapshot are deactivated.
+        $deactivate=db()->prepare("UPDATE road_hazards SET active=0 WHERE UPPER(COALESCE(uf,''))=? AND source='OPENSTREETMAP' AND last_seen < ?");
+        $deactivate->execute([$uf,$now]);
+        db()->commit();return $stored;
+    }catch(Throwable $e){if(db()->inTransaction())db()->rollBack();throw $e;}
+}
+
 function road_hazard_sync_state(string $uf): array {
     road_hazard_ensure_tables();$uf=strtoupper(trim($uf));
-    if(!in_array($uf,['SP','RJ','MG','ES'],true))return ['ok'=>false,'count'=>0,'error'=>'UF inválida.'];
+    if(!ep2_valid_uf($uf))return ['ok'=>false,'count'=>0,'error'=>'UF inválida.'];
 
     $items=[];$seen=[];$mode='area';
-    // Exact administrative-area query first. Do NOT reclassify exact-area points
-    // with the approximate UF heuristic; that was discarding valid ES hazards.
     $selector='area["ISO3166-2"="BR-'.$uf.'"]->.eparea;';
-    $osm=road_hazard_overpass_request(ep2_osm_query_for_area($selector),$uf==='ES'?95:80);
+    $osm=road_hazard_overpass_request(ep2_osm_query_for_area($selector),110);
     if(is_array($osm)&&!empty($osm['elements']))road_hazard_collect_elements($osm['elements'],$uf,true,$items,$seen);
 
+    if(count($items)===0){$mode='chunks';road_hazard_sync_bbox_chunks($uf,$items,$seen);}
     if(count($items)===0){
-        $mode='bbox';$osm=road_hazard_overpass_request(road_hazard_bbox_query($uf),$uf==='ES'?85:70);
-        if(is_array($osm)&&!empty($osm['elements'])){
-            // For ES, bypass the legacy approximate UF classifier on bbox rescue.
-            road_hazard_collect_elements($osm['elements'],$uf,$uf==='ES',$items,$seen);
-        }
-    }
-    if(count($items)===0&&$uf==='ES'){
-        $mode='chunks';road_hazard_sync_es_chunks($items,$seen);
-    }
-    if(count($items)===0){
-        $old=road_hazard_count_state($uf);road_hazard_set_sync($uf,false,$old,'Nenhum servidor Overpass retornou alertas válidos');
+        $old=road_hazard_count_state($uf);road_hazard_set_sync($uf,false,$old,'Nenhum servidor de dados retornou pontos válidos');
         return ['ok'=>false,'count'=>$old,'error'=>'Não foi possível atualizar agora. A base anterior foi mantida.','mode'=>$mode];
     }
 
-    $now=road_hazard_now();db()->beginTransaction();
-    try{
-        $del=db()->prepare("DELETE FROM road_hazards WHERE UPPER(COALESCE(uf,''))=? AND source='OPENSTREETMAP'");$del->execute([$uf]);
-        $ins=db()->prepare('INSERT INTO road_hazards (hazard_key,type,latitude,longitude,uf,road,speed,heading,source,last_seen,active) VALUES (?,?,?,?,?,?,?,?,?,?,1)');
-        foreach($items as $h){$ins->execute([(string)$h['id'],(string)$h['type'],(float)$h['lat'],(float)$h['lon'],$uf,trim((string)($h['road']??''))?:null,isset($h['speed'])&&is_numeric($h['speed'])?(int)$h['speed']:null,isset($h['heading'])&&is_numeric($h['heading'])?(float)$h['heading']:null,'OPENSTREETMAP',$now]);}
-        db()->commit();
-    }catch(Throwable $e){
-        if(db()->inTransaction())db()->rollBack();$old=road_hazard_count_state($uf);road_hazard_set_sync($uf,false,$old,$e->getMessage());
-        return ['ok'=>false,'count'=>$old,'error'=>'Falha ao gravar a base: '.$e->getMessage(),'mode'=>$mode];
-    }
-    road_hazard_set_sync($uf,true,count($items),'');
-    return ['ok'=>true,'count'=>count($items),'error'=>'','mode'=>$mode];
+    try{$stored=road_hazard_store_state_snapshot($uf,$items);}catch(Throwable $e){$old=road_hazard_count_state($uf);road_hazard_set_sync($uf,false,$old,$e->getMessage());return ['ok'=>false,'count'=>$old,'error'=>'Falha ao gravar a base.','mode'=>$mode];}
+    road_hazard_set_sync($uf,true,$stored,'');
+    return ['ok'=>true,'count'=>$stored,'error'=>'','mode'=>$mode];
 }
 
 function road_hazard_count_state(string $uf): int {road_hazard_ensure_tables();$stmt=db()->prepare("SELECT COUNT(*) FROM road_hazards WHERE active=1 AND UPPER(COALESCE(uf,''))=?");$stmt->execute([strtoupper($uf)]);return (int)$stmt->fetchColumn();}
-function road_hazard_state_rows(string $uf,int $limit=65000): array {road_hazard_ensure_tables();$limit=max(1,min(65000,$limit));$stmt=db()->prepare("SELECT hazard_key,type,latitude,longitude,uf,road,speed,heading,source,last_seen FROM road_hazards WHERE active=1 AND UPPER(COALESCE(uf,''))=? ORDER BY id ASC LIMIT ".$limit);$stmt->execute([strtoupper($uf)]);return $stmt->fetchAll()?:[];}
-function road_hazard_bbox_rows(float $minLat,float $maxLat,float $minLon,float $maxLon,int $limit=30000): array {road_hazard_ensure_tables();$limit=max(1,min(30000,$limit));$stmt=db()->prepare('SELECT hazard_key,type,latitude,longitude,uf,road,speed,heading,source,last_seen FROM road_hazards WHERE active=1 AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? ORDER BY id ASC LIMIT '.$limit);$stmt->execute([$minLat,$maxLat,$minLon,$maxLon]);return $stmt->fetchAll()?:[];}
-function road_hazard_stats(?string $uf=null): array {road_hazard_ensure_tables();$where=' WHERE active=1';$params=[];if($uf!==null&&in_array(strtoupper($uf),['SP','RJ','MG','ES'],true)){$where.=" AND UPPER(COALESCE(uf,''))=?";$params[]=strtoupper($uf);}$stmt=db()->prepare('SELECT type,COUNT(*) total FROM road_hazards'.$where.' GROUP BY type ORDER BY total DESC');$stmt->execute($params);$out=[];foreach(($stmt->fetchAll()?:[]) as $r)$out[(string)$r['type']]=(int)$r['total'];return $out;}
+function road_hazard_state_rows(string $uf,int $limit=65000): array {road_hazard_ensure_tables();$limit=max(1,min(150000,$limit));$stmt=db()->prepare("SELECT hazard_key,type,latitude,longitude,uf,road,speed,heading,source,last_seen FROM road_hazards WHERE active=1 AND UPPER(COALESCE(uf,''))=? ORDER BY id ASC LIMIT ".$limit);$stmt->execute([strtoupper($uf)]);return $stmt->fetchAll()?:[];}
+function road_hazard_bbox_rows(float $minLat,float $maxLat,float $minLon,float $maxLon,int $limit=30000): array {road_hazard_ensure_tables();$limit=max(1,min(80000,$limit));$stmt=db()->prepare('SELECT hazard_key,type,latitude,longitude,uf,road,speed,heading,source,last_seen FROM road_hazards WHERE active=1 AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ? ORDER BY id ASC LIMIT '.$limit);$stmt->execute([$minLat,$maxLat,$minLon,$maxLon]);return $stmt->fetchAll()?:[];}
+function road_hazard_stats(?string $uf=null): array {road_hazard_ensure_tables();$where=' WHERE active=1';$params=[];if($uf!==null&&ep2_valid_uf($uf)){$where.=" AND UPPER(COALESCE(uf,''))=?";$params[]=strtoupper($uf);}$stmt=db()->prepare('SELECT type,COUNT(*) total FROM road_hazards'.$where.' GROUP BY type ORDER BY total DESC');$stmt->execute($params);$out=[];foreach(($stmt->fetchAll()?:[]) as $r)$out[(string)$r['type']]=(int)$r['total'];return $out;}
 function road_hazard_sync_status(): array {road_hazard_ensure_tables();return db()->query('SELECT uf,last_attempt,last_success,item_count,last_error FROM road_hazard_sync ORDER BY uf')->fetchAll()?:[];}
+
+function road_hazard_next_uf_for_sync(): string {
+    road_hazard_ensure_tables();$status=[];foreach(road_hazard_sync_status() as $r)$status[strtoupper((string)$r['uf'])]=$r;
+    $best='';$bestAt=PHP_INT_MAX;
+    foreach(ep2_brazil_ufs() as $uf){$row=$status[$uf]??null;if(!$row||empty($row['last_success']))return $uf;$ts=strtotime((string)$row['last_success']);if($ts===false)$ts=0;if($ts<$bestAt){$bestAt=$ts;$best=$uf;}}
+    return $best!==''?$best:'SP';
+}
