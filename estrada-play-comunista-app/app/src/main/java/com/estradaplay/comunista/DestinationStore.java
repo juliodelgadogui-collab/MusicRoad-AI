@@ -30,6 +30,7 @@ final class DestinationStore {
                 .putLong("lat_bits", Double.doubleToLongBits(d.lat))
                 .putLong("lon_bits", Double.doubleToLongBits(d.lon))
                 .apply();
+        try { RecentDestinationStore.add(c.getApplicationContext(), d); } catch (Throwable ignored) {}
     }
 
     static Destination read(Context c) {
