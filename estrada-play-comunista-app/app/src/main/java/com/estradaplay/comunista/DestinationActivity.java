@@ -20,7 +20,9 @@ import android.widget.TextView;
 
 import androidx.activity.ComponentActivity;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -32,6 +34,8 @@ public final class DestinationActivity extends ComponentActivity {
     private static final int MUTED = Color.rgb(161, 145, 149);
     private static final int RED = Color.rgb(224, 30, 47);
     private static final int RED_DARK = Color.rgb(80, 12, 21);
+    private static final int GREEN = Color.rgb(72, 212, 134);
+    private static final int GOLD = Color.rgb(226, 185, 76);
 
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -90,9 +94,11 @@ public final class DestinationActivity extends ComponentActivity {
         progress.setVisibility(View.GONE);
         card.addView(progress, new LinearLayout.LayoutParams(-1, dp(36))); margin(progress, 0, 10, 0, 0);
 
-        status = label("Busca de endereço disponível quando houver internet.", 12, MUTED, false);
+        status = label("Busca online quando necessária; favoritos e recentes ficam no aparelho.", 12, MUTED, false);
         status.setGravity(Gravity.CENTER);
         card.addView(status); margin(status, 0, 8, 0, 0);
+
+        addQuickDestinations(page);
 
         Button passive = button("DIRIGIR SEM DESTINO", false);
         page.addView(passive, new LinearLayout.LayoutParams(-1, dp(58))); margin(passive, 0, 16, 0, 0);
@@ -109,7 +115,59 @@ public final class DestinationActivity extends ComponentActivity {
             currentText.setPadding(dp(14), dp(14), dp(14), dp(14));
             currentText.setBackground(panel(16, RED_DARK, BORDER));
             page.addView(currentText);
+            if (RouteOfflineCache.hasPreparedFor(this, current.lat, current.lon)) {
+                TextView offline = label("✓ Rota preparada para recuperação offline", 10, GREEN, true);
+                page.addView(offline); margin(offline, 0, 7, 0, 0);
+            }
         }
+    }
+
+    private void addQuickDestinations(LinearLayout page) {
+        ArrayList<FavoriteRoadStore.Item> favorites = FavoriteRoadStore.list(this);
+        ArrayList<DestinationStore.Destination> recent = RecentDestinationStore.list(this);
+        if (favorites.isEmpty() && recent.isEmpty()) return;
+
+        TextView quick = label("ATALHOS", 10, GOLD, true);
+        quick.setLetterSpacing(.12f);
+        page.addView(quick); margin(quick, 0, 20, 0, 7);
+
+        int shown = 0;
+        for (FavoriteRoadStore.Item x : favorites) {
+            if (shown++ >= 4) break;
+            String type = x.type == null || x.type.trim().isEmpty() ? "FAVORITO" : x.type.trim().toUpperCase(Locale.ROOT);
+            Button b = quickButton(type + "  ·  " + x.name, true);
+            page.addView(b, new LinearLayout.LayoutParams(-1, dp(52))); margin(b, 0, 0, 0, 7);
+            b.setOnClickListener(v -> use(new DestinationStore.Destination(x.name, x.lat, x.lon)));
+        }
+
+        int recentShown = 0;
+        for (DestinationStore.Destination d : recent) {
+            if (recentShown >= 4) break;
+            boolean duplicate = false;
+            for (FavoriteRoadStore.Item x : favorites) {
+                if (RouteEngine.distanceM(x.lat, x.lon, d.lat, d.lon) < 80) { duplicate = true; break; }
+            }
+            if (duplicate) continue;
+            recentShown++;
+            Button b = quickButton("RECENTE  ·  " + d.label, false);
+            page.addView(b, new LinearLayout.LayoutParams(-1, dp(50))); margin(b, 0, 0, 0, 6);
+            b.setOnClickListener(v -> use(d));
+        }
+    }
+
+    private Button quickButton(String value, boolean favorite) {
+        Button b = button(value, false);
+        b.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        b.setPadding(dp(14), 0, dp(12), 0);
+        b.setTextColor(favorite ? TEXT : MUTED);
+        b.setBackground(panel(14, favorite ? Color.rgb(31, 18, 22) : Color.rgb(22, 18, 20), favorite ? RED_DARK : BORDER));
+        return b;
+    }
+
+    private void use(DestinationStore.Destination d) {
+        DestinationStore.save(this, d);
+        status.setText("Destino definido. Abrindo a estrada…");
+        openMap();
     }
 
     private void search() {
@@ -129,7 +187,7 @@ public final class DestinationActivity extends ComponentActivity {
                 ui.post(() -> {
                     search.setEnabled(true);
                     progress.setVisibility(View.GONE);
-                    status.setText("Não consegui buscar agora. Verifique a internet e tente novamente.");
+                    status.setText("Não consegui buscar agora. Você ainda pode usar favoritos e destinos recentes.");
                 });
             }
         });
@@ -146,12 +204,7 @@ public final class DestinationActivity extends ComponentActivity {
         for (int i = 0; i < results.size(); i++) labels[i] = results.get(i).label;
         new AlertDialog.Builder(this)
                 .setTitle("Escolha o destino")
-                .setItems(labels, (dialog, which) -> {
-                    DestinationStore.Destination d = results.get(which);
-                    DestinationStore.save(this, d);
-                    status.setText("Destino definido. Preparando a rota…");
-                    openMap();
-                })
+                .setItems(labels, (dialog, which) -> use(results.get(which)))
                 .setNegativeButton("Cancelar", null)
                 .show();
     }
@@ -171,6 +224,7 @@ public final class DestinationActivity extends ComponentActivity {
         b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         b.setLetterSpacing(0.06f);
         b.setStateListAnimator(null);
+        b.setAllCaps(false);
         b.setBackground(panel(16, primary ? RED : Color.rgb(31, 22, 25), primary ? 0 : BORDER));
         return b;
     }
