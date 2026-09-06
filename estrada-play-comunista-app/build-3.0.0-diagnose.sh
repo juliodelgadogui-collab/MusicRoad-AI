@@ -6,6 +6,7 @@ cd "$APP_DIR"
 
 # UNIVERSAL_BUILD_DIAGNOSTICS_V300
 LOG="$APP_DIR/build-3.0.0.log"
+LINT_REPORT="$APP_DIR/app/build/intermediates/lint_intermediate_text_report/universalDebug/lintReportUniversalDebug/lint-results-universalDebug.txt"
 rm -f "$LOG"
 
 printf '\n==> Executando build UNIVERSAL TESTE 3.0.0 com log completo\n'
@@ -32,6 +33,13 @@ awk '
   show && /BUILD FAILED/ {exit}
 ' "$LOG" | tail -n 140
 
+printf '\n---------------- TODOS OS ERROS DO ANDROID LINT -------------\n'
+if [ -f "$LINT_REPORT" ]; then
+  grep -n ' Error: ' "$LINT_REPORT" || true
+else
+  printf 'Relatório detalhado do Lint ainda não foi gerado.\n'
+fi
+
 printf '\n---------------- ERROS/TAREFAS RELEVANTES ------------------\n'
 grep -nEi \
   'MissingPermission|ERRO 16 KB|EPC 3\.0\.0 Universal: pré-validação FALHOU|(^|[[:space:]])(error:|fatal:)|Execution failed for task|What went wrong|Lint found|lintVital|lint.*failed|FAILED$|Compilation failed|Could not resolve|Could not determine|Caused by:|Exception|AssertionError|FAILURES!!!|There (was|were) [0-9]+ failure' \
@@ -42,5 +50,6 @@ tail -n 120 "$LOG"
 
 printf '\n============================================================\n'
 printf 'Build Universal falhou (código %s). Log completo: %s\n' "$status" "$LOG"
+if [ -f "$LINT_REPORT" ]; then printf 'Lint completo: %s\n' "$LINT_REPORT"; fi
 printf '============================================================\n'
 exit "$status"
