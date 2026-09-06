@@ -23,14 +23,17 @@ final class OfflineRoadStore {
     private static final long STATE_FRESH_MS = 30L * 24L * 60L * 60L * 1000L;
     private static final long CORRIDOR_FRESH_MS = 30L * 60L * 60L * 1000L;
     private static final long MAX_AGE_MS = 180L * 24L * 60L * 60L * 1000L;
-    // OFFLINE_LOCAL_V311: the normal road cache stays local around the driver.
-    // Coverage size is an implementation detail and is intentionally not exposed in the UI.
-    private static final int RESERVE_DISTANCE_M = 30000;
-    private static final int RESERVE_WIDTH_M = 10000;
-    private static final int LOCAL_RADIUS_M = 30000;
+
+    // OFFLINE_NETWORK_V312: 30.000 km is a target length of road network kept in
+    // offline regional packs, not a geographic radius around the vehicle.
+    // The server/data pack decides the road-network content; this value is never shown in UI.
+    private static final int OFFLINE_NETWORK_TARGET_KM = 30000;
+    private static final int RESERVE_DISTANCE_M = 250000;
+    private static final int RESERVE_WIDTH_M = 18000;
     private static final int MAX_CORRIDORS = 8;
 
     private final File dir;
+    // ROAD_LIMIT_INDEX_V202: lightweight in-memory speed-limit segments, rebuilt only when map files change.
     private final ArrayList<SpeedSegment> speedSegments = new ArrayList<>();
     private long speedIndexRevision = Long.MIN_VALUE;
     private String speedIndexUf = "";
@@ -42,15 +45,17 @@ final class OfflineRoadStore {
     }
 
     boolean needsPreparation(double lat, double lon, float heading) {
-        if (!hasRecentCorridorNear(lat, lon)) return true;
+        String uf = guessUfFast(lat, lon);
+        if (supported(uf) && !fresh(stateFile(uf), STATE_FRESH_MS) && !hasRecentCorridorNear(lat, lon)) return true;
         return Float.isFinite(heading) && !hasFreshCorridor(lat, lon, heading);
     }
 
     boolean prepare(ApiClient api, double lat, double lon, float heading) {
         boolean ok = false;
-        if (api != null && Float.isFinite(heading) && !hasFreshCorridor(lat, lon, heading)) {
-            ok = fetchCorridor(api, lat, lon, heading) || ok;
-        }
+        String uf = guessUfFast(lat, lon);
+        if (api != null && supported(uf) && !fresh(stateFile(uf), STATE_FRESH_MS)) ok = fetchState(api, uf) || ok;
+        if (api != null && Float.isFinite(heading) && !hasFreshCorridor(lat, lon, heading)) ok = fetchCorridor(api, lat, lon, heading) || ok;
+
         boolean needsLocal = !hasRecentCorridorNear(lat, lon) ||
                 (Float.isFinite(heading) && !hasFreshCorridor(lat, lon, heading));
         if (needsLocal) ok = fetchDirectLocalMap(lat, lon, heading) || ok;
@@ -60,17 +65,21 @@ final class OfflineRoadStore {
 
     String combinedGeoJson(double lat, double lon) {
         LinkedHashMap<String, JSONObject> unique = new LinkedHashMap<>();
+        String uf = guessUfFast(lat, lon);
+        if (supported(uf)) appendFeatures(stateFile(uf), unique, 12000);
+
         File[] files = corridorFiles();
         if (files != null) {
             Arrays.sort(files, Comparator.comparingLong(File::lastModified).reversed());
             for (File f : files) {
                 CorridorMeta meta = corridorMeta(f);
                 if (meta == null) continue;
-                if (RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) > LOCAL_RADIUS_M + 15000) continue;
-                appendFeatures(f, unique, 7000);
-                if (unique.size() >= 7000) break;
+                if (RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) > 190000) continue;
+                appendFeatures(f, unique, 9000);
+                if (unique.size() >= 9000) break;
             }
         }
+
         JSONArray arr = new JSONArray();
         for (JSONObject feature : unique.values()) arr.put(feature);
         JSONObject collection = new JSONObject();
@@ -93,13 +102,18 @@ final class OfflineRoadStore {
     }
 
     String status(double lat, double lon) {
-        return hasRecentCorridorNear(lat, lon) ? "Proteção offline pronta" : "Proteção offline preparando";
+        String uf = guessUfFast(lat, lon);
+        boolean state = supported(uf) && stateFile(uf).isFile();
+        boolean corridor = hasRecentCorridorNear(lat, lon);
+        return state || corridor ? "Proteção offline pronta" : "Proteção offline preparando";
     }
 
     synchronized int speedLimitAt(double lat, double lon, float heading) {
         String uf = guessUfFast(lat, lon);
         long rev = revision();
-        if (rev != speedIndexRevision || !uf.equals(speedIndexUf)) rebuildSpeedIndex(lat, lon, uf, rev);
+        if (rev != speedIndexRevision || !uf.equals(speedIndexUf)) {
+            rebuildSpeedIndex(lat, lon, uf, rev);
+        }
         double best = Double.MAX_VALUE;
         int limit = 0;
         for (SpeedSegment s : speedSegments) {
@@ -124,7 +138,7 @@ final class OfflineRoadStore {
             int used = 0;
             for (File f : files) {
                 CorridorMeta meta = corridorMeta(f);
-                if (meta == null || RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) > LOCAL_RADIUS_M + 15000) continue;
+                if (meta == null || RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) > 75000) continue;
                 appendSpeedSegments(f, lat, lon, 5000);
                 if (++used >= 3 || speedSegments.size() >= 18000) break;
             }
@@ -154,7 +168,7 @@ final class OfflineRoadStore {
                     double lon2 = b.optDouble(0, Double.NaN), lat2 = b.optDouble(1, Double.NaN);
                     if (!Double.isFinite(lat1) || !Double.isFinite(lon1) || !Double.isFinite(lat2) || !Double.isFinite(lon2)) continue;
                     double midLat = (lat1 + lat2) * 0.5, midLon = (lon1 + lon2) * 0.5;
-                    if (RoadPackStore.distanceM(lat, lon, midLat, midLon) > LOCAL_RADIUS_M) continue;
+                    if (RoadPackStore.distanceM(lat, lon, midLat, midLon) > 45000) continue;
                     speedSegments.add(new SpeedSegment(lat1, lon1, lat2, lon2, limit));
                 }
             }
@@ -163,7 +177,10 @@ final class OfflineRoadStore {
 
     private static int speedFromProperties(JSONObject p) {
         String[] keys = {"maxspeed", "maxspeed:forward", "maxspeed:backward", "max_speed", "speed_limit", "speed_kmh", "limit"};
-        for (String key : keys) { int v = parseSpeedLimit(p.optString(key, "")); if (v > 0) return v; }
+        for (String key : keys) {
+            int v = parseSpeedLimit(p.optString(key, ""));
+            if (v > 0) return v;
+        }
         return 0;
     }
 
@@ -213,7 +230,6 @@ final class OfflineRoadStore {
         }
     }
 
-    // Kept for compatibility with older cached state packs; normal driving no longer depends on a whole-state map download.
     private boolean fetchState(ApiClient api, String uf) {
         try {
             ApiClient.Response response = api.getLong("api/road_map_state.php?uf=" + uf);
@@ -221,6 +237,9 @@ final class OfflineRoadStore {
             JSONObject roads = json.optJSONObject("roads");
             if (!response.ok() || !json.optBoolean("ok", false) || roads == null || roads.optJSONArray("features") == null) return false;
             json.put("fetched_at", System.currentTimeMillis());
+            JSONObject coverage = json.optJSONObject("coverage");
+            if (coverage == null) { coverage = new JSONObject(); json.put("coverage", coverage); }
+            coverage.put("target_network_km", OFFLINE_NETWORK_TARGET_KM);
             return writeJson(stateFile(uf), json);
         } catch (Throwable ignored) { return false; }
     }
@@ -240,11 +259,12 @@ final class OfflineRoadStore {
         } catch (Throwable ignored) { return false; }
     }
 
+    // Local OSM fallback only; it does not define the total offline coverage target.
     private boolean fetchDirectLocalMap(double lat, double lon, float heading) {
         try {
             String query = String.format(Locale.US,
-                    "[out:json][timeout:35];way(around:%d,%.6f,%.6f)[\"highway\"~\"motorway|trunk|primary|secondary|tertiary\"];out geom tags;",
-                    LOCAL_RADIUS_M, lat, lon);
+                    "[out:json][timeout:35];way(around:18000,%.6f,%.6f)[\"highway\"~\"motorway|trunk|primary|secondary|tertiary\"];out geom tags;",
+                    lat, lon);
             String target = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(query, "UTF-8");
             HttpURLConnection c = (HttpURLConnection)new URL(target).openConnection();
             c.setConnectTimeout(15000); c.setReadTimeout(60000); c.setInstanceFollowRedirects(true);
@@ -265,7 +285,7 @@ final class OfflineRoadStore {
             JSONArray elements = osm.optJSONArray("elements");
             if (elements == null || elements.length() == 0) return false;
             JSONArray features = new JSONArray();
-            for (int i = 0; i < elements.length() && features.length() < 3500; i++) {
+            for (int i = 0; i < elements.length() && features.length() < 2500; i++) {
                 JSONObject e = elements.optJSONObject(i); if (e == null) continue;
                 JSONArray geom = e.optJSONArray("geometry"); if (geom == null || geom.length() < 2) continue;
                 JSONArray coords = new JSONArray();
@@ -303,6 +323,8 @@ final class OfflineRoadStore {
         } catch (Throwable ignored) { return false; }
     }
 
+    // ANR_GUARD_V201: these methods run from the GPS/service path. Corridor position
+    // is encoded in the file name, so never read/parse the large road GeoJSON here.
     private boolean hasFreshCorridor(double lat, double lon, float heading) {
         File[] files = corridorFiles();
         if (files == null) return false;
@@ -311,7 +333,7 @@ final class OfflineRoadStore {
             if (now - f.lastModified() > CORRIDOR_FRESH_MS) continue;
             CorridorMeta meta = corridorMeta(f);
             if (meta == null) continue;
-            if (RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) <= 12000 && angleDiff(heading, meta.heading) <= 50.0) return true;
+            if (RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) <= 52000 && angleDiff(heading, meta.heading) <= 45.0) return true;
         }
         return false;
     }
@@ -323,7 +345,7 @@ final class OfflineRoadStore {
         for (File f : files) {
             if (now - f.lastModified() > 10L * 24L * 60L * 60L * 1000L) continue;
             CorridorMeta meta = corridorMeta(f);
-            if (meta != null && RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) <= LOCAL_RADIUS_M) return true;
+            if (meta != null && RoadPackStore.distanceM(lat, lon, meta.lat, meta.lon) <= 135000) return true;
         }
         return false;
     }
@@ -386,12 +408,13 @@ final class OfflineRoadStore {
 
     private File[] corridorFiles() { return dir.listFiles((d, n) -> n.startsWith("corr_") && n.endsWith(".json")); }
     private File stateFile(String uf) { return new File(dir, "state_" + uf.toLowerCase(Locale.ROOT) + ".json"); }
+
     private static boolean fresh(File f, long age) { return f.isFile() && System.currentTimeMillis() - f.lastModified() <= age; }
 
     private static String corridorKey(double lat, double lon, float heading) {
         int hb = ((int)Math.round(heading / 30.0)) * 30 % 360;
-        double glat = Math.round(lat / 0.10) * 0.10;
-        double glon = Math.round(lon / 0.10) * 0.10;
+        double glat = Math.round(lat / 0.30) * 0.30;
+        double glon = Math.round(lon / 0.30) * 0.30;
         return String.format(Locale.US, "corr_%+.2f_%+.2f_%03d", glat, glon, hb).replace('+','p').replace('-','m').replace('.','_');
     }
 
