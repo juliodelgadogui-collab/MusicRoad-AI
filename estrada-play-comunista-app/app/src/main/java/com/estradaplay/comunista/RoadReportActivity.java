@@ -42,22 +42,23 @@ public final class RoadReportActivity extends ComponentActivity {
         LinearLayout page=col();page.setPadding(dp(18),dp(14),dp(18),dp(26));page.setBackgroundColor(BG);sv.addView(page,new ScrollView.LayoutParams(-1,-2));setContentView(UnifiedAppShell.wrap(this,"central",sv));
 
         LinearLayout head=row();head.setGravity(Gravity.CENTER_VERTICAL);Button back=button("‹ CENTRAL",false);head.addView(back,new LinearLayout.LayoutParams(dp(100),dp(46)));back.setOnClickListener(v->finish());
-        LinearLayout titles=col();titles.addView(over("CONTRIBUIÇÃO DA ESTRADA",RED));titles.addView(text("Reportar ponto",27,TEXT,true));head.addView(titles,new LinearLayout.LayoutParams(0,-2,1));page.addView(head);
-        TextView note=text("Use somente com o veículo parado ou quando for seguro tocar no aparelho. O reporte fica pendente até o servidor aceitar.",12,MUTED,false);add(page,note,0,8,0,14,-1,-2);
+        LinearLayout titles=col();titles.addView(over("CORREÇÃO DA BASE",RED));titles.addView(text("Corrigir ponto da estrada",27,TEXT,true));head.addView(titles,new LinearLayout.LayoutParams(0,-2,1));page.addView(head);
+        TextView note=text("Use esta tela para corrigir dados permanentes da base: radar, limite, quebra-molas ou câmera. Para acidente, buraco, animal, trânsito ou fiscalização temporária, use Estrada Viva.",12,MUTED,false);add(page,note,0,8,0,10,-1,-2);
+        Button live=button("ABRIR ESTRADA VIVA · ALERTA TEMPORÁRIO",false);add(page,live,0,0,0,14,-1,dp(50));live.setOnClickListener(v->startActivity(new Intent(this,EstradaVivaActivity.class)));
 
         LinearLayout status=row();status.setGravity(Gravity.CENTER_VERTICAL);status.setPadding(dp(14),dp(12),dp(14),dp(12));status.setBackground(panel(SURFACE,16,BORDER));
         LinearLayout gpsBox=col();gpsBox.addView(over("LOCALIZAÇÃO",MUTED));gpsState=text("Aguardando GPS…",14,GOLD,true);gpsBox.addView(gpsState);status.addView(gpsBox,new LinearLayout.LayoutParams(0,-2,1));
         selectedState=chip("NENHUM TIPO",MUTED,SURFACE2);status.addView(selectedState);add(page,status,0,0,0,18,-1,-2);
 
-        page.addView(over("O QUE VOCÊ ENCONTROU?",MUTED));
+        page.addView(over("O QUE PRECISA SER CORRIGIDO?",MUTED));
         LinearLayout grid=col();add(page,grid,0,8,0,18,-1,-2);
         addPair(grid,new String[]{"RADAR_NOVO","RADAR NOVO","Novo ponto de fiscalização"},new String[]{"RADAR_REMOVIDO","RADAR REMOVIDO","Ponto que não existe mais"});
         addPair(grid,new String[]{"LIMITE_ERRADO","LIMITE INCORRETO","Velocidade exibida está errada"},new String[]{"QUEBRA_MOLAS","QUEBRA-MOLAS","Lombada ou redutor físico"});
         addSingle(grid,new String[]{"CAMERA_MONITORAMENTO","CÂMERA DE MONITORAMENTO","Fiscalização sem limite de velocidade"});
 
         LinearLayout confirm=col();confirm.setPadding(dp(16),dp(15),dp(16),dp(15));confirm.setBackground(panel(SURFACE,18,BORDER));
-        confirm.addView(over("CONFIRMAÇÃO",GOLD));confirm.addView(text("O EstradaPlay salva GPS e horário do momento do reporte. Não envia áudio ou vídeo.",12,MUTED,false));
-        Button send=button("SALVAR REPORTE",true);add(confirm,send,0,14,0,0,-1,dp(56));send.setOnClickListener(v->save());
+        confirm.addView(over("CONFIRMAÇÃO",GOLD));confirm.addView(text("O EstradaPlay salva GPS e horário do momento da correção. Não envia áudio ou vídeo.",12,MUTED,false));
+        Button send=button("SALVAR CORREÇÃO",true);add(confirm,send,0,14,0,0,-1,dp(56));send.setOnClickListener(v->save());
         page.addView(confirm);
     }
 
@@ -70,7 +71,7 @@ public final class RoadReportActivity extends ComponentActivity {
     @Override protected void onStart(){super.onStart();rx=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){lat=i.getDoubleExtra("lat",Double.NaN);lon=i.getDoubleExtra("lon",Double.NaN);if(gpsState!=null){boolean ok=Double.isFinite(lat)&&Double.isFinite(lon);gpsState.setText(ok?"GPS pronto":"Aguardando GPS…");gpsState.setTextColor(ok?GREEN:GOLD);}}};IntentFilter f=new IntentFilter(RoadSafetyService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(rx,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(rx,f);reg=true;}
     @Override protected void onStop(){if(reg){try{unregisterReceiver(rx);}catch(Throwable ignored){}reg=false;}super.onStop();}
 
-    private void save(){if(selected.isEmpty()){toast("Escolha o tipo do reporte.");return;}if(!Double.isFinite(lat)||!Double.isFinite(lon)){toast("Aguarde uma posição GPS válida.");return;}try{JSONObject r=new JSONObject();r.put("type",selected);r.put("lat",lat);r.put("lon",lon);r.put("created_at",System.currentTimeMillis());SharedPreferences p=getSharedPreferences(P,MODE_PRIVATE);JSONArray q=new JSONArray(p.getString("queue","[]"));q.put(r);p.edit().putString("queue",q.toString()).apply();new Thread(()->uploadQueue(p),"epc-report").start();Toast.makeText(this,"Reporte salvo. Ele será enviado quando o servidor aceitar.",Toast.LENGTH_LONG).show();finish();}catch(Throwable e){toast("Não foi possível salvar.");}}
+    private void save(){if(selected.isEmpty()){toast("Escolha o tipo da correção.");return;}if(!Double.isFinite(lat)||!Double.isFinite(lon)){toast("Aguarde uma posição GPS válida.");return;}try{JSONObject r=new JSONObject();r.put("type",selected);r.put("lat",lat);r.put("lon",lon);r.put("created_at",System.currentTimeMillis());SharedPreferences p=getSharedPreferences(P,MODE_PRIVATE);JSONArray q=new JSONArray(p.getString("queue","[]"));q.put(r);p.edit().putString("queue",q.toString()).apply();new Thread(()->uploadQueue(p),"epc-report").start();Toast.makeText(this,"Correção salva. Ela será enviada quando o servidor aceitar.",Toast.LENGTH_LONG).show();finish();}catch(Throwable e){toast("Não foi possível salvar.");}}
     private void uploadQueue(SharedPreferences p){try{JSONArray q=new JSONArray(p.getString("queue","[]"));if(q.length()==0)return;ApiClient api=new ApiClient(this);JSONArray keep=new JSONArray();for(int i=0;i<q.length();i++){JSONObject r=q.optJSONObject(i);if(r==null)continue;try{ApiClient.Response x=api.post("api/road_reports.php",r);if(!x.ok()||!x.json().optBoolean("ok",false))keep.put(r);}catch(Throwable e){keep.put(r);}}p.edit().putString("queue",keep.toString()).apply();}catch(Throwable ignored){}}
 
     private static final class OptionView{final String key;final LinearLayout view;final TextView title,subtitle;OptionView(String k,LinearLayout v,TextView t,TextView s){key=k;view=v;title=t;subtitle=s;}}
