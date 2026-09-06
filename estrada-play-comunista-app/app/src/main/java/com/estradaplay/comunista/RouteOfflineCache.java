@@ -40,8 +40,8 @@ final class RouteOfflineCache {
             root.put("saved_at", System.currentTimeMillis());
             root.put("prepared", keepPrepared);
             if(keepPrepared)root.put("prepared_at",preparedAt>0?preparedAt:System.currentTimeMillis());
-            root.put("from_lat", fromLat);
-            root.put("from_lon", fromLon);
+            if(Double.isFinite(fromLat))root.put("from_lat",fromLat);
+            if(Double.isFinite(fromLon))root.put("from_lon",fromLon);
             root.put("to_lat", toLat);
             root.put("to_lon", toLon);
             root.put("label", label == null ? "Destino" : label.trim());
@@ -58,8 +58,8 @@ final class RouteOfflineCache {
                 o.put("modifier", s.modifier);
                 o.put("distance_m", s.distanceM);
                 o.put("duration_s", s.durationS);
-                o.put("maneuver_lat", s.maneuverLat);
-                o.put("maneuver_lon", s.maneuverLon);
+                if(Double.isFinite(s.maneuverLat))o.put("maneuver_lat",s.maneuverLat);
+                if(Double.isFinite(s.maneuverLon))o.put("maneuver_lon",s.maneuverLon);
                 o.put("along_m", s.alongM);
                 steps.put(o);
             }
@@ -167,7 +167,8 @@ final class RouteOfflineCache {
                             o.optString("instruction", ""), o.optString("road", ""),
                             o.optString("type", ""), o.optString("modifier", ""),
                             o.optDouble("distance_m", 0), o.optDouble("duration_s", 0),
-                            o.optDouble("maneuver_lat", Double.NaN), o.optDouble("maneuver_lon", Double.NaN), along));
+                            o.has("maneuver_lat")?o.optDouble("maneuver_lat",Double.NaN):Double.NaN,
+                            o.has("maneuver_lon")?o.optDouble("maneuver_lon",Double.NaN):Double.NaN, along));
                 }
             }
             if (steps.isEmpty()) {
