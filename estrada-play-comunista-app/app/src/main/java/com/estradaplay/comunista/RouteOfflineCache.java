@@ -65,9 +65,10 @@ final class RouteOfflineCache {
 
     static void markPrepared(Context context) {
         File f = file(context);
-        if (!f.isFile() || f.length() <= 0 || f.length() > MAX_FILE_BYTES) return;
+        if (!validFile(f)) return;
         try {
             JSONObject root = new JSONObject(read(f));
+            if (stale(root)) return;
             root.put("prepared", true);
             root.put("prepared_at", System.currentTimeMillis());
             writeAtomic(f, root.toString());
@@ -77,11 +78,10 @@ final class RouteOfflineCache {
     static RouteEngine.Route load(Context context, double currentLat, double currentLon,
                                   double toLat, double toLon) {
         File f = file(context);
-        if (!f.isFile() || f.length() <= 0 || f.length() > MAX_FILE_BYTES) return null;
+        if (!validFile(f)) return null;
         try {
             JSONObject root = new JSONObject(read(f));
-            long savedAt = root.optLong("saved_at", 0L);
-            if (savedAt <= 0 || System.currentTimeMillis() - savedAt > MAX_AGE_MS) return null;
+            if (stale(root)) return null;
             double savedToLat = root.optDouble("to_lat", Double.NaN);
             double savedToLon = root.optDouble("to_lon", Double.NaN);
             if (!Double.isFinite(savedToLat) || !Double.isFinite(savedToLon)) return null;
@@ -101,10 +101,10 @@ final class RouteOfflineCache {
 
     static boolean hasPreparedFor(Context context, double toLat, double toLon) {
         File f = file(context);
-        if (!f.isFile() || f.length() <= 0 || f.length() > MAX_FILE_BYTES) return false;
+        if (!validFile(f)) return false;
         try {
             JSONObject root = new JSONObject(read(f));
-            if (!root.optBoolean("prepared", false)) return false;
+            if (stale(root) || !root.optBoolean("prepared", false)) return false;
             double a = root.optDouble("to_lat", Double.NaN), b = root.optDouble("to_lon", Double.NaN);
             return Double.isFinite(a) && Double.isFinite(b) && RouteEngine.distanceM(a, b, toLat, toLon) <= DEST_TOLERANCE_M;
         } catch (Throwable ignored) { return false; }
@@ -112,16 +112,20 @@ final class RouteOfflineCache {
 
     static String status(Context context) {
         File f = file(context);
-        if (!f.isFile() || f.length() <= 0 || f.length() > MAX_FILE_BYTES) return "Nenhuma rota salva offline";
+        if (!validFile(f)) return "Nenhuma rota salva offline";
         try {
             JSONObject root = new JSONObject(read(f));
             String label = root.optString("label", "Destino").trim();
+            if (label.isEmpty()) label = "Destino";
+            if (stale(root)) return "Rota antiga · " + label + " · recalcule antes da próxima viagem";
             double km = root.optDouble("distance_m", 0) / 1000.0;
             boolean prepared = root.optBoolean("prepared", false);
-            if (label.isEmpty()) label = "Destino";
             return (prepared ? "Rota preparada" : "Rota recuperável") + " · " + label + " · " + Math.round(km) + " km";
         } catch (Throwable ignored) { return "Rota offline precisa ser preparada novamente"; }
     }
+
+    private static boolean validFile(File f){return f!=null&&f.isFile()&&f.length()>0&&f.length()<=MAX_FILE_BYTES;}
+    private static boolean stale(JSONObject root){long savedAt=root==null?0L:root.optLong("saved_at",0L);return savedAt<=0||System.currentTimeMillis()-savedAt>MAX_AGE_MS;}
 
     private static RouteEngine.Route decode(JSONObject root) {
         try {
