@@ -167,13 +167,16 @@ for marker in (
     "SESSION_VALIDITY_GUARD_V300",
     "NET_CAPABILITY_VALIDATED",
     "SESSION_ACCOUNT_SWITCH_GUARD_V300",
+    "SESSION_VALIDATION_NO_SUCCESS_WRITE_V300",
     "SessionValidationClientV300.sessionFingerprint(app)",
     "SessionValidationClientV300.validate(app, payload)",
     "validationStillCurrent(accountAtStart, sessionAtStart)",
+    "invalidateLocalSessionIfCurrent(accountAtStart, sessionAtStart)",
     "SessionValidityPolicyV300.isExplicitRevocation(response.code)",
     "FLAG_ACTIVITY_CLEAR_TASK",
 ):
     require(session_guard, marker)
+forbid(session_guard, "putString(KEY_ACCOUNT", "validação em background não pode regravar a conta em caso de sucesso")
 require(application, "SessionValidityGuardV300.register(this)")
 
 for marker in (
@@ -187,6 +190,8 @@ for marker in (
 forbid(session_client, "captureCookies(", "validação read-only não pode capturar cookies")
 forbid(session_client, "captureAuth(", "validação read-only não pode capturar tokens")
 forbid(session_client, "refreshIfPossible(", "validação read-only não pode renovar sessão")
+forbid(session_client, "accessToken()", "fingerprint read-only não deve ler/expirar access token")
+forbid(session_client, "refreshToken()", "fingerprint read-only não deve ler/expirar refresh token")
 
 for marker in (
     "httpCode == 401",
