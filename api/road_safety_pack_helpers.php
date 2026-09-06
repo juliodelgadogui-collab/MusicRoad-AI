@@ -42,8 +42,9 @@ function ep2_type(array $tags): ?string {
     $surveillanceZone = strtolower((string)($tags['surveillance:zone'] ?? ''));
     $cameraType = strtolower((string)($tags['camera:type'] ?? ''));
 
-    if ($highway === 'speed_camera' || str_contains($enf,'maxspeed')) return 'RADAR';
+    // Red-light/traffic-signal enforcement is more specific than generic speed enforcement.
     if (str_contains($enf,'redlight') || str_contains($enf,'traffic_signals')) return 'SEMAFORO_RADAR';
+    if ($highway === 'speed_camera' || str_contains($enf,'maxspeed')) return 'RADAR';
     if ($highway === 'traffic_signals') return 'SEMAFORO';
     if ($highway === 'speed_bump' || in_array($calming, ['bump','hump','table','cushion','yes'], true)) return 'QUEBRA_MOLAS';
     if ($manMade === 'surveillance' && ($surveillance === 'traffic' || $surveillanceZone === 'traffic')) return 'CAMERA_MONITORAMENTO';
@@ -142,24 +143,9 @@ function ep2_guess_uf(float $lat,float $lon): string {
 }
 
 function ep2_overpass_json(string $query,int $timeout=90): ?array {
-    global $config;
-    $url=(string)($config['routing']['overpass_url']??'');
-    if($url==='')return null;
-    $timeout=max(20,min(140,$timeout));
-    $body='data='.urlencode($query);
-    $headers=['User-Agent: '.($config['routing']['user_agent']??'EstradaPlay/1.5'),'Accept: application/json','Content-Type: application/x-www-form-urlencoded'];
-    if(!function_exists('curl_init')){
-        $ctx=stream_context_create(['http'=>['method'=>'POST','header'=>implode("\r\n",$headers),'content'=>$body,'timeout'=>$timeout,'ignore_errors'=>true]]);
-        $raw=@file_get_contents($url,false,$ctx);
-        $data=$raw?json_decode($raw,true):null;
-        return is_array($data)?$data:null;
-    }
-    $ch=curl_init($url);
-    curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_CONNECTTIMEOUT=>12,CURLOPT_TIMEOUT=>$timeout,CURLOPT_HTTPHEADER=>$headers,CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>$body,CURLOPT_ENCODING=>'']);
-    $raw=curl_exec($ch);$status=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);curl_close($ch);
-    if(!$raw||$status>=400)return null;
-    $data=json_decode((string)$raw,true);
-    return is_array($data)?$data:null;
+    global $config;$url=(string)($config['routing']['overpass_url']??'');if($url==='')return null;$timeout=max(20,min(140,$timeout));$body='data='.urlencode($query);$headers=['User-Agent: '.($config['routing']['user_agent']??'EstradaPlay/1.5'),'Accept: application/json','Content-Type: application/x-www-form-urlencoded'];
+    if(!function_exists('curl_init')){$ctx=stream_context_create(['http'=>['method'=>'POST','header'=>implode("\r\n",$headers),'content'=>$body,'timeout'=>$timeout,'ignore_errors'=>true]]);$raw=@file_get_contents($url,false,$ctx);$data=$raw?json_decode($raw,true):null;return is_array($data)?$data:null;}
+    $ch=curl_init($url);curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_CONNECTTIMEOUT=>12,CURLOPT_TIMEOUT=>$timeout,CURLOPT_HTTPHEADER=>$headers,CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>$body,CURLOPT_ENCODING=>'']);$raw=curl_exec($ch);$status=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);curl_close($ch);if(!$raw||$status>=400)return null;$data=json_decode((string)$raw,true);return is_array($data)?$data:null;
 }
 
 function ep2_safety_query_body(string $area): string {
@@ -175,20 +161,9 @@ function ep2_safety_query_body(string $area): string {
         .'node["railway"~"^(level_crossing|crossing)$"]'.$area.';';
 }
 
-function ep2_osm_query_for_area(string $selector): string {
-    return '[out:json][timeout:90];'.$selector.'('.ep2_safety_query_body('(area.eparea)').');out body qt;';
-}
-
-function ep2_osm_query_for_bbox(float $south,float $west,float $north,float $east,int $timeout=55): string {
-    $bbox='('.$south.','.$west.','.$north.','.$east.')';
-    return '[out:json][timeout:'.max(20,min(90,$timeout)).'];('.ep2_safety_query_body($bbox).');out body qt;';
-}
-
-function ep2_osm_query_for_line(array $line,int $widthM): string {
-    $parts=[];foreach($line as $p)$parts[]=rtrim(rtrim(number_format((float)$p[0],6,'.',''),'0'),'.').','.rtrim(rtrim(number_format((float)$p[1],6,'.',''),'0'),'.');
-    $around='(around:'.max(8000,min(30000,$widthM)).','.implode(',',$parts).')';
-    return '[out:json][timeout:55];('.ep2_safety_query_body($around).');out body qt;';
-}
+function ep2_osm_query_for_area(string $selector): string {return '[out:json][timeout:90];'.$selector.'('.ep2_safety_query_body('(area.eparea)').');out body qt;';}
+function ep2_osm_query_for_bbox(float $south,float $west,float $north,float $east,int $timeout=55): string {$bbox='('.$south.','.$west.','.$north.','.$east.')';return '[out:json][timeout:'.max(20,min(90,$timeout)).'];('.ep2_safety_query_body($bbox).');out body qt;';}
+function ep2_osm_query_for_line(array $line,int $widthM): string {$parts=[];foreach($line as $p)$parts[]=rtrim(rtrim(number_format((float)$p[0],6,'.',''),'0'),'.').','.rtrim(rtrim(number_format((float)$p[1],6,'.',''),'0'),'.');$around='(around:'.max(8000,min(30000,$widthM)).','.implode(',',$parts).')';return '[out:json][timeout:55];('.ep2_safety_query_body($around).');out body qt;';}
 
 function ep2_osm_to_hazard(array $el): ?array {
     $tags=is_array($el['tags']??null)?$el['tags']:[];$type=ep2_type($tags);if($type===null)return null;
