@@ -31,10 +31,15 @@ final class RouteOfflineCache {
         if (context == null || route == null || route.geoJson == null || route.geoJson.trim().isEmpty()) return;
         if (!Double.isFinite(toLat) || !Double.isFinite(toLon)) return;
         try {
+            File target=file(context);boolean keepPrepared=prepared;long preparedAt=prepared?System.currentTimeMillis():0L;
+            if(!keepPrepared&&validFile(target)){
+                try{JSONObject old=new JSONObject(read(target));double a=old.optDouble("to_lat",Double.NaN),b=old.optDouble("to_lon",Double.NaN);if(!stale(old)&&old.optBoolean("prepared",false)&&Double.isFinite(a)&&Double.isFinite(b)&&RouteEngine.distanceM(a,b,toLat,toLon)<=DEST_TOLERANCE_M){keepPrepared=true;preparedAt=old.optLong("prepared_at",old.optLong("saved_at",System.currentTimeMillis()));}}catch(Throwable ignored){}
+            }
             JSONObject root = new JSONObject();
             root.put("version", 310);
             root.put("saved_at", System.currentTimeMillis());
-            root.put("prepared", prepared);
+            root.put("prepared", keepPrepared);
+            if(keepPrepared)root.put("prepared_at",preparedAt>0?preparedAt:System.currentTimeMillis());
             root.put("from_lat", fromLat);
             root.put("from_lon", fromLon);
             root.put("to_lat", toLat);
@@ -59,7 +64,7 @@ final class RouteOfflineCache {
                 steps.put(o);
             }
             root.put("steps", steps);
-            writeAtomic(file(context), root.toString());
+            writeAtomic(target, root.toString());
         } catch (Throwable ignored) {}
     }
 
