@@ -1,0 +1,57 @@
+name: Package Estrada Play Server Once
+
+on:
+  push:
+    branches:
+      - agent/estrada-play-comunista
+    paths:
+      - '.github/server-package-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  package-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package national safety server files
+        run: |
+          mkdir -p server-package/api server-package/importers
+          cp api/cron_national_safety.php server-package/api/
+          cp api/national_safety.php server-package/api/
+          cp api/national_safety_sync_helpers.php server-package/api/
+          cp api/radar_db.php server-package/api/
+          cp api/road_corridor_pack.php server-package/api/
+          cp api/road_hazard_db.php server-package/api/
+          cp api/road_pack.php server-package/api/
+          cp api/road_safety_pack_helpers.php server-package/api/
+          cp api/road_state_pack.php server-package/api/
+          cp importers/RadarImporter.php server-package/importers/
+          cat > server-package/LEIA-ME-SERVIDOR.txt <<'EOF'
+          Estrada Play Comunista - Base Nacional
+
+          Copie as pastas api/ e importers/ sobre a instalação atual do servidor,
+          mantendo a estrutura de diretórios. Este pacote não inclui credenciais,
+          banco de dados nem configuração privada.
+
+          Novos endpoints principais:
+          - api/national_safety.php
+          - api/cron_national_safety.php
+          - api/national_safety_sync_helpers.php
+
+          A sincronização nacional é progressiva por blocos geográficos.
+          EOF
+          cd server-package
+          zip -r ../Estrada-Play-Comunista-SERVIDOR-NACIONAL.zip .
+
+      - name: Upload server package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-SERVIDOR-NACIONAL
+          path: Estrada-Play-Comunista-SERVIDOR-NACIONAL.zip
+          if-no-files-found: error
+          retention-days: 3
