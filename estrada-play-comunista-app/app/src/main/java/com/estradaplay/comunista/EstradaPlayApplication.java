@@ -14,6 +14,7 @@ public final class EstradaPlayApplication extends Application {
     private ConvoyLiveBridge convoyReceiver;
     private MobilityModeState.Receiver mobilityReceiver;
     private RouteNavigationAssist routeNavigationAssist;
+    private DriveRuntimeEnhancer driveRuntimeEnhancer;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -25,39 +26,34 @@ public final class EstradaPlayApplication extends Application {
         UiVersionLabelFix.register(this);
 
         // ANDROID15_SAFE_INSETS_V251: Android 15+ edge-to-edge requires safe system-bar/cutout insets.
-        // Install one process-level safe-area bridge for every Activity before optional bridges can defer.
         SystemBarsCompatV251.register(this);
 
         // ROAD_SCREEN_AWAKE_V303: only the Estrada/navigation screen keeps the display awake.
-        // Leaving that screen immediately restores the normal Android screen timeout.
         RoadScreenAwakeV303.install(this);
         RoadProtectionStatusUiV303.install(this);
         RoadRouteWeatherBridgeV303.install(this);
+
+        // DRIVE_QUALITY_V330: one receiver feeds stable ETA and short tunnel continuity from the
+        // already existing road-state stream. It does not create another GPS listener.
+        try { driveRuntimeEnhancer = DriveRuntimeEnhancer.install(this); } catch (Throwable ignored) {}
 
         // SESSION_VALIDITY_GUARD_V300: saved accounts still open instantly/offline, but an explicit
         // server-side 401/403 revocation is applied in background when validated internet exists.
         SessionValidityGuardV300.register(this);
 
-        // ROUTE_DIRECTION_V320: route cancellation and sustained reverse-direction detection are core
-        // navigation behavior, so keep them active even if optional process bridges are deferred.
+        // ROUTE_DIRECTION_V320: route cancellation and sustained reverse-direction detection are core.
         try { routeNavigationAssist = RouteNavigationAssist.install(this); } catch (Throwable ignored) {}
 
-        // MUSIC_LIBRARY_INTEGRITY_V247: repair only already-indexed app downloads before any
-        // music UI can expose a missing/zero-byte file as a playable song. No storage scan/server.
         try { MusicLibraryIntegrityV247.repair(this); } catch (Throwable ignored) {}
 
         boolean deferOptionalBridges = ProcessCrashGuard.install(this);
         if (deferOptionalBridges) return;
 
-        // MUSIC_PERSIST_V2310: copy old private downloads to user-visible Music/EstradaPlay.
-        // Runs off the UI thread, is copy-first/non-destructive and is a no-op below Android 10.
         new Thread(() -> {
             try { SharedMusicPublisher.publishMissingFromApp(EstradaPlayApplication.this); }
             catch (Throwable ignored) {}
         }, "epc-shared-music").start();
 
-        // MUSIC_LOCAL_INDEX_V2315: only watch for audio-library changes. This never scans files.
-        // The saved SQLite index opens instantly; if it is old, Music refreshes it later in background.
         try {
             PhoneMp3Store.installObserver(this);
             if (PhoneMp3Store.hasPermission(this)) {
@@ -67,13 +63,10 @@ public final class EstradaPlayApplication extends Application {
             }
         } catch (Throwable ignored) {}
 
-        // COMBOIO_LINK_MAP_V237: deep links + members projected onto the principal RoadMapActivity.
         ConvoyIntegrationV237.install(this);
 
         IntentFilter roadState = new IntentFilter(RoadSafetyService.ACTION_STATE);
 
-        // MOBILITY_MODE_V301: infer walking/vehicle/stopped from the GPS state already emitted by
-        // RoadSafetyService. No second GPS listener is created and the mode stays internal.
         try {
             MobilityModeState.restore(this);
             mobilityReceiver = new MobilityModeState.Receiver();
