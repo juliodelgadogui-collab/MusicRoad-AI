@@ -19,8 +19,8 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 36
-        versionCode 400
-        versionName '4.0.0'
+        versionCode 410
+        versionName '4.1.0'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
@@ -35,18 +35,6 @@ android {
             applicationIdSuffix '.universal'
             manifestPlaceholders = [appLabel: 'Estrada Play Comunista', appOrientation: 'fullSensor']
             buildConfigField 'String', 'FIXED_LAYOUT', '"universal"'
-        }
-        vertical {
-            dimension 'orientation'
-            applicationIdSuffix '.vertical'
-            manifestPlaceholders = [appLabel: 'Estrada Play Comunista Vertical', appOrientation: 'sensorPortrait']
-            buildConfigField 'String', 'FIXED_LAYOUT', '"vertical"'
-        }
-        horizontal {
-            dimension 'orientation'
-            applicationIdSuffix '.horizontal'
-            manifestPlaceholders = [appLabel: 'Estrada Play Comunista Horizontal', appOrientation: 'sensorLandscape']
-            buildConfigField 'String', 'FIXED_LAYOUT', '"horizontal"'
         }
     }
 
