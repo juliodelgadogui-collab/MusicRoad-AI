@@ -48,7 +48,18 @@ jobs:
 
       - name: Run Android lint
         working-directory: estrada-play-comunista-app
-        run: gradle --no-daemon --stacktrace lintUniversalDebug
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon --stacktrace lintUniversalDebug
+          code=$?
+          report="app/build/intermediates/lint_intermediate_text_report/universalDebug/lintReportUniversalDebug/lint-results-universalDebug.txt"
+          if [ -f "$report" ]; then
+            echo "===== LINT ERRORS ====="
+            grep -n "Error:" "$report" || true
+            echo "===== END LINT ERRORS ====="
+          fi
+          exit $code
 
       - name: Compile all debug orientations
         working-directory: estrada-play-comunista-app
