@@ -215,10 +215,11 @@ final class RoadPackStore {
         }catch(Throwable ignored){return false;}
     }
 
-    private static String directType(JSONObject tags) {
+    /** Package-visible for regression tests: red-light enforcement must outrank generic maxspeed. */
+    static String directType(JSONObject tags) {
         String highway=tags.optString("highway","").toLowerCase(Locale.ROOT),enforcement=tags.optString("enforcement","").toLowerCase(Locale.ROOT),calming=tags.optString("traffic_calming","").toLowerCase(Locale.ROOT);
-        if("speed_camera".equals(highway)||enforcement.contains("maxspeed"))return "RADAR";
         if(enforcement.contains("redlight")||enforcement.contains("traffic_signals"))return "SEMAFORO_RADAR";
+        if("speed_camera".equals(highway)||enforcement.contains("maxspeed"))return "RADAR";
         if("traffic_signals".equals(highway))return "SEMAFORO";
         if("speed_bump".equals(highway)||calming.matches("bump|hump|table|cushion|yes"))return "QUEBRA_MOLAS";
         String man=tags.optString("man_made","").toLowerCase(Locale.ROOT),surv=tags.optString("surveillance","").toLowerCase(Locale.ROOT),zone=tags.optString("surveillance:zone","").toLowerCase(Locale.ROOT),camera=tags.optString("camera:type","").toLowerCase(Locale.ROOT);
