@@ -81,7 +81,6 @@ final class RoadWeatherMonitor {
             this.routeRainChance = routeRainChance;
             this.routeLabel = routeLabel == null ? "" : routeLabel;
             this.updatedAt = updatedAt;
-            this.currentPrecipMm = currentPrecipMm;
             this.nextRainMm = nextRainMm;
             this.next6hTotalMm = next6hTotalMm;
             this.routeRainMm = routeRainMm;
@@ -462,6 +461,7 @@ final class RoadWeatherMonitor {
                  JSONArray rain, JSONArray showers, JSONArray code) {
             this.currentWet = currentWet;
             this.currentChance = currentChance;
+            this.currentPrecipMm = currentPrecipMm;
             this.currentTempC = currentTempC;
             this.feelsLikeC = feelsLikeC;
             this.windKmh = windKmh;
