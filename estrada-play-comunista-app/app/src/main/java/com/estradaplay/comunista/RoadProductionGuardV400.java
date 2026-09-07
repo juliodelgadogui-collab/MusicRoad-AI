@@ -116,10 +116,15 @@ final class RoadProductionGuardV400 implements Application.ActivityLifecycleCall
         }
 
         RoadMapView previous = lifecycleMap.get();
+        if (previous == null) {
+            // The first map instance reached here through the normal Activity onStart/onResume path.
+            lifecycleMap = new WeakReference<>(map);
+            return;
+        }
         if (previous != map) {
             lifecycleMap = new WeakReference<>(map);
             // RoadMapActivity rebuilds the view inside onConfigurationChanged. Because the Activity
-            // itself does not re-enter onStart/onResume, explicitly bring only the new map instance
+            // itself does not re-enter onStart/onResume, explicitly bring only that new map instance
             // to the current resumed lifecycle once.
             try { map.onStartMap(); } catch (Throwable ignored) {}
             try { map.onResumeMap(); } catch (Throwable ignored) {}
@@ -326,6 +331,8 @@ final class RoadProductionGuardV400 implements Application.ActivityLifecycleCall
         if (!(activity instanceof RoadMapActivity)) return;
         RoadMapActivity road = (RoadMapActivity) activity;
         resumed = new WeakReference<>(road);
+        RoadMapView current = field(road, "roadMap", RoadMapView.class);
+        lifecycleMap = new WeakReference<>(current);
         reloadCoverageStore(false);
         main.postDelayed(() -> {
             if (resumed.get() == road && !road.isFinishing()) ensureMapRuntime(road);
