@@ -28,6 +28,10 @@ public final class EstradaPlayApplication extends Application {
         // Install one process-level safe-area bridge for every Activity before optional bridges can defer.
         SystemBarsCompatV251.register(this);
 
+        // ROAD_SCREEN_AWAKE_V303: only the Estrada/navigation screen keeps the display awake.
+        // Leaving that screen immediately restores the normal Android screen timeout.
+        RoadScreenAwakeV303.install(this);
+
         // SESSION_VALIDITY_GUARD_V300: saved accounts still open instantly/offline, but an explicit
         // server-side 401/403 revocation is applied in background when validated internet exists.
         SessionValidityGuardV300.register(this);
