@@ -29,7 +29,11 @@ final class RoadHazardSelector {
         // warnings stay quiet. They become eligible again automatically when vehicle motion returns.
         if (MobilityModeState.isPedestrian()) return Selection.empty();
 
-        if (nearby == null || nearby.isEmpty() || !Double.isFinite(heading) || speedKmh < 3.0) {
+        // TRAJECTORY_HEADING_V302: use recent real movement to stabilize direction. This is
+        // especially important on duplicated/parallel carriageways where one GPS bearing jump
+        // could otherwise select equipment from the opposite side.
+        double stableHeading = RoadTrajectoryHeading.observe(lat, lon, heading, speedKmh, nowMs);
+        if (nearby == null || nearby.isEmpty() || !Double.isFinite(stableHeading) || speedKmh < 3.0) {
             return Selection.empty();
         }
 
@@ -38,7 +42,7 @@ final class RoadHazardSelector {
         double bestScore = Double.MAX_VALUE;
         for (RoadHazard hazard : nearby) {
             if (hazard == null || (cooldown != null && !cooldown.shouldAlert(hazard.id, nowMs))) continue;
-            RoadHazardMatcher.Match match = RoadHazardMatcher.match(lat, lon, heading, speedKmh, hazard, rain);
+            RoadHazardMatcher.Match match = RoadHazardMatcher.match(lat, lon, stableHeading, speedKmh, hazard, rain);
             if (!match.valid) continue;
             double score = match.forwardM + RoadHazardMatcher.priorityBias(hazard.type);
             if (score < bestScore) {
@@ -55,7 +59,7 @@ final class RoadHazardSelector {
         for (RoadHazard hazard : nearby) {
             if (hazard == null || hazard.id.equals(best.id)
                     || (cooldown != null && !cooldown.shouldAlert(hazard.id, nowMs))) continue;
-            RoadHazardMatcher.Match match = RoadHazardMatcher.match(lat, lon, heading, speedKmh, hazard, rain);
+            RoadHazardMatcher.Match match = RoadHazardMatcher.match(lat, lon, stableHeading, speedKmh, hazard, rain);
             if (!match.valid || match.forwardM < bestMatch.forwardM + 15.0) continue;
             double score = match.forwardM + RoadHazardMatcher.priorityBias(hazard.type);
             if (score < nextScore) {
