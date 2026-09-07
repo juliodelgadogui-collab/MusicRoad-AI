@@ -28,7 +28,8 @@ public class RoadHazardMatcherTest {
     }
 
     @Test public void rainExtendsForwardSafetyWindow() {
-        RoadHazard far = north("r4", "RADAR", 760, 0, 80);
+        // At 60 km/h the dynamic dry radar window is ~902 m and the rainy window ~1064 m.
+        RoadHazard far = north("r4", "RADAR", 980, 0, 80);
         assertFalse(RoadHazardMatcher.match(0, 0, 0, 60, far, false).valid);
         assertTrue(RoadHazardMatcher.match(0, 0, 0, 60, far, true).valid);
     }
