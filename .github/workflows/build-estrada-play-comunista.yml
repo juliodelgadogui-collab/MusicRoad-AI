@@ -2,6 +2,12 @@ name: Build Estrada Play Comunista
 
 on:
   workflow_dispatch:
+    inputs:
+      run_device_tests:
+        description: 'Executar smoke tests em emulador Android'
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -9,7 +15,7 @@ permissions:
 jobs:
   production-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 70
 
     steps:
       - name: Checkout
@@ -32,34 +38,65 @@ jobs:
           rm -f estrada-play-comunista-app/signing/estradaplay-dev.keystore
           keytool -genkeypair -v \
             -keystore estrada-play-comunista-app/signing/estradaplay-dev.keystore \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Estrada Play Candidate,O=Estrada Play,C=BR"
 
-      - name: Run Universal unit tests
+      - name: PHP syntax gate
+        run: find api server -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Unit tests
         working-directory: estrada-play-comunista-app
         run: gradle --no-daemon --stacktrace testUniversalDebugUnitTest
 
-      - name: Run strict Android lint
+      - name: Strict Android lint
         working-directory: estrada-play-comunista-app
         run: gradle --no-daemon --stacktrace lintUniversalDebug
 
-      - name: Compile candidate APKs without .teste
+      - name: Compile candidates and instrumentation APK
         working-directory: estrada-play-comunista-app
-        run: gradle --no-daemon --stacktrace assembleUniversalCandidate assembleVerticalCandidate assembleHorizontalCandidate
+        run: gradle --no-daemon --stacktrace assembleUniversalCandidate assembleVerticalCandidate assembleHorizontalCandidate assembleUniversalDebugAndroidTest
+
+      - name: Enable KVM
+        if: ${{ inputs.run_device_tests }}
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+
+      - name: Device smoke tests
+        if: ${{ inputs.run_device_tests }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: cd estrada-play-comunista-app && gradle --no-daemon connectedUniversalDebugAndroidTest
+
+      - name: Build server package
+        run: |
+          rm -rf dist && mkdir -p dist/Estrada-Play-Comunista-Servidor
+          for p in api database importers server config install.php; do
+            if [ -e "$p" ]; then cp -R "$p" dist/Estrada-Play-Comunista-Servidor/; fi
+          done
+          (cd dist && zip -qr Estrada-Play-Comunista-Servidor-4.0.zip Estrada-Play-Comunista-Servidor)
 
       - name: Upload candidate APKs
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-CANDIDATO-SEM-TESTE
+          name: Estrada-Play-Comunista-4.0-CANDIDATOS
           path: |
             estrada-play-comunista-app/app/build/outputs/apk/universal/candidate/*.apk
             estrada-play-comunista-app/app/build/outputs/apk/vertical/candidate/*.apk
             estrada-play-comunista-app/app/build/outputs/apk/horizontal/candidate/*.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 7
+
+      - name: Upload production server package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Comunista-Servidor-4.0
+          path: dist/Estrada-Play-Comunista-Servidor-4.0.zip
+          if-no-files-found: error
+          retention-days: 7
