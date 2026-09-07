@@ -114,4 +114,5 @@ dependencies {
     // CAMERA_RECORD_ONLY_V301: ML Kit/OCR removido; a câmera é somente dashcam.
     implementation 'io.github.webrtc-sdk:android:144.7559.09'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
 }
