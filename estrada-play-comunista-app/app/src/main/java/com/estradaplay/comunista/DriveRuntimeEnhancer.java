@@ -34,6 +34,11 @@ final class DriveRuntimeEnhancer {
     private final BroadcastReceiver receiver=new BroadcastReceiver(){
         @Override public void onReceive(Context context,Intent intent){
             if(intent==null||intent.getBooleanExtra("estimated_position",false))return;
+            long fixAge=intent.getLongExtra("gps_fix_age_ms",0L);
+            // Synthetic service states (coverage refresh / stale-speed watchdog) can reuse the last
+            // coordinates. They are useful to the UI but must not reset the real GPS-gap timer.
+            if(fixAge>3000L)return;
+
             long now=System.currentTimeMillis();
             double speed=intent.getDoubleExtra("speed_kmh",0.0);
             RouteTravelPace.observe(speed,now);
@@ -44,8 +49,6 @@ final class DriveRuntimeEnhancer {
             if(Double.isFinite(heading)&&heading>=0)lastHeading=heading;
             lastRealAt=now;
 
-            // TRIP_SESSION_V330: the trip summary is now fed by the background road stream,
-            // so distance/time continue even when the map Activity is not rendering its HUD.
             if(now-lastSessionAt>=750L){
                 lastSessionAt=now;
                 try{
