@@ -61,13 +61,7 @@ patch(p, [
 
 p = root / 'WeatherActivity.java'
 patch(p, [
-    ('current precip metric',
-     '        local.addView(metric("CHANCE DE CHUVA AGORA",s.available?(s.currentChance+"%"):"—",s.currentChance>=40?GOLD:GREEN));',
-     '        local.addView(metric("CHANCE DE CHUVA AGORA",s.available?(s.currentChance+"%"):"—",s.currentChance>=40?GOLD:GREEN));\n        local.addView(metric("PRECIPITAÇÃO ATUAL",s.available&&Double.isFinite(s.currentPrecipMm)?String.format(Locale.getDefault(),"%.1f mm",s.currentPrecipMm):"—",s.currentWet?GOLD:TEXT));'),
-    ('6h accumulated metric',
-     '        next.addView(metric("PRÓXIMA CHUVA",s.nextRainMinutes>=0?("~"+s.nextRainMinutes+" min · "+s.nextRainChance+"%"):"não prevista nas próximas horas",s.nextRainMinutes>=0?GOLD:GREEN));',
-     '        next.addView(metric("PRÓXIMA CHUVA",s.nextRainMinutes>=0?("~"+s.nextRainMinutes+" min · "+s.nextRainChance+"%"):"não prevista nas próximas horas",s.nextRainMinutes>=0?GOLD:GREEN));\n        next.addView(metric("ACUMULADO PREVISTO · 6H",s.available&&Double.isFinite(s.next6hTotalMm)?String.format(Locale.getDefault(),"~%.1f mm",s.next6hTotalMm):"—",s.next6hTotalMm>=5?GOLD:TEXT));'),
     ('route wording',
-     '            route.addView(text("Chegada estimada ao trecho em ~"+s.routeRainMinutes+" min · chance "+s.routeRainChance+"%",12,GOLD,true));',
+     '            route.addView(text("Chegada estimada ao trecho em ~"+s.routeRainMinutes+" min · "+mm(s.routeRainMm)+" · chance "+s.routeRainChance+"%",12,GOLD,true));',
      '            route.addView(text("Você deve alcançar essa área em ~"+s.routeRainMinutes+" min",12,GOLD,true));\n            route.addView(text("Chance de chuva: "+s.routeRainChance+"%",12,TEXT,true));\n            if(Double.isFinite(s.routeRain3hMm))route.addView(text(String.format(Locale.getDefault(),"Acumulado previsto na janela de 3 h: ~%.1f mm",s.routeRain3hMm),12,TEXT,true));\n            if(Double.isFinite(s.routeRainMm))route.addView(text(String.format(Locale.getDefault(),"Pico horário previsto: ~%.1f mm",s.routeRainMm),10,MUTED,false));')
 ])
