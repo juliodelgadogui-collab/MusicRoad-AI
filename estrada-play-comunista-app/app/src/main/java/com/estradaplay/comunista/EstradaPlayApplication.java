@@ -15,6 +15,7 @@ public final class EstradaPlayApplication extends Application {
     private MobilityModeState.Receiver mobilityReceiver;
     private RouteNavigationAssist routeNavigationAssist;
     private DriveRuntimeEnhancer driveRuntimeEnhancer;
+    private CopilotOverlayController copilotOverlayController;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -24,6 +25,10 @@ public final class EstradaPlayApplication extends Application {
         if (isRadioProcess()) return;
 
         UiVersionLabelFix.register(this);
+
+        // COPILOT_BACKGROUND_V1: the visible Activity only hosts a tiny overlay. The microphone and
+        // command engine live in CopilotService and are re-armed when an enabled user returns to the app.
+        try { copilotOverlayController = CopilotOverlayController.install(this); } catch (Throwable ignored) {}
 
         // ANDROID15_SAFE_INSETS_V251: Android 15+ edge-to-edge requires safe system-bar/cutout insets.
         SystemBarsCompatV251.register(this);
