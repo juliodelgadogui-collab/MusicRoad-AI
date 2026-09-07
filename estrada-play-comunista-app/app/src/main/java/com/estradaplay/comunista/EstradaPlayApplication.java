@@ -33,6 +33,10 @@ public final class EstradaPlayApplication extends Application {
         RoadProtectionStatusUiV303.install(this);
         RoadRouteWeatherBridgeV303.install(this);
 
+        // ROAD_CLEAN_UI_V340: map-first road screen. Landscape exposes only CENTRAL as the
+        // navigation entry point while keeping compact music transport and safety overlays.
+        RoadMapMinimalUiV340.install(this);
+
         // DRIVE_QUALITY_V330: one receiver feeds stable ETA and short tunnel continuity from the
         // already existing road-state stream. It does not create another GPS listener.
         try { driveRuntimeEnhancer = DriveRuntimeEnhancer.install(this); } catch (Throwable ignored) {}
