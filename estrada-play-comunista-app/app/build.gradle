@@ -19,8 +19,8 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 36
-        versionCode 410
-        versionName '4.1.0'
+        versionCode 411
+        versionName '4.1.1'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
