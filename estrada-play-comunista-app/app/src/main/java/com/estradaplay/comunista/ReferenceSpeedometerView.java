@@ -7,10 +7,11 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.View;
 
-/** Compact automotive speedometer used by the reference road UI. */
+/** Automotive speedometer shared by the native production cockpit. */
 final class ReferenceSpeedometerView extends View {
-    private final Paint arcBg=new Paint(Paint.ANTI_ALIAS_FLAG),arcRed=new Paint(Paint.ANTI_ALIAS_FLAG),tick=new Paint(Paint.ANTI_ALIAS_FLAG),text=new Paint(Paint.ANTI_ALIAS_FLAG),muted=new Paint(Paint.ANTI_ALIAS_FLAG),green=new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint arcBg=new Paint(Paint.ANTI_ALIAS_FLAG),arcRed=new Paint(Paint.ANTI_ALIAS_FLAG),tick=new Paint(Paint.ANTI_ALIAS_FLAG),text=new Paint(Paint.ANTI_ALIAS_FLAG),muted=new Paint(Paint.ANTI_ALIAS_FLAG),status=new Paint(Paint.ANTI_ALIAS_FLAG);
     private double speed;
+    private boolean gpsAvailable=true;
 
     ReferenceSpeedometerView(Context c){
         super(c);setWillNotDraw(false);
@@ -19,10 +20,11 @@ final class ReferenceSpeedometerView extends View {
         tick.setStrokeCap(Paint.Cap.ROUND);tick.setColor(Color.rgb(218,215,216));
         text.setColor(Color.WHITE);text.setTextAlign(Paint.Align.CENTER);text.setFakeBoldText(true);
         muted.setColor(Color.rgb(173,164,165));muted.setTextAlign(Paint.Align.CENTER);
-        green.setColor(Color.rgb(20,220,113));green.setTextAlign(Paint.Align.CENTER);green.setFakeBoldText(true);
+        status.setTextAlign(Paint.Align.CENTER);status.setFakeBoldText(true);
     }
 
     void setSpeed(double value){speed=Math.max(0,Math.min(240,Double.isFinite(value)?value:0));invalidate();}
+    void setGpsAvailable(boolean value){gpsAvailable=value;invalidate();}
 
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);
@@ -49,7 +51,9 @@ final class ReferenceSpeedometerView extends View {
 
         text.setTextSize(Math.max(dp(35),Math.min(w,h)*.25f));c.drawText(String.valueOf(Math.round(speed)),cx,cy+text.getTextSize()*.22f,text);
         muted.setTextSize(Math.max(dp(10),Math.min(w,h)*.06f));c.drawText("km/h",cx,cy+text.getTextSize()*.72f,muted);
-        green.setTextSize(Math.max(dp(9),Math.min(w,h)*.052f));c.drawText("●  GPS ATIVO",cx,cy+r*.82f,green);
+        status.setColor(gpsAvailable?Color.rgb(20,220,113):Color.rgb(242,181,65));
+        status.setTextSize(Math.max(dp(9),Math.min(w,h)*.052f));
+        c.drawText(gpsAvailable?"●  GPS ATIVO":"●  GPS BUSCANDO",cx,cy+r*.82f,status);
     }
 
     private float dp(float v){return v*getResources().getDisplayMetrics().density;}
