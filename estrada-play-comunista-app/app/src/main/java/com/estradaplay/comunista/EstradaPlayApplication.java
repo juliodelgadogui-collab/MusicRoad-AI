@@ -42,6 +42,10 @@ public final class EstradaPlayApplication extends Application {
         // removes legacy duplicates and sizes the cockpit from actual viewport proportions.
         RoadMapReferenceUiV360.install(this);
 
+        // PRODUCTION_ROAD_GUARD_V400: keeps a rebuilt MapLibre view in the resumed lifecycle, prevents
+        // accidental map hiding, restores one centered hazard surface and verifies regional coverage.
+        try { RoadProductionGuardV400.install(this); } catch (Throwable ignored) {}
+
         // DRIVE_QUALITY_V330: one receiver feeds stable ETA and short tunnel continuity from the
         // already existing road-state stream. It does not create another GPS listener.
         try { driveRuntimeEnhancer = DriveRuntimeEnhancer.install(this); } catch (Throwable ignored) {}
