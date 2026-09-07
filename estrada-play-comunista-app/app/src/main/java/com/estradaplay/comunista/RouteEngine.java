@@ -126,8 +126,6 @@ final class RouteEngine {
                 int to = Math.min(n - 1, hintSegment + 190);
                 best = search(lat, lon, headingDeg, previousAlongM, hintSegment, from, to, best);
             }
-            // MAP_MATCH_V330: global search is a recovery path, not the default. A tighter local
-            // threshold prevents the GPS from jumping to a distant loop/marginal with similar geometry.
             if (best == null || best.lateralM > 88) {
                 best = search(lat, lon, headingDeg, previousAlongM, hintSegment, 0, n - 1, best);
             }
@@ -161,7 +159,6 @@ final class RouteEngine {
 
                 if (Double.isFinite(headingDeg) && headingDeg >= 0 && segLen >= 8) {
                     double diff = angleDiff(headingDeg, bearing);
-                    // Direction is much more useful than raw proximity on duplicated carriageways.
                     score += Math.min(112.0, diff * 0.46);
                     if (diff > 118.0) score += 48.0;
                     if (diff > 150.0 && lateral > 12.0) score += 72.0;
@@ -216,6 +213,9 @@ final class RouteEngine {
             if (cached != null) return cached;
             throw new Exception("Nenhuma rota preparada para uso offline");
         }
+        if (cached != null && RouteRerouteGuard.shouldReuseOnce(cached, fromLat, fromLon, toLat, toLon, System.currentTimeMillis())) {
+            return cached;
+        }
 
         Exception serverError = null;
         try {
@@ -258,6 +258,7 @@ final class RouteEngine {
             if (d != null && distanceM(d.lat, d.lon, toLat, toLon) <= 300) label = d.label;
         } catch (Throwable ignored) {}
         RouteOfflineCache.save(context, fromLat, fromLon, toLat, toLon, label, route, false);
+        try { RouteRerouteGuard.remember(route, toLat, toLon); } catch (Throwable ignored) {}
         try { RoadWeatherMonitor.saveActiveRoute(context, route, label); } catch (Throwable ignored) {}
         try { RouteAheadPrefetch.schedule(context, route); } catch (Throwable ignored) {}
     }
