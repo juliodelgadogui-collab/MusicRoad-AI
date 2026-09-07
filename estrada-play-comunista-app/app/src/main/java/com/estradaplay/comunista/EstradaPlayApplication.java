@@ -1,21 +1,47 @@
 package com.estradaplay.comunista;
 
+import android.Manifest;
+import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.Application;
 import android.content.Context;
+import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+
+import org.json.JSONObject;
 
 import java.util.List;
 
 /** Process-level bridges for Server 7.0 context and live convoy presence. */
 public final class EstradaPlayApplication extends Application {
+    private static final String UI_PREFS = "estradaplay_ui_v1";
+    private static final String KEY_ACCOUNT = "account";
+
     private RouteContextV7BackgroundReceiver contextReceiver;
     private ConvoyLiveBridge convoyReceiver;
     private MobilityModeState.Receiver mobilityReceiver;
     private RouteNavigationAssist routeNavigationAssist;
     private DriveRuntimeEnhancer driveRuntimeEnhancer;
     private CopilotOverlayController copilotOverlayController;
+
+    // FOREGROUND_ONLY_ROAD_ALERTS_V411: road protection, wake-word microphone and PTT are
+    // user-visible-session features. They must not keep the app alive after every Activity leaves
+    // the screen. A short delay avoids false stops while rotating or moving between Activities.
+    private final Handler foregroundHandler = new Handler(Looper.getMainLooper());
+    private int visibleActivities;
+    private Activity lastVisibleActivity;
+    private final Runnable stopForegroundOnlyServices = () -> {
+        if (visibleActivities != 0) return;
+        try { stopService(new Intent(this, RoadSafetyService.class)); } catch (Throwable ignored) {}
+        try { stopService(new Intent(this, CopilotService.class)); } catch (Throwable ignored) {}
+        try { stopService(new Intent(this, RoadRadioService.class)); } catch (Throwable ignored) {}
+    };
 
     @Override public void onCreate() {
         super.onCreate();
@@ -24,12 +50,14 @@ public final class EstradaPlayApplication extends Application {
         // Contexto Vivo, Comboio or the main crash-loop guard there; native audio failure must stay local.
         if (isRadioProcess()) return;
 
+        installForegroundOnlyRoadSession();
+
         UiVersionLabelFix.register(this);
         try { ProductionTelemetryV400.install(this); } catch (Throwable ignored) {}
         try { MapStyleConfigV400.refreshAsync(this); } catch (Throwable ignored) {}
 
-        // COPILOT_BACKGROUND_V1: the visible Activity only hosts a tiny overlay. The microphone and
-        // command engine live in CopilotService and are re-armed when an enabled user returns to the app.
+        // COPILOT_BACKGROUND_V1 evolved in V411: the service may listen while the app is visible,
+        // but is explicitly stopped as soon as the whole app goes to background.
         try { copilotOverlayController = CopilotOverlayController.install(this); } catch (Throwable ignored) {}
 
         // ANDROID15_SAFE_INSETS_V251: Android 15+ edge-to-edge requires safe system-bar/cutout insets.
@@ -77,11 +105,7 @@ public final class EstradaPlayApplication extends Application {
         try {
             MobilityModeState.restore(this);
             mobilityReceiver = new MobilityModeState.Receiver();
-            if (Build.VERSION.SDK_INT >= 33) {
-                InternalBroadcasts.register(this, mobilityReceiver, roadState);
-            } else {
-                InternalBroadcasts.register(this, mobilityReceiver, roadState);
-            }
+            InternalBroadcasts.register(this, mobilityReceiver, roadState);
         } catch (Throwable ignored) {
             try { if (mobilityReceiver != null) unregisterReceiver(mobilityReceiver); } catch (Throwable ignored2) {}
             mobilityReceiver = null;
@@ -89,11 +113,7 @@ public final class EstradaPlayApplication extends Application {
 
         try {
             contextReceiver = new RouteContextV7BackgroundReceiver();
-            if (Build.VERSION.SDK_INT >= 33) {
-                InternalBroadcasts.register(this, contextReceiver, roadState);
-            } else {
-                InternalBroadcasts.register(this, contextReceiver, roadState);
-            }
+            InternalBroadcasts.register(this, contextReceiver, roadState);
         } catch (Throwable ignored) {
             try { if (contextReceiver != null) unregisterReceiver(contextReceiver); } catch (Throwable ignored2) {}
             contextReceiver = null;
@@ -101,14 +121,75 @@ public final class EstradaPlayApplication extends Application {
 
         try {
             convoyReceiver = new ConvoyLiveBridge();
-            if (Build.VERSION.SDK_INT >= 33) {
-                InternalBroadcasts.register(this, convoyReceiver, roadState);
-            } else {
-                InternalBroadcasts.register(this, convoyReceiver, roadState);
-            }
+            InternalBroadcasts.register(this, convoyReceiver, roadState);
         } catch (Throwable ignored) {
             try { if (convoyReceiver != null) unregisterReceiver(convoyReceiver); } catch (Throwable ignored2) {}
             convoyReceiver = null;
+        }
+    }
+
+    private void installForegroundOnlyRoadSession() {
+        registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(Activity activity, Bundle state) {}
+
+            @Override public void onActivityStarted(Activity activity) {
+                boolean returningToForeground = visibleActivities == 0;
+                visibleActivities++;
+                lastVisibleActivity = activity;
+                foregroundHandler.removeCallbacks(stopForegroundOnlyServices);
+                if (returningToForeground) resumeForegroundServices(activity);
+            }
+
+            @Override public void onActivityResumed(Activity activity) {
+                lastVisibleActivity = activity;
+            }
+
+            @Override public void onActivityPaused(Activity activity) {}
+
+            @Override public void onActivityStopped(Activity activity) {
+                visibleActivities = Math.max(0, visibleActivities - 1);
+                if (visibleActivities == 0) {
+                    // Activity transitions and rotation can briefly report zero. Wait before stopping.
+                    foregroundHandler.removeCallbacks(stopForegroundOnlyServices);
+                    foregroundHandler.postDelayed(stopForegroundOnlyServices, 900L);
+                }
+            }
+
+            @Override public void onActivitySaveInstanceState(Activity activity, Bundle outState) {}
+
+            @Override public void onActivityDestroyed(Activity activity) {
+                if (lastVisibleActivity == activity) lastVisibleActivity = null;
+            }
+        });
+    }
+
+    private void resumeForegroundServices(Activity activity) {
+        if (activity == null || !roadProtectionEligible()) return;
+        try {
+            Intent safety = new Intent(this, RoadSafetyService.class);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(safety);
+            else startService(safety);
+        } catch (Throwable ignored) {}
+
+        // Wake word follows the same visible-app rule. It is only re-armed when the user had enabled it.
+        try {
+            if (CopilotSettings.enabled(this)
+                    && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                CopilotService.requestStart(activity);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private boolean roadProtectionEligible() {
+        try {
+            boolean location = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            if (!location) return false;
+            SharedPreferences p = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
+            JSONObject account = new JSONObject(p.getString(KEY_ACCOUNT, "{}"));
+            return account.optBoolean("authenticated", false) || account.optJSONObject("user") != null;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
