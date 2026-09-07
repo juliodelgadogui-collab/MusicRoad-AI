@@ -5,12 +5,11 @@ import android.app.Application;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.widget.TextView;
 
-/** Keeps legacy visual labels synchronized with the actual APK version. */
+/** Keeps legacy visual labels synchronized with the actual APK version without retaining Activities. */
 final class UiVersionLabelFix {
-    private static final long[] RETRIES_MS = new long[]{0L, 150L, 500L, 1200L, 3000L, 6000L};
+    private static final long[] RETRIES_MS = new long[]{0L, 120L, 350L, 900L, 1800L};
 
     private UiVersionLabelFix() {}
 
@@ -20,9 +19,11 @@ final class UiVersionLabelFix {
                 try {
                     View root = activity.getWindow().getDecorView();
                     if (root == null) return;
-                    for (long delay : RETRIES_MS) root.postDelayed(() -> apply(root), delay);
-                    ViewTreeObserver observer = root.getViewTreeObserver();
-                    if (observer.isAlive()) observer.addOnGlobalLayoutListener(() -> apply(root));
+                    // A bounded retry set is enough for views built asynchronously and, unlike the old
+                    // global-layout listener, does not accumulate callbacks every time a screen resumes.
+                    for (long delay : RETRIES_MS) root.postDelayed(() -> {
+                        if (root.isAttachedToWindow()) apply(root);
+                    }, delay);
                 } catch (Throwable ignored) {}
             }
             @Override public void onActivityCreated(Activity activity, Bundle state) {}
@@ -41,8 +42,8 @@ final class UiVersionLabelFix {
             CharSequence raw = text.getText();
             if (raw != null) {
                 String value = raw.toString().trim();
-                // VERSION_VISIBLE_V233: do not depend on the exact spacing of the old hardcoded label.
-                if (value.startsWith("EPC 2.") && value.contains("CENTRAL AUTOMOTIVA")) {
+                if (value.startsWith("EPC ") && value.contains("CENTRAL AUTOMOTIVA")
+                        && !value.contains(BuildConfig.VERSION_NAME)) {
                     text.setText("EPC " + BuildConfig.VERSION_NAME + "  ·  CENTRAL AUTOMOTIVA");
                 }
             }
