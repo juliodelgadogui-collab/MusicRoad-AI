@@ -19,7 +19,12 @@ $speed = isset($body['speed_kmh']) ? (int)$body['speed_kmh'] : null;
 $limit = isset($body['limit_kmh']) ? (int)$body['limit_kmh'] : null;
 $note = trim((string)($body['note'] ?? ''));
 $source = strtoupper(trim((string)($body['source'] ?? 'APP')));
-$allowed = ['RADAR_NOVO','RADAR_REMOVIDO','LIMITE_ERRADO','QUEBRA_MOLAS','CAMERA_MONITORAMENTO'];
+$allowed = [
+    'RADAR_NOVO','RADAR_REMOVIDO','RADAR_CONFIRMADO','LIMITE_ERRADO',
+    'QUEBRA_MOLAS','QUEBRA_MOLAS_REMOVIDO',
+    'SEMAFORO_RADAR_NOVO','SEMAFORO_RADAR_REMOVIDO',
+    'CAMERA_MONITORAMENTO','CAMERA_REMOVIDA'
+];
 
 if (!in_array($type,$allowed,true)) json_response(['ok'=>false,'error'=>'Tipo de reporte inválido.'],422);
 if (!is_finite($lat) || !is_finite($lon) || $lat < -35 || $lat > 6 || $lon < -75 || $lon > -30) json_response(['ok'=>false,'error'=>'Coordenada inválida.'],422);
