@@ -5,18 +5,20 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.location.Location;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
 /**
  * DRIVE_QUALITY_V330: observes the existing road-state stream without creating another GPS listener.
- * It feeds the stable ETA model and emits a short UI-only position estimate during brief GPS gaps.
+ * It feeds stable ETA/trip metrics and emits a short UI-only position estimate during brief GPS gaps.
  */
 final class DriveRuntimeEnhancer {
     private final Application app;
     private final Handler main=new Handler(Looper.getMainLooper());
-    private long lastRealAt;
+    private final DriveSessionStore session;
+    private long lastRealAt,lastSessionAt;
     private double lastLat=Double.NaN,lastLon=Double.NaN,lastSpeed,lastHeading=Double.NaN;
 
     static DriveRuntimeEnhancer install(Application app){
@@ -27,19 +29,30 @@ final class DriveRuntimeEnhancer {
         return x;
     }
 
-    private DriveRuntimeEnhancer(Application app){this.app=app;}
+    private DriveRuntimeEnhancer(Application app){this.app=app;this.session=new DriveSessionStore(app);}
 
     private final BroadcastReceiver receiver=new BroadcastReceiver(){
         @Override public void onReceive(Context context,Intent intent){
             if(intent==null||intent.getBooleanExtra("estimated_position",false))return;
+            long now=System.currentTimeMillis();
             double speed=intent.getDoubleExtra("speed_kmh",0.0);
-            RouteTravelPace.observe(speed,System.currentTimeMillis());
+            RouteTravelPace.observe(speed,now);
             double lat=intent.getDoubleExtra("lat",Double.NaN),lon=intent.getDoubleExtra("lon",Double.NaN);
             double heading=intent.getFloatExtra("heading",-1f);
             if(!Double.isFinite(lat)||!Double.isFinite(lon))return;
             lastLat=lat;lastLon=lon;lastSpeed=Math.max(0,speed);
             if(Double.isFinite(heading)&&heading>=0)lastHeading=heading;
-            lastRealAt=System.currentTimeMillis();
+            lastRealAt=now;
+
+            // TRIP_SESSION_V330: the trip summary is now fed by the background road stream,
+            // so distance/time continue even when the map Activity is not rendering its HUD.
+            if(now-lastSessionAt>=750L){
+                lastSessionAt=now;
+                try{
+                    Location l=new Location("estradaplay-state");l.setLatitude(lat);l.setLongitude(lon);
+                    session.update(l,speed);
+                }catch(Throwable ignored){}
+            }
         }
     };
 
