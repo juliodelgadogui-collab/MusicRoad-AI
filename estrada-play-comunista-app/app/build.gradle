@@ -11,9 +11,6 @@ def releaseKeyAlias = project.findProperty('ESTRADAPLAY_RELEASE_KEY_ALIAS') ?: S
 def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_PASSWORD')
 def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
-// EPC_301_PRODUCTION_STABILIZATION
-// Android 16 / API 36, adaptive windows, offline-first startup, local diagnostics,
-// hardened HTTPS endpoint handling and controlled authenticated redirects.
 android {
     namespace 'com.estradaplay.comunista'
     compileSdk 36
@@ -22,10 +19,11 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 36
-        versionCode 301
-        versionName '3.0.1'
+        versionCode 400
+        versionName '4.0.0'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
     buildFeatures { buildConfig true }
@@ -77,7 +75,6 @@ android {
             signingConfig signingConfigs.debug
         }
         candidate {
-            // Production candidate: real package/name, no .teste suffix. Signed only for field validation.
             debuggable false
             minifyEnabled false
             shrinkResources false
@@ -86,8 +83,8 @@ android {
         }
         release {
             debuggable false
-            minifyEnabled false
-            shrinkResources false
+            minifyEnabled true
+            shrinkResources true
             if (releaseSigningReady) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -97,10 +94,14 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+        warningsAsErrors false
+    }
 }
 
-// Never silently produce an unsigned artifact that could be mistaken for the production build.
-// Debug validation remains available without release secrets.
 gradle.taskGraph.whenReady { graph ->
     boolean wantsReleaseArtifact = graph.allTasks.any { task ->
         String n = task.name == null ? '' : task.name.toLowerCase(java.util.Locale.ROOT)
@@ -120,8 +121,12 @@ dependencies {
     implementation 'androidx.camera:camera-lifecycle:1.4.2'
     implementation 'androidx.camera:camera-view:1.4.2'
     implementation 'androidx.camera:camera-video:1.4.2'
-    // CAMERA_RECORD_ONLY_V301: ML Kit/OCR removido; a câmera é somente dashcam.
     implementation 'io.github.webrtc-sdk:android:144.7559.09'
+
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
+
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
 }
