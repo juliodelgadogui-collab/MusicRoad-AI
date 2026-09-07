@@ -2,14 +2,17 @@ name: Build Estrada Play Comunista
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - agent/estrada-play-comunista
 
 permissions:
   contents: read
 
 jobs:
-  build-universal-debug:
+  production-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -39,15 +42,22 @@ jobs:
             -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
-      - name: Compile signed Universal debug APK
+      - name: Run Universal unit tests
         working-directory: estrada-play-comunista-app
-        run: gradle --no-daemon --stacktrace assembleUniversalDebug
+        run: gradle --no-daemon --stacktrace testUniversalDebugUnitTest
 
-      - name: Upload installable APK
+      - name: Compile all debug orientations
+        working-directory: estrada-play-comunista-app
+        run: gradle --no-daemon --stacktrace assembleUniversalDebug assembleVerticalDebug assembleHorizontalDebug
+
+      - name: Upload validation APKs
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-Universal-INSTALAVEL
-          path: estrada-play-comunista-app/app/build/outputs/apk/universal/debug/*.apk
+          name: Estrada-Play-Comunista-PRODUCTION-VALIDATION
+          path: |
+            estrada-play-comunista-app/app/build/outputs/apk/universal/debug/*.apk
+            estrada-play-comunista-app/app/build/outputs/apk/vertical/debug/*.apk
+            estrada-play-comunista-app/app/build/outputs/apk/horizontal/debug/*.apk
           if-no-files-found: error
           retention-days: 3
