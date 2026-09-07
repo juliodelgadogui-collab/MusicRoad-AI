@@ -2,6 +2,9 @@ name: Build Estrada Play Comunista
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - agent/estrada-play-comunista
 
 permissions:
   contents: read
