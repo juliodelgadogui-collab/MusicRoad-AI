@@ -87,12 +87,12 @@ jobs:
           for p in api database importers server config install.php; do
             if [ -e "$p" ]; then cp -R "$p" dist/Estrada-Play-Comunista-Servidor/; fi
           done
-          (cd dist && zip -qr Estrada-Play-Comunista-Servidor-4.1.zip Estrada-Play-Comunista-Servidor)
+          (cd dist && zip -qr Estrada-Play-Comunista-Servidor-4.1.1.zip Estrada-Play-Comunista-Servidor)
 
       - name: Upload Universal candidate APK
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-4.1-UNIVERSAL
+          name: Estrada-Play-Comunista-4.1.1-UNIVERSAL
           path: estrada-play-comunista-app/app/build/outputs/apk/universal/candidate/*.apk
           if-no-files-found: error
           retention-days: 7
@@ -100,7 +100,7 @@ jobs:
       - name: Upload server package
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-Servidor-4.1
-          path: dist/Estrada-Play-Comunista-Servidor-4.1.zip
+          name: Estrada-Play-Comunista-Servidor-4.1.1
+          path: dist/Estrada-Play-Comunista-Servidor-4.1.1.zip
           if-no-files-found: error
           retention-days: 7
