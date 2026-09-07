@@ -12,7 +12,7 @@ permissions:
 jobs:
   production-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -45,6 +45,10 @@ jobs:
       - name: Run Universal unit tests
         working-directory: estrada-play-comunista-app
         run: gradle --no-daemon --stacktrace testUniversalDebugUnitTest
+
+      - name: Run Android lint
+        working-directory: estrada-play-comunista-app
+        run: gradle --no-daemon --stacktrace lintUniversalDebug
 
       - name: Compile all debug orientations
         working-directory: estrada-play-comunista-app
