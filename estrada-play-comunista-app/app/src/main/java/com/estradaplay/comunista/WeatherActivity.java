@@ -68,7 +68,10 @@ public final class WeatherActivity extends ComponentActivity {
         if(s.routeRisk()){
             route.addView(over("CHUVA NO CAMINHO",RED));
             route.addView(text(String.format(Locale.getDefault(),"Aproximadamente %.0f km à frente",s.routeRainKm),20,TEXT,true));
-            route.addView(text("Chegada estimada ao trecho em ~"+s.routeRainMinutes+" min · "+mm(s.routeRainMm)+" · chance "+s.routeRainChance+"%",12,GOLD,true));
+            route.addView(text("Você deve alcançar essa área em ~"+s.routeRainMinutes+" min",12,GOLD,true));
+            route.addView(text("Chance de chuva: "+s.routeRainChance+"%",12,TEXT,true));
+            if(Double.isFinite(s.routeRain3hMm))route.addView(text(String.format(Locale.getDefault(),"Acumulado previsto na janela de 3 h: ~%.1f mm",s.routeRain3hMm),12,TEXT,true));
+            if(Double.isFinite(s.routeRainMm))route.addView(text(String.format(Locale.getDefault(),"Pico horário previsto: ~%.1f mm",s.routeRainMm),10,MUTED,false));
             if(!s.routeLabel.isEmpty())route.addView(text("Destino: "+s.routeLabel,10,MUTED,false));
         }else if(!s.routeLabel.isEmpty()){
             route.addView(over("ROTA MONITORADA",GREEN));route.addView(text("Sem chuva relevante detectada nos pontos analisados do caminho.",15,TEXT,true));route.addView(text("Destino: "+s.routeLabel,10,MUTED,false));

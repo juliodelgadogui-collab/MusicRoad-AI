@@ -53,6 +53,7 @@ final class RoadWeatherMonitor {
         final double nextRainMm;
         final double next6hTotalMm;
         final double routeRainMm;
+        final double routeRain3hMm;
         final String error;
 
         Snapshot(boolean available, boolean currentWet, int currentChance,
@@ -61,7 +62,7 @@ final class RoadWeatherMonitor {
                  int next6hMaxChance, double next6hMinTempC, double next6hMaxTempC,
                  double routeRainKm, int routeRainMinutes, int routeRainChance,
                  String routeLabel, long updatedAt, double currentPrecipMm, double nextRainMm,
-                 double next6hTotalMm, double routeRainMm, String error) {
+                 double next6hTotalMm, double routeRainMm, double routeRain3hMm, String error) {
             this.available = available;
             this.currentWet = currentWet;
             this.currentChance = currentChance;
@@ -84,6 +85,7 @@ final class RoadWeatherMonitor {
             this.nextRainMm = nextRainMm;
             this.next6hTotalMm = next6hTotalMm;
             this.routeRainMm = routeRainMm;
+            this.routeRain3hMm = routeRain3hMm;
             this.error = error == null ? "" : error;
         }
 
@@ -104,11 +106,11 @@ final class RoadWeatherMonitor {
             if (!available) return "CLIMA · atualizando…";
             String temp = Double.isFinite(currentTempC) ? Math.round(currentTempC) + "°" : "";
             String prefix = temp.isEmpty() ? "CLIMA" : "CLIMA · " + temp;
-            if (currentWet) return prefix + " · CHUVA AGORA" + mmText(currentPrecipMm) + chanceText(currentChance);
+            if (currentWet) return prefix + " · CHUVA AGORA" + chanceText(currentChance);
             if (routeRisk()) {
-                return prefix + " · CHUVA EM " + distance(routeRainKm) + " (~" + routeRainMinutes + " min)" + mmText(routeRainMm) + chanceText(routeRainChance);
+                return prefix + " · CHUVA EM " + distance(routeRainKm) + " (~" + routeRainMinutes + " min)" + chanceText(routeRainChance);
             }
-            if (nextRainMinutes >= 0) return prefix + " · CHUVA EM ~" + nextRainMinutes + " min" + mmText(nextRainMm) + chanceText(nextRainChance);
+            if (nextRainMinutes >= 0) return prefix + " · CHUVA EM ~" + nextRainMinutes + " min" + chanceText(nextRainChance);
             if (gustKmh >= 55) return prefix + " · VENTO FORTE · rajadas " + Math.round(gustKmh) + " km/h";
             return prefix + " · " + condition + " · seco nas próximas 3 h";
         }
@@ -121,10 +123,13 @@ final class RoadWeatherMonitor {
                 return currentChance > 0 ? base + " Probabilidade de " + currentChance + " por cento." : base;
             }
             if (routeRisk()) {
-                String base = "Chuva prevista à frente, a aproximadamente " + spokenDistance(routeRainKm)
-                        + ", em cerca de " + routeRainMinutes + " minutos.";
-                base += spokenMm(routeRainMm);
-                if (routeRainChance > 0) base += " Probabilidade de " + routeRainChance + " por cento.";
+                String base = "Chuva prevista na rota, a aproximadamente " + spokenDistance(routeRainKm)
+                        + ". Você deve alcançar essa área em cerca de " + routeRainMinutes + " minutos.";
+                if (routeRainChance > 0) base += " Chance de chuva de " + routeRainChance + " por cento.";
+                if (Double.isFinite(routeRain3hMm) && routeRain3hMm > 0.04)
+                    base += " O acumulado previsto na janela de três horas em torno da passagem é de cerca de "
+                            + String.format(Locale.getDefault(), "%.1f", routeRain3hMm) + " milímetros.";
+                else base += spokenMm(routeRainMm);
                 return base + temp;
             }
             if (nextRainMinutes >= 0) {
@@ -167,7 +172,7 @@ final class RoadWeatherMonitor {
             }
             if (next6hTotalMm > 0.04) {
                 if (out.length() > 0) out.append(" · ");
-                out.append("~").append(String.format(Locale.getDefault(), "%.1f", next6hTotalMm)).append(" mm/6h");
+                out.append("acumulado ~").append(String.format(Locale.getDefault(), "%.1f", next6hTotalMm)).append(" mm em 6 h");
             }
             return out.toString();
         }
@@ -207,6 +212,7 @@ final class RoadWeatherMonitor {
                 p.getFloat("next_rain_mm", Float.NaN),
                 p.getFloat("next_6h_total_mm", Float.NaN),
                 p.getFloat("route_rain_mm", Float.NaN),
+                p.getFloat("route_rain_3h_mm", Float.NaN),
                 p.getString("last_error", "")
         );
     }
@@ -315,6 +321,7 @@ final class RoadWeatherMonitor {
                 .putInt("route_rain_min", -1)
                 .putInt("route_rain_chance", 0)
                 .putFloat("route_rain_mm", Float.NaN)
+                .putFloat("route_rain_3h_mm", Float.NaN)
                 .apply();
     }
 
@@ -341,7 +348,7 @@ final class RoadWeatherMonitor {
             ArrayList<Forecast> forecasts = fetchMany(samples, ROUTE_HOURS);
             double riskKm = Double.NaN;
             int riskMin = -1, riskChance = 0;
-            double riskMm = Double.NaN;
+            double riskMm = Double.NaN, risk3hMm = Double.NaN;
             int count = Math.min(samples.size(), forecasts.size());
             for (int i = 0; i < count; i++) {
                 Sample s = samples.get(i);
@@ -354,6 +361,7 @@ final class RoadWeatherMonitor {
                 riskMin = s.minutes;
                 riskChance = risk.chance;
                 riskMm = risk.mm;
+                risk3hMm = f.sumMmAround(hour);
                 break;
             }
             p.edit()
@@ -361,6 +369,7 @@ final class RoadWeatherMonitor {
                     .putInt("route_rain_min", riskMin)
                     .putInt("route_rain_chance", riskChance)
                     .putFloat("route_rain_mm", finiteFloat(riskMm))
+                    .putFloat("route_rain_3h_mm", finiteFloat(risk3hMm))
                     .apply();
         } catch (Throwable e) {
             p.edit().putString("last_error", cleanError(e)).apply();
@@ -373,6 +382,7 @@ final class RoadWeatherMonitor {
                 .putInt("route_rain_min", -1)
                 .putInt("route_rain_chance", 0)
                 .putFloat("route_rain_mm", Float.NaN)
+                .putFloat("route_rain_3h_mm", Float.NaN)
                 .apply();
     }
 
@@ -527,6 +537,13 @@ final class RoadWeatherMonitor {
                 mm = Math.max(mm, r.mm);
             }
             return new Risk(rain, chance, mm);
+        }
+
+        double sumMmAround(int hour) {
+            double total = 0;
+            int from = Math.max(0, hour - 1), to = Math.min(Math.max(0, size() - 1), hour + 1);
+            for (int i = from; i <= to; i++) total += riskAt(i).mm;
+            return total;
         }
     }
 
