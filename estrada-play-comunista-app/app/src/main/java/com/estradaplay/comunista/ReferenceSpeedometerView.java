@@ -11,6 +11,7 @@ import android.view.View;
 final class ReferenceSpeedometerView extends View {
     private final Paint arcBg=new Paint(Paint.ANTI_ALIAS_FLAG),arcRed=new Paint(Paint.ANTI_ALIAS_FLAG),tick=new Paint(Paint.ANTI_ALIAS_FLAG),text=new Paint(Paint.ANTI_ALIAS_FLAG),muted=new Paint(Paint.ANTI_ALIAS_FLAG),status=new Paint(Paint.ANTI_ALIAS_FLAG);
     private double speed;
+    private int limitKmh;
     private boolean gpsAvailable=true;
 
     ReferenceSpeedometerView(Context c){
@@ -18,12 +19,13 @@ final class ReferenceSpeedometerView extends View {
         arcBg.setStyle(Paint.Style.STROKE);arcBg.setStrokeCap(Paint.Cap.ROUND);arcBg.setColor(Color.rgb(70,68,73));
         arcRed.setStyle(Paint.Style.STROKE);arcRed.setStrokeCap(Paint.Cap.ROUND);arcRed.setColor(Color.rgb(227,13,39));
         tick.setStrokeCap(Paint.Cap.ROUND);tick.setColor(Color.rgb(218,215,216));
-        text.setColor(Color.WHITE);text.setTextAlign(Paint.Align.CENTER);text.setFakeBoldText(true);
+        text.setTextAlign(Paint.Align.CENTER);text.setFakeBoldText(true);
         muted.setColor(Color.rgb(173,164,165));muted.setTextAlign(Paint.Align.CENTER);
         status.setTextAlign(Paint.Align.CENTER);status.setFakeBoldText(true);
     }
 
     void setSpeed(double value){speed=Math.max(0,Math.min(240,Double.isFinite(value)?value:0));invalidate();}
+    void setLimit(int value){limitKmh=Math.max(0,Math.min(180,value));invalidate();}
     void setGpsAvailable(boolean value){gpsAvailable=value;invalidate();}
 
     @Override protected void onDraw(Canvas c){
@@ -49,6 +51,8 @@ final class ReferenceSpeedometerView extends View {
             }
         }
 
+        boolean over=limitKmh>0&&speed>limitKmh+2;
+        text.setColor(over?Color.rgb(255,72,72):Color.WHITE);
         text.setTextSize(Math.max(dp(35),Math.min(w,h)*.25f));c.drawText(String.valueOf(Math.round(speed)),cx,cy+text.getTextSize()*.22f,text);
         muted.setTextSize(Math.max(dp(10),Math.min(w,h)*.06f));c.drawText("km/h",cx,cy+text.getTextSize()*.72f,muted);
         status.setColor(gpsAvailable?Color.rgb(20,220,113):Color.rgb(242,181,65));
