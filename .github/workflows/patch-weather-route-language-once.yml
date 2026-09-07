@@ -1,0 +1,30 @@
+name: Patch Weather Route Language Once
+
+on:
+  push:
+    branches:
+      - agent/estrada-play-comunista
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+      - name: Apply weather language patch
+        run: python3 scripts/patch_weather_route_language.py
+      - name: Remove temporary patch files
+        run: rm -f scripts/patch_weather_route_language.py .github/workflows/patch-weather-route-language-once.yml
+      - name: Commit
+        run: |
+          git config user.name 'Estrada Play Fix Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'refine: separate rain timing, chance and accumulation'
+          git push origin HEAD:agent/estrada-play-comunista
