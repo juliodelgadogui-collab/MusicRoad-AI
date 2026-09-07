@@ -19,7 +19,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Android 11+ package visibility for the platform speech recognition service. -->
     <queries>
@@ -93,20 +92,10 @@
         <activity android:name=".ThoughtsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".MainActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
 
-        <receiver
-            android:name=".RoadSafetyBootReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
-
         <service android:name=".DownloadService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="dataSync" />
         <service android:name=".PlayerService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="mediaPlayback" />
-        <service android:name=".RoadSafetyService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="location" />
-        <service android:name=".CopilotService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="microphone" />
+        <service android:name=".RoadSafetyService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="location" />
+        <service android:name=".CopilotService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="microphone" />
         <service
             android:name=".RoadRadioService"
             android:exported="false"
