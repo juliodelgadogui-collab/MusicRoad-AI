@@ -82,7 +82,7 @@ final class RoadCockpitUiV400 {
         TextView protection = text(a, "PROTEÇÃO ATIVA", 9, MUTED, false);
         TextView instruction = text(a, "Siga a estrada", portrait ? 15 : 20, WHITE, false);
         TextView weather = text(a, "CLIMA · atualizando…", portrait ? 9 : 10, MUTED, false);
-        TextView limit = limit(a);
+        TextView limit = limit(a, speedometer);
         TextView routeDistance = text(a, "", 10, MUTED, false);
         TextView routeRoad = text(a, "Navegação ativa", 10, MUTED, false);
         TextView eta = metricValue(a, "—:—");
@@ -102,7 +102,7 @@ final class RoadCockpitUiV400 {
         Button playerToggle = mediaButton(a, "▶");
 
         if (portrait) {
-            buildPortrait(a, root, width, height, speedometer, gpsBridge, protection, instruction, weather,
+            buildPortrait(a, root, width, height, map, speedometer, gpsBridge, protection, instruction, weather,
                     limit, eta, remaining, duration, playerTitle, playerArtist, playerToggle);
         } else {
             buildLandscape(a, root, width, height, speedometer, gpsBridge, protection, instruction, weather,
@@ -221,14 +221,14 @@ final class RoadCockpitUiV400 {
         metrics.addView(metricWrap(a, "⚑", "CHEGADA", eta), new LinearLayout.LayoutParams(0, -1, 1f));
         metrics.addView(metricWrap(a, "◷", "RESTANTE", duration), new LinearLayout.LayoutParams(0, -1, 1f));
         metrics.addView(metricWrap(a, "╱╲", "DISTÂNCIA", remaining), new LinearLayout.LayoutParams(0, -1, 1f));
-        TextView avg = text(a, "0 km/h", 15, WHITE, false);
+        TextView avg = new TripAverageTextView(a); avg.setTextSize(15); avg.setTextColor(WHITE); avg.setGravity(Gravity.CENTER_VERTICAL);
         metrics.addView(metricWrap(a, "◴", "MÉDIA", avg), new LinearLayout.LayoutParams(0, -1, 1f));
         FrameLayout.LayoutParams bm = new FrameLayout.LayoutParams(-1, bottomH, Gravity.BOTTOM);
         bm.setMargins(margin, 0, margin, margin);
         root.addView(metrics, bm);
     }
 
-    private static void buildPortrait(RoadMapActivity a, FrameLayout root, int w, int h,
+    private static void buildPortrait(RoadMapActivity a, FrameLayout root, int w, int h, RoadMapView map,
                                       ReferenceSpeedometerView speedometer, TextView gps, TextView protection,
                                       TextView instruction, TextView weather, TextView limit, TextView eta,
                                       TextView remaining, TextView duration, TextView playerTitle,
@@ -336,7 +336,7 @@ final class RoadCockpitUiV400 {
         nav.addView(routeB, new LinearLayout.LayoutParams(0, -1, 1f));
         nav.addView(musicB, new LinearLayout.LayoutParams(0, -1, 1f));
         nav.addView(moreB, new LinearLayout.LayoutParams(0, -1, 1f));
-        mapB.setOnClickListener(v -> { if (speedometer.getParent() != null) { /* already on map */ } });
+        mapB.setOnClickListener(v -> { if (map != null) map.recenter(); });
         routeB.setOnClickListener(v -> a.startActivity(new Intent(a, DestinationActivity.class)));
         musicB.setOnClickListener(v -> a.startActivity(new Intent(a, MusicPlayerActivity.class)));
         moreB.setOnClickListener(v -> a.startActivity(new Intent(a, DriveToolsActivity.class)));
@@ -371,8 +371,9 @@ final class RoadCockpitUiV400 {
     }
 
     private static TextView metricValue(Activity a, String value) {
-        TextView t = text(a, value, 15, WHITE, false);
-        t.setSingleLine(true);
+        TextView t = new MetricBridgeTextView(a);
+        t.setTextSize(15); t.setTextColor(WHITE); t.setGravity(Gravity.CENTER_VERTICAL); t.setSingleLine(true);
+        t.setText(value);
         return t;
     }
 
@@ -394,9 +395,10 @@ final class RoadCockpitUiV400 {
         return box;
     }
 
-    private static TextView limit(Activity a) {
-        TextView t = text(a, "—", 23, Color.rgb(34, 34, 34), true);
-        t.setGravity(Gravity.CENTER);
+    private static TextView limit(Activity a, ReferenceSpeedometerView gauge) {
+        LimitBridgeTextView t = new LimitBridgeTextView(a, gauge);
+        t.setText("—"); t.setTextSize(23); t.setTextColor(Color.rgb(34,34,34));
+        t.setTypeface(Typeface.DEFAULT, Typeface.BOLD); t.setGravity(Gravity.CENTER);
         t.setBackground(panel(a, Color.WHITE, 100, RED, 5));
         return t;
     }
@@ -496,6 +498,17 @@ final class RoadCockpitUiV400 {
         return Math.round(v * a.getResources().getDisplayMetrics().density);
     }
 
+    private static final class TripAverageTextView extends TextView {
+        private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+        private final Runnable tick = new Runnable(){@Override public void run(){
+            try{setText(new DriveSessionStore(getContext()).snapshot().averageLabel());}catch(Throwable ignored){setText("0 km/h");}
+            handler.postDelayed(this,5000L);
+        }};
+        TripAverageTextView(Activity a){super(a);}
+        @Override protected void onAttachedToWindow(){super.onAttachedToWindow();handler.removeCallbacks(tick);handler.post(tick);}
+        @Override protected void onDetachedFromWindow(){handler.removeCallbacks(tick);super.onDetachedFromWindow();}
+    }
+
     private static final class SpeedBridgeTextView extends TextView {
         private final ReferenceSpeedometerView gauge;
         SpeedBridgeTextView(Activity a, ReferenceSpeedometerView gauge) { super(a); this.gauge = gauge; }
@@ -507,13 +520,32 @@ final class RoadCockpitUiV400 {
         }
     }
 
+    private static final class LimitBridgeTextView extends TextView {
+        private final ReferenceSpeedometerView gauge;
+        LimitBridgeTextView(Activity a, ReferenceSpeedometerView gauge){super(a);this.gauge=gauge;}
+        @Override public void setText(CharSequence value, BufferType type){
+            int limit=0;try{limit=Integer.parseInt(value==null?"":value.toString().trim());}catch(Throwable ignored){}
+            if(gauge!=null)gauge.setLimit(limit);
+            super.setText(limit>0?String.valueOf(limit):"—",type);
+        }
+    }
+
+    private static final class MetricBridgeTextView extends TextView {
+        MetricBridgeTextView(Activity a){super(a);}
+        @Override public void setText(CharSequence value, BufferType type){
+            String s=value==null?"":value.toString();
+            int cut=s.indexOf('\n'); if(cut>=0)s=s.substring(0,cut).trim();
+            super.setText(s,type);
+        }
+    }
+
     private static final class GpsBridgeTextView extends TextView {
         private final ReferenceSpeedometerView gauge;
         GpsBridgeTextView(Activity a, ReferenceSpeedometerView gauge) { super(a); this.gauge = gauge; }
         @Override public void setText(CharSequence text, BufferType type) {
-            super.setText(text, type);
             boolean ok = text != null && text.toString().toUpperCase().contains("ATIVO");
             if (gauge != null) gauge.setGpsAvailable(ok);
+            super.setText(ok ? "●  GPS ATIVO" : "●  GPS BUSCANDO", type);
             setTextColor(ok ? GREEN : Color.rgb(242, 181, 65));
         }
     }

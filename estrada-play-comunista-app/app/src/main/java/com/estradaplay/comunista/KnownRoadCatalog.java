@@ -13,7 +13,7 @@ final class KnownRoadCatalog {
             "MG-010", "MG-050", "MG-135", "MG-167", "MG-179", "MG-184", "MG-188", "MG-290", "MG-353", "MG-458",
             "SP-055", "SP-070", "SP-075", "SP-125", "SP-150", "SP-160", "SP-270", "SP-280", "SP-300", "SP-310", "SP-330", "SP-348", "SP-425"
     };
-    private static final Pattern ROAD = Pattern.compile("(?i)\\b(BR|RJ|MG|ES|SP)[-\\s]?(\\d{1,4})\\b");
+    private static final Pattern ROAD = Pattern.compile("(?i)\\b(BR|AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)[-\\s]?(\\d{1,4})\\b");
     private static final String PREF = "epc_radio_road_fallback_v173", KEY = "road";
 
     static final class Region {
@@ -84,10 +84,7 @@ final class KnownRoadCatalog {
 
     static String uf(double lat, double lon, String road) {
         String c = canonical(road);
-        if (c.startsWith("RJ-")) return "RJ";
-        if (c.startsWith("ES-")) return "ES";
-        if (c.startsWith("MG-")) return "MG";
-        if (c.startsWith("SP-")) return "SP";
+        if (c.matches("^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)-\\d{1,4}$")) return c.substring(0,2);
         Region r = region(lat, lon); if (r != null) return r.uf;
         boolean rj = lat>=-23.45&&lat<=-20.65&&lon>=-44.95&&lon<=-40.75;
         boolean es = lat>=-21.40&&lat<=-17.75&&lon>=-41.95&&lon<=-39.55;

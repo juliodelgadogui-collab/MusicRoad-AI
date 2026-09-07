@@ -134,7 +134,10 @@ public final class RoadMapActivity extends ComponentActivity {
             currentRoadForContext = road == null ? "" : road.trim();
             double distance = intent.getDoubleExtra("distance_m", 0);
             int limit = intent.getIntExtra("limit_kmh", 0);
-            universalSpeed=speed; universalLimit=intent.getIntExtra("road_limit_kmh",0); currentLatForSave=lat; currentLonForSave=lon;
+            int roadLimit = intent.getIntExtra("road_limit_kmh", 0);
+            boolean gpsAvailable = intent.getBooleanExtra("protection_available", true);
+            boolean coverageAvailable = intent.getBooleanExtra("coverage_available", false);
+            universalSpeed=speed; universalLimit=roadLimit; currentLatForSave=lat; currentLonForSave=lon;
             String uu=intent.getStringExtra("upcoming_text"); if(uu!=null)universalUpcoming=uu;
             if(hazard!=null&&!hazard.trim().isEmpty()) universalHazard=hazard.trim();
             updateUniversalDriveWidgets(intent);
@@ -152,15 +155,15 @@ public final class RoadMapActivity extends ComponentActivity {
             }
 
             if (speedText != null) { speedText.setText(String.valueOf(Math.max(0, Math.round(speed)))); speedText.setTextColor(limit>0 && speed>limit+2 ? Color.rgb(255,67,67) : TEXT); }
-            if (navLimitText != null) navLimitText.setText(limit > 0 ? String.valueOf(limit) : "—");
+            if (navLimitText != null) navLimitText.setText(roadLimit > 0 ? String.valueOf(roadLimit) : (limit > 0 ? String.valueOf(limit) : "—"));
             if (hazardCard != null) hazardCard.setBackground(panel(17, Color.argb(240,17,9,11), hasHazardColor(type)));
             if (navWeatherText != null) navWeatherText.setText(RoadWeatherMonitor.compactStatus(RoadMapActivity.this));
-            if (gpsText != null) gpsText.setText(Double.isFinite(lat) ? "GPS ATIVO" : "GPS BUSCANDO");
+            if (gpsText != null) gpsText.setText(Double.isFinite(lat) && gpsAvailable ? "GPS ATIVO" : "GPS BUSCANDO");
 
             boolean hasHazard = hazard != null && !hazard.trim().isEmpty();
             localHazardPresent = hasHazard;
             localHazardDistanceM = hasHazard && distance > 0 ? distance : Double.POSITIVE_INFINITY;
-            if (protectionText != null) protectionText.setText(hasHazard ? "ATENÇÃO À FRENTE" : "PROTEÇÃO ATIVA");
+            if (protectionText != null) protectionText.setText(hasHazard ? "ATENÇÃO À FRENTE" : (!gpsAvailable ? "GPS INDISPONÍVEL" : (coverageAvailable ? "PROTEÇÃO ATIVA" : "PROTEÇÃO PREPARANDO")));
             if (hazardTitle != null) hazardTitle.setText(hasHazard ? hazard.trim() : "Estrada livre à frente");
             if (hazardDetail != null) {
                 if (hasHazard) {

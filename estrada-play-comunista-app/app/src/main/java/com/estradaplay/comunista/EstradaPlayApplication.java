@@ -26,6 +26,7 @@ public final class EstradaPlayApplication extends Application {
 
         UiVersionLabelFix.register(this);
         try { ProductionTelemetryV400.install(this); } catch (Throwable ignored) {}
+        try { MapStyleConfigV400.refreshAsync(this); } catch (Throwable ignored) {}
 
         // COPILOT_BACKGROUND_V1: the visible Activity only hosts a tiny overlay. The microphone and
         // command engine live in CopilotService and are re-armed when an enabled user returns to the app.

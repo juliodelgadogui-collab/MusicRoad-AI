@@ -110,7 +110,7 @@ final class RoadMapView extends FrameLayout {
         fallback.setText("Carregando mapa livre…");
         fallback.setVisibility(View.VISIBLE);
         try {
-            map.setStyle(new Style.Builder().fromUri(OPEN_STYLE), style -> {
+            map.setStyle(new Style.Builder().fromUri(MapStyleConfigV400.styleUri(getContext())), style -> {
                 currentStyle = style;
                 offlineRoadSource = null;
                 routeSource = null;

@@ -33,7 +33,7 @@ public final class RoadRadioService extends Service {
     private OfflineRoadStore roads;
     private RoadIdentityResolver.Identity identity;
     private String manualRoad="",autoRoadHint="";
-    private boolean wanted,joined,muted,ptt,safetyMuted,registered,rtcFailed;
+    private boolean wanted,joined,muted,ptt,safetyMuted,registered,rtcFailed,turnReady;
     private int participants;
     private long lastSignalId,lastResolveAt;
     private double lat=Double.NaN,lon=Double.NaN;
@@ -191,6 +191,7 @@ public final class RoadRadioService extends Service {
                 joined=false;setStatus(j.optString("error","Não consegui entrar no rádio."));return;
             }
             self=j.optString("self",DeviceIdentity.token(this));
+            turnReady=j.optBoolean("turn_ready",false);
             loadIce(j.optJSONArray("ice_servers"));
             // PTT_STABILITY_V234: presence first. Native audio is lazy and only starts with a peer.
             joined=true;
@@ -253,7 +254,7 @@ public final class RoadRadioService extends Service {
             ptt=false;
             status="Sala conectada · áudio PTT indisponível neste aparelho";
         }else{
-            status="Rádio conectado · "+participants+" no trecho";
+            status="Rádio conectado · "+participants+" no trecho"+(turnReady?"":" · relay TURN não configurado");
         }
 
         JSONArray al=j.optJSONArray("alerts");

@@ -644,6 +644,9 @@ public final class RoadSafetyService extends Service {
         long now = System.currentTimeMillis();
         long fixAge = lastSpeedFixWallMs > 0L ? Math.max(0L, now - lastSpeedFixWallMs) : Math.max(0L, now - serviceStartedAt);
         i.putExtra("lat", lat); i.putExtra("lon", lon); i.putExtra("speed_kmh", speedKmh); i.putExtra("road_limit_kmh", roadLimitPolicy.currentLimit()); i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f); i.putExtra("pack_count", packs.packCount()); i.putExtra("state_pack_count", packs.statePackCount()); i.putExtra("core_state_count", packs.coreStatePackCount()); i.putExtra("core_states_status", packs.coreStatesStatus()); i.putExtra("thermal_status", thermalStatus()); i.putExtra("rain_mode", DriveSettings.rainNow(this)); i.putExtra("weather_status", RoadWeatherMonitor.compactStatus(this)); i.putExtra("weather_rain_ahead", RoadWeatherMonitor.snapshot(this).shouldAnnounce()); i.putExtra("night_mode", DriveSettings.nightNow(this)); i.putExtra("offline_test_mode", DriveSettings.offlineTestMode(this)); i.putExtra("reserve_km", 250); i.putExtra("hazard_count", packs.hazardCount()); i.putExtra("map_pack_count", mapRoads.packCount());
+        boolean coverageAny=false, coverageFresh=false;
+        try { if(packs!=null){coverageAny=packs.hasAnyCoverage(lat,lon);coverageFresh=packs.hasFreshCoreCoverage(lat,lon);} } catch(Throwable ignored){}
+        i.putExtra("coverage_available", coverageAny); i.putExtra("coverage_fresh", coverageFresh);
         i.putExtra("protection_available", !protectionGpsUnavailable); i.putExtra("gps_fix_age_ms", fixAge);
         if(collectiveStore!=null){i.putExtra("collective_impact_count",collectiveStore.impactCount());i.putExtra("collective_queue_count",collectiveStore.queuedCount());}
         i.putExtra("upcoming_text",upcomingCache); i.putExtra("status", status == null ? "" : status); return i;
