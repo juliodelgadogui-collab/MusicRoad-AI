@@ -76,10 +76,6 @@ final class SecureDeviceCredential {
         if (exp > 0L && System.currentTimeMillis() >= exp - 15_000L) return "";
 
         String value = load(KEY_ACCESS);
-        if (!validToken(value)) {
-            value = loadRecoveryToken(KEY_ACCESS_RECOVERY);
-            if (validToken(value)) save(KEY_ACCESS, value);
-        }
         return validToken(value) ? value : "";
     }
 
@@ -109,7 +105,7 @@ final class SecureDeviceCredential {
 
         // Commit is deliberate: auth is read by a separately isolated radio process in v2.3.4.
         prefs.edit()
-                .putString(KEY_ACCESS_RECOVERY, encodeRecoveryToken(a))
+                .remove(KEY_ACCESS_RECOVERY)
                 .putString(KEY_REFRESH_RECOVERY, encodeRecoveryToken(r))
                 .putLong(KEY_ACCESS_EXP, Math.max(0L, accessExpiresAtMs))
                 .putLong(KEY_REFRESH_EXP, Math.max(0L, refreshExpiresAtMs))

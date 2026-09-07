@@ -238,15 +238,18 @@ final class RouteEngine {
             serverError = e;
         }
 
-        try {
-            Route fallbackRoute = fetchOsrmFallback(fromLat, fromLon, toLat, toLon);
-            cacheResolved(context, fromLat, fromLon, toLat, toLon, fallbackRoute);
-            return fallbackRoute;
-        } catch (Exception fallback) {
-            if (cached != null) return cached;
-            if (serverError != null) fallback.addSuppressed(serverError);
-            throw fallback;
+        if (cached != null) return cached;
+        if (BuildConfig.DEBUG) {
+            try {
+                Route fallbackRoute = fetchOsrmFallback(fromLat, fromLon, toLat, toLon);
+                cacheResolved(context, fromLat, fromLon, toLat, toLon, fallbackRoute);
+                return fallbackRoute;
+            } catch (Exception fallback) {
+                if (serverError != null) fallback.addSuppressed(serverError);
+                throw fallback;
+            }
         }
+        throw serverError != null ? serverError : new Exception("Servidor de rota indisponível e nenhuma rota offline preparada");
     }
 
     private static void cacheResolved(Context context, double fromLat, double fromLon,

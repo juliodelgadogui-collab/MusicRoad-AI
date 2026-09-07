@@ -160,7 +160,8 @@ final class RoadPackStore {
             if(fetchMusicRoadStateRadars(api,uf))return true;
             if(fetchStateCoverage(api,uf))return true;
         }
-        return fetchOpenStreetMapSafetyNear(lat,lon);
+        // Production: public Overpass is an ingestion source for the server, not a dependency of a trip.
+        return false;
     }
 
     private boolean fetchCorridor(ApiClient api,double lat,double lon,float heading) {

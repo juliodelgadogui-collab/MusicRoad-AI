@@ -56,9 +56,8 @@ final class OfflineRoadStore {
         if (api != null && supported(uf) && !fresh(stateFile(uf), STATE_FRESH_MS)) ok = fetchState(api, uf) || ok;
         if (api != null && Float.isFinite(heading) && !hasFreshCorridor(lat, lon, heading)) ok = fetchCorridor(api, lat, lon, heading) || ok;
 
-        boolean needsLocal = !hasRecentCorridorNear(lat, lon) ||
-                (Float.isFinite(heading) && !hasFreshCorridor(lat, lon, heading));
-        if (needsLocal) ok = fetchDirectLocalMap(lat, lon, heading) || ok;
+        // Production downloads road geometry from Estrada Play. Public Overpass remains only as
+        // legacy code and is not called automatically while the driver is travelling.
         cleanup();
         return ok;
     }

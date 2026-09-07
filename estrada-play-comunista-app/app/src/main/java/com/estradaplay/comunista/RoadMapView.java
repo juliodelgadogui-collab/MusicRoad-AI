@@ -35,7 +35,7 @@ import static org.maplibre.android.style.layers.PropertyFactory.lineOpacity;
 import static org.maplibre.android.style.layers.PropertyFactory.lineWidth;
 
 final class RoadMapView extends FrameLayout {
-    private static final String OPEN_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+    private static final String OPEN_STYLE = "https://tiles.openfreemap.org/styles/dark";
     private static final String EMPTY_GEOJSON = "{\"type\":\"FeatureCollection\",\"features\":[]}";
     private static final String LOCAL_STYLE = "{\"version\":8,\"name\":\"EPC Night\",\"sources\":{},\"layers\":[{\"id\":\"background\",\"type\":\"background\",\"paint\":{\"background-color\":\"#080507\"}}]}";
 
@@ -75,7 +75,7 @@ final class RoadMapView extends FrameLayout {
         addView(fallback, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         initMapLibre();
         nightTint = new View(context);
-        nightTint.setBackgroundColor(Color.argb(52, 10, 0, 5));
+        nightTint.setBackgroundColor(Color.argb(18, 8, 0, 5));
         nightTint.setClickable(false);
         nightTint.setFocusable(false);
         addView(nightTint, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));

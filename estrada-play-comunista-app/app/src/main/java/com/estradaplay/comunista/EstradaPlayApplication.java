@@ -25,6 +25,7 @@ public final class EstradaPlayApplication extends Application {
         if (isRadioProcess()) return;
 
         UiVersionLabelFix.register(this);
+        try { ProductionTelemetryV400.install(this); } catch (Throwable ignored) {}
 
         // COPILOT_BACKGROUND_V1: the visible Activity only hosts a tiny overlay. The microphone and
         // command engine live in CopilotService and are re-armed when an enabled user returns to the app.
@@ -37,14 +38,6 @@ public final class EstradaPlayApplication extends Application {
         RoadScreenAwakeV303.install(this);
         RoadProtectionStatusUiV303.install(this);
         RoadRouteWeatherBridgeV303.install(this);
-
-        // ROAD_REFERENCE_UI_V360: validated against real-device screenshots. It never hides mapPane,
-        // removes legacy duplicates and sizes the cockpit from actual viewport proportions.
-        RoadMapReferenceUiV360.install(this);
-
-        // PRODUCTION_ROAD_GUARD_V400: keeps a rebuilt MapLibre view in the resumed lifecycle, prevents
-        // accidental map hiding, restores one centered hazard surface and verifies regional coverage.
-        try { RoadProductionGuardV400.install(this); } catch (Throwable ignored) {}
 
         // DRIVE_QUALITY_V330: one receiver feeds stable ETA and short tunnel continuity from the
         // already existing road-state stream. It does not create another GPS listener.

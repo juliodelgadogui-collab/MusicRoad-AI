@@ -233,7 +233,7 @@ final class RoadWeatherMonitor {
         if (c == null || DriveSettings.offlineTestMode(c) || !DriveSettings.autoRain(c)) return;
         Context app = c.getApplicationContext();
         try {
-            Forecast f = fetchSingle(lat, lon, LOCAL_HOURS);
+            Forecast f = fetchSingle(app, lat, lon, LOCAL_HOURS);
             int nextMin = -1, nextChance = 0;
             double nextRainMm = Double.NaN, totalMm6h = 0;
             int maxChance6h = 0;
@@ -345,7 +345,7 @@ final class RoadWeatherMonitor {
                 samples.add(new Sample(lat, lon, o.optDouble("km", 0), o.optInt("min", 0)));
             }
             if (samples.isEmpty()) { clearRouteRisk(c); return; }
-            ArrayList<Forecast> forecasts = fetchMany(samples, ROUTE_HOURS);
+            ArrayList<Forecast> forecasts = fetchMany(c.getApplicationContext(), samples, ROUTE_HOURS);
             double riskKm = Double.NaN;
             int riskMin = -1, riskChance = 0;
             double riskMm = Double.NaN, risk3hMm = Double.NaN;
@@ -386,15 +386,38 @@ final class RoadWeatherMonitor {
                 .apply();
     }
 
-    private static Forecast fetchSingle(double lat, double lon, int hours) throws Exception {
+    private static Forecast fetchSingle(Context c, double lat, double lon, int hours) throws Exception {
         ArrayList<Sample> one = new ArrayList<>();
         one.add(new Sample(lat, lon, 0, 0));
-        ArrayList<Forecast> result = fetchMany(one, hours);
+        ArrayList<Forecast> result = fetchMany(c, one, hours);
         if (result.isEmpty()) throw new Exception("previsão vazia");
         return result.get(0);
     }
 
-    private static ArrayList<Forecast> fetchMany(ArrayList<Sample> samples, int hours) throws Exception {
+    private static ArrayList<Forecast> fetchMany(Context c, ArrayList<Sample> samples, int hours) throws Exception {
+        // Server is the primary weather/cache layer so every device uses the same forecast snapshot.
+        try {
+            JSONObject payload = new JSONObject();
+            JSONArray points = new JSONArray();
+            for (Sample s : samples) {
+                JSONObject p = new JSONObject();
+                p.put("lat", s.lat); p.put("lon", s.lon); p.put("minutes", s.minutes);
+                points.put(p);
+            }
+            payload.put("points", points); payload.put("hours", Math.max(6, hours));
+            ApiClient.Response response = new ApiClient(c).post("api/weather_batch.php", payload);
+            JSONObject root = response.json();
+            JSONArray forecasts = root.optJSONArray("forecasts");
+            if (response.ok() && root.optBoolean("ok", false) && forecasts != null && forecasts.length() > 0) {
+                ArrayList<Forecast> server = new ArrayList<>();
+                for (int i = 0; i < forecasts.length(); i++) {
+                    JSONObject o = forecasts.optJSONObject(i);
+                    if (o != null) server.add(Forecast.parse(o));
+                }
+                if (!server.isEmpty()) return server;
+            }
+        } catch (Throwable ignored) {}
+
         StringBuilder lats = new StringBuilder(), lons = new StringBuilder();
         for (Sample s : samples) {
             if (lats.length() > 0) { lats.append(','); lons.append(','); }
@@ -429,7 +452,7 @@ final class RoadWeatherMonitor {
             h.setReadTimeout(10000);
             h.setInstanceFollowRedirects(true);
             h.setRequestProperty("Accept", "application/json");
-            h.setRequestProperty("User-Agent", "EstradaPlayComunista/3.0 Android");
+            h.setRequestProperty("User-Agent", "EstradaPlayComunista/4.0 Android");
             int code = h.getResponseCode();
             if (code < 200 || code >= 300) throw new Exception("clima HTTP " + code);
             ByteArrayOutputStream b = new ByteArrayOutputStream();

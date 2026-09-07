@@ -199,13 +199,40 @@ public final class RoadMapActivity extends ComponentActivity {
     }
 
     private void buildResponsiveUi() {
-        int[] size = screenSize(); int width = root != null && root.getWidth() > 0 ? root.getWidth() : size[0]; int height = root != null && root.getHeight() > 0 ? root.getHeight() : size[1];
-        lastWidth=width; lastHeight=height;
-        if (roadMap != null) try { roadMap.onPauseMap(); roadMap.onStopMap(); roadMap.onDestroyMap(); } catch(Throwable ignored){}
-        root.removeAllViews(); touchTargets.clear();
-        boolean portraitLayout=usePortraitLayout(); applyAutomotiveSystemUiV205(!portraitLayout);
-        if(portraitLayout) buildPortraitUi(width,height); else buildLandscapeUi(width,height);
-        root.postDelayed(() -> EpcMotion.fadeIn(root),35L);
+        int[] size = screenSize();
+        int width = root != null && root.getWidth() > 0 ? root.getWidth() : size[0];
+        int height = root != null && root.getHeight() > 0 ? root.getHeight() : size[1];
+        lastWidth = width; lastHeight = height;
+        if (roadMap != null) try { roadMap.onPauseMap(); roadMap.onStopMap(); roadMap.onDestroyMap(); } catch (Throwable ignored) {}
+        root.removeAllViews();
+        touchTargets.clear();
+        boolean portraitLayout = usePortraitLayout();
+        applyAutomotiveSystemUiV205(!portraitLayout);
+
+        RoadCockpitUiV400.Bindings b = RoadCockpitUiV400.build(this, root, width, height, portraitLayout);
+        roadMap = b.map;
+        speedText = b.speedText;
+        hazardTitle = b.hazardTitle;
+        hazardDetail = b.hazardDetail;
+        protectionText = b.protectionText;
+        clockText = b.clockText;
+        gpsText = b.gpsText;
+        destinationText = b.destinationText;
+        navInstructionText = b.navInstructionText;
+        navLimitText = b.navLimitText;
+        navWeatherText = b.navWeatherText;
+        navDistanceText = b.navDistanceText;
+        navRoadText = b.navRoadText;
+        navEtaText = b.navEtaText;
+        navRemainingText = b.navRemainingText;
+        navDurationText = b.navDurationText;
+        navTurnText = b.navTurnText;
+        mapPlayerTitle = b.mapPlayerTitle;
+        mapPlayerArtist = b.mapPlayerArtist;
+        mapPlayerToggle = b.mapPlayerToggle;
+        hazardCard = b.hazardCard;
+
+        root.postDelayed(() -> EpcMotion.fadeIn(root), 35L);
     }
 
     private void buildLandscapeUi(int width, int height) {
@@ -321,7 +348,7 @@ public final class RoadMapActivity extends ComponentActivity {
     private boolean usePortraitLayout(){String mode=BuildConfig.FIXED_LAYOUT==null?"":BuildConfig.FIXED_LAYOUT;if("vertical".equals(mode))return true;if("horizontal".equals(mode))return false;int[] size=screenSize();return size[1]>=size[0];}
     private int[] screenSize(){try{if(Build.VERSION.SDK_INT>=30){android.graphics.Rect b=getWindowManager().getCurrentWindowMetrics().getBounds();return new int[]{b.width(),b.height()};}}catch(Throwable ignored){}DisplayMetrics dm=getResources().getDisplayMetrics();return new int[]{dm.widthPixels,dm.heightPixels};}
     private int clamp(int value,int min,int max){return Math.max(min,Math.min(max,value));} private int dp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
-    @Override public void onConfigurationChanged(Configuration newConfig){super.onConfigurationChanged(newConfig);if(root!=null)root.post(this::buildResponsiveUi);} @Override protected void onStart(){super.onStart();if(roadMap!=null)roadMap.onStartMap();} @Override protected void onResume(){super.onResume();forceTouchableWindow();if(roadMap!=null)roadMap.onResumeMap();}
+    @Override public void onConfigurationChanged(Configuration newConfig){super.onConfigurationChanged(newConfig);if(root!=null)root.post(()->{buildResponsiveUi();if(roadMap!=null){try{roadMap.onStartMap();}catch(Throwable ignored){}try{roadMap.onResumeMap();}catch(Throwable ignored){}}if(Double.isFinite(lastLat)&&Double.isFinite(lastLon)&&roadMap!=null){roadMap.setUserLocation(lastLat,lastLon,lastHeading);refreshMapData(lastLat,lastLon,0);refreshDestinationRoute(lastLat,lastLon);}});} @Override protected void onStart(){super.onStart();if(roadMap!=null)roadMap.onStartMap();} @Override protected void onResume(){super.onResume();forceTouchableWindow();if(roadMap!=null)roadMap.onResumeMap();}
     private void forceTouchableWindow(){try{getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);View decor=getWindow().getDecorView();if(decor!=null){decor.setEnabled(true);decor.setFocusable(true);decor.setFocusableInTouchMode(true);}if(root!=null){root.setEnabled(true);root.setClickable(false);root.setFocusable(false);}}catch(Throwable ignored){}}
     @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);if(hasFocus)forceTouchableWindow();} @Override protected void onPause(){if(roadMap!=null)roadMap.onPauseMap();super.onPause();} @Override protected void onStop(){if(roadMap!=null)roadMap.onStopMap();super.onStop();} @Override public void onLowMemory(){super.onLowMemory();if(roadMap!=null)roadMap.onLowMemoryMap();} @Override protected void onSaveInstanceState(Bundle outState){if(roadMap!=null)roadMap.onSaveMap(outState);super.onSaveInstanceState(outState);}
     @Override protected void onDestroy(){ui.removeCallbacks(clockTick);if(receiverRegistered){try{unregisterReceiver(roadReceiver);}catch(Throwable ignored){}receiverRegistered=false;}if(playerReceiverRegistered){try{unregisterReceiver(playerReceiver);}catch(Throwable ignored){}playerReceiverRegistered=false;}try{io.shutdownNow();}catch(Throwable ignored){}try{routeIo.shutdownNow();}catch(Throwable ignored){}try{contextIo.shutdownNow();}catch(Throwable ignored){}if(roadMap!=null)roadMap.onDestroyMap();super.onDestroy();}
