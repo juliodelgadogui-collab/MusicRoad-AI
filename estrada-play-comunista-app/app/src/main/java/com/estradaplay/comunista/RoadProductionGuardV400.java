@@ -25,6 +25,7 @@ import java.lang.reflect.Field;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Production runtime guard for the Estrada cockpit.
@@ -39,20 +40,23 @@ final class RoadProductionGuardV400 implements Application.ActivityLifecycleCall
     private static final String LEGACY_REFERENCE_TAG = "epc-road-reference-v350";
     private static final String DIAG_PREFS = "epc_production_road_diag_v400";
     private static final long HAZARD_VISIBLE_MS = 6500L;
+    private static final long COVERAGE_RELOAD_MS = 12_000L;
 
     private final Application app;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean coverageReloading = new AtomicBoolean(false);
     private WeakReference<RoadMapActivity> resumed = new WeakReference<>(null);
     private WeakReference<RoadMapView> lifecycleMap = new WeakReference<>(null);
     private volatile RoadPackStore coverageStore;
+    private volatile long lastCoverageReloadAt;
     private long hazardGeneration;
 
     static RoadProductionGuardV400 install(Application app) {
         RoadProductionGuardV400 guard = new RoadProductionGuardV400(app);
         app.registerActivityLifecycleCallbacks(guard);
         guard.register();
-        guard.loadCoverageStore();
+        guard.reloadCoverageStore(true);
         return guard;
     }
 
@@ -66,10 +70,15 @@ final class RoadProductionGuardV400 implements Application.ActivityLifecycleCall
         } catch (Throwable ignored) {}
     }
 
-    private void loadCoverageStore() {
+    private void reloadCoverageStore(boolean force) {
+        long now = System.currentTimeMillis();
+        if (!force && now - lastCoverageReloadAt < COVERAGE_RELOAD_MS) return;
+        if (!coverageReloading.compareAndSet(false, true)) return;
+        lastCoverageReloadAt = now;
         io.execute(() -> {
             try { coverageStore = new RoadPackStore(app); }
-            catch (Throwable ignored) { coverageStore = null; }
+            catch (Throwable ignored) { if (coverageStore == null) coverageStore = null; }
+            finally { coverageReloading.set(false); }
         });
     }
 
@@ -194,8 +203,12 @@ final class RoadProductionGuardV400 implements Application.ActivityLifecycleCall
         double lat = intent.getDoubleExtra("lat", Double.NaN);
         double lon = intent.getDoubleExtra("lon", Double.NaN);
         boolean gpsAvailable = intent.getBooleanExtra("protection_available", true);
-        if (!gpsAvailable || !Double.isFinite(lat) || !Double.isFinite(lon) || store == null) {
+        if (!gpsAvailable || !Double.isFinite(lat) || !Double.isFinite(lon)) {
             hideTagged(contentHost(activity), COVERAGE_TAG);
+            return;
+        }
+        if (store == null) {
+            reloadCoverageStore(false);
             return;
         }
 
@@ -207,6 +220,7 @@ final class RoadProductionGuardV400 implements Application.ActivityLifecycleCall
             fresh = store.hasFreshCoreCoverage(lat, lon);
             nearby = store.nearby(lat, lon, 5000).size();
         } catch (Throwable ignored) {
+            reloadCoverageStore(false);
             return;
         }
 
@@ -227,8 +241,12 @@ final class RoadProductionGuardV400 implements Application.ActivityLifecycleCall
             hideTagged(host, COVERAGE_TAG);
             return;
         }
-        if (host.findViewWithTag(COVERAGE_TAG) != null) return;
 
+        // RoadSafetyService may have written a new tile/corridor through another in-memory store.
+        // Refresh this read-only diagnostic snapshot periodically until coverage becomes visible.
+        reloadCoverageStore(false);
+
+        if (host.findViewWithTag(COVERAGE_TAG) != null) return;
         TextView chip = text(activity, "PROTEÇÃO DA REGIÃO PREPARANDO  ·  GPS ATIVO", 9,
                 Color.rgb(255, 221, 147), true);
         chip.setTag(COVERAGE_TAG);
@@ -308,6 +326,7 @@ final class RoadProductionGuardV400 implements Application.ActivityLifecycleCall
         if (!(activity instanceof RoadMapActivity)) return;
         RoadMapActivity road = (RoadMapActivity) activity;
         resumed = new WeakReference<>(road);
+        reloadCoverageStore(false);
         main.postDelayed(() -> {
             if (resumed.get() == road && !road.isFinishing()) ensureMapRuntime(road);
         }, 120L);
