@@ -2,11 +2,6 @@ name: Build Estrada Play Comunista
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - agent/estrada-play-comunista
-    paths:
-      - .github/estradaplay-build-trigger
 
 permissions:
   contents: read
