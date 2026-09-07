@@ -22,7 +22,6 @@ $router = '';
 $errors = [];
 $coords = sprintf('%.7F,%.7F;%.7F,%.7F', $fromLon, $fromLat, $toLon, $toLat);
 
-// Production priority: Estrada Play's own OSRM/Valhalla-compatible routing service.
 $own = ep_nav_osrm_base();
 if ($own !== '') {
     try {
@@ -31,7 +30,6 @@ if ($own !== '') {
     } catch (Throwable $e) { $errors[] = 'own: '.$e->getMessage(); }
 }
 
-// Optional contracted fallback.
 if (!is_array($route)) {
     $token = ep_nav_mapbox_token();
     if ($token !== '') {
@@ -51,7 +49,6 @@ if (!is_array($route)) {
     }
 }
 
-// Public OSRM exists only as an explicit emergency switch; it is OFF by default in production.
 if (!is_array($route) && app_setting('routing_public_fallback', '0') === '1') {
     try {
         $route = ep_nav_fetch_osrm('https://router.project-osrm.org', $coords);
@@ -107,19 +104,24 @@ function ep_nav_mapbox_token(): string
     $valid = static fn(string $v): bool => preg_match('/^pk\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/', trim($v)) === 1;
     try {
         if (function_exists('mapbox_client_config')) {
-            $c = mapbox_client_config(); $v = trim((string)($c['token'] ?? '')); if ($valid($v)) return $v;
+            $c = mapbox_client_config();
+            $v = trim((string)($c['token'] ?? ''));
+            if ($valid($v)) return $v;
         }
         foreach (['mapbox_public_token','mapbox_access_token','mapbox_token'] as $key) {
-            $v = trim((string)app_setting($key, '')); if ($valid($v)) return $v;
+            $v = trim((string)app_setting($key, ''));
+            if ($valid($v)) return $v;
         }
         if (isset($config) && is_array($config)) {
             foreach ([$config['mapbox']['public_token'] ?? '', $config['mapbox']['token'] ?? '', $config['mapbox_token'] ?? ''] as $candidate) {
-                $v = trim((string)$candidate;); if ($valid($v)) return $v;
+                $v = trim((string)$candidate);
+                if ($valid($v)) return $v;
             }
         }
     } catch (Throwable $ignored) {}
     foreach (['MAPBOX_PUBLIC_TOKEN','MAPBOX_ACCESS_TOKEN','MAPBOX_TOKEN'] as $key) {
-        $v = trim((string)(getenv($key) ?: '')); if ($valid($v)) return $v;
+        $v = trim((string)(getenv($key) ?: ''));
+        if ($valid($v)) return $v;
     }
     return '';
 }
