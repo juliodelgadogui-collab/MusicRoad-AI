@@ -1,5 +1,6 @@
 package com.estradaplay.comunista;
 
+import org.junit.Before;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -9,6 +10,10 @@ import static org.junit.Assert.*;
 public class RoadHazardSelectorTest {
     private static RoadHazard north(String id, String type, double meters) {
         return new RoadHazard(id, type, meters / 110540.0, 0, "BR-000", 80, Double.NaN, "TEST");
+    }
+
+    @Before public void resetSequenceGate() {
+        RoadAlertSequenceGate.resetForTests();
     }
 
     @Test public void selectorReturnsBestAndNextAhead() {
