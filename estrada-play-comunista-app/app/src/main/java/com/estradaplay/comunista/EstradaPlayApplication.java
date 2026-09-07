@@ -13,6 +13,7 @@ public final class EstradaPlayApplication extends Application {
     private RouteContextV7BackgroundReceiver contextReceiver;
     private ConvoyLiveBridge convoyReceiver;
     private MobilityModeState.Receiver mobilityReceiver;
+    private RouteNavigationAssist routeNavigationAssist;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -30,6 +31,10 @@ public final class EstradaPlayApplication extends Application {
         // SESSION_VALIDITY_GUARD_V300: saved accounts still open instantly/offline, but an explicit
         // server-side 401/403 revocation is applied in background when validated internet exists.
         SessionValidityGuardV300.register(this);
+
+        // ROUTE_DIRECTION_V320: route cancellation and sustained reverse-direction detection are core
+        // navigation behavior, so keep them active even if optional process bridges are deferred.
+        try { routeNavigationAssist = RouteNavigationAssist.install(this); } catch (Throwable ignored) {}
 
         // MUSIC_LIBRARY_INTEGRITY_V247: repair only already-indexed app downloads before any
         // music UI can expose a missing/zero-byte file as a playable song. No storage scan/server.
