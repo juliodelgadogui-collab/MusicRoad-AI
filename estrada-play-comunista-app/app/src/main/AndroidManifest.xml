@@ -19,6 +19,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".EstradaPlayApplication"
@@ -45,7 +46,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- COMBOIO_LINK_MAP_V237: convite compartilhado abre o app e entrega o codigo ao GateActivity. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -54,8 +54,6 @@
             </intent-filter>
         </activity>
 
-        <!-- ANDROID16_CONFIG_RECREATE_V300: only screens with their own onConfigurationChanged
-             implementation keep configChanges. The rest let Android recreate/rebind the UI. -->
         <activity android:name=".AutomotiveActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadMapActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
         <activity android:name=".DestinationActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
@@ -88,9 +86,19 @@
         <activity android:name=".ThoughtsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".MainActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
 
+        <receiver
+            android:name=".RoadSafetyBootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <service android:name=".DownloadService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="dataSync" />
         <service android:name=".PlayerService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="mediaPlayback" />
-        <service android:name=".RoadSafetyService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="location" />
+        <service android:name=".RoadSafetyService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="location" />
         <service
             android:name=".RoadRadioService"
             android:exported="false"
