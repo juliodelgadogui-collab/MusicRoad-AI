@@ -1,4 +1,4 @@
-name: Build Estrada Play Comunista
+name: Build Estrada Play Comunista Universal
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  production-validation:
+  universal-validation:
     runs-on: ubuntu-latest
     timeout-minutes: 70
 
@@ -32,15 +32,22 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Create temporary candidate keystore
+      - name: Restore stable candidate signing key
+        id: candidate-key
+        uses: actions/cache@v4
+        with:
+          path: estrada-play-comunista-app/signing/estradaplay-dev.keystore
+          key: estradaplay-universal-candidate-keystore-v1
+
+      - name: Create candidate signing key once
+        if: steps.candidate-key.outputs.cache-hit != 'true'
         run: |
           mkdir -p estrada-play-comunista-app/signing
-          rm -f estrada-play-comunista-app/signing/estradaplay-dev.keystore
           keytool -genkeypair -v \
             -keystore estrada-play-comunista-app/signing/estradaplay-dev.keystore \
             -storepass android -alias androiddebugkey -keypass android \
             -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Estrada Play Candidate,O=Estrada Play,C=BR"
+            -dname "CN=Estrada Play Stable Candidate,O=Estrada Play,C=BR"
 
       - name: PHP syntax gate
         run: find api server -name '*.php' -print0 | xargs -0 -n1 php -l
@@ -53,9 +60,9 @@ jobs:
         working-directory: estrada-play-comunista-app
         run: gradle --no-daemon --stacktrace lintUniversalDebug
 
-      - name: Compile candidates and instrumentation APK
+      - name: Compile Universal candidate and instrumentation APK
         working-directory: estrada-play-comunista-app
-        run: gradle --no-daemon --stacktrace assembleUniversalCandidate assembleVerticalCandidate assembleHorizontalCandidate assembleUniversalDebugAndroidTest
+        run: gradle --no-daemon --stacktrace assembleUniversalCandidate assembleUniversalDebugAndroidTest
 
       - name: Enable KVM
         if: ${{ inputs.run_device_tests }}
@@ -80,23 +87,20 @@ jobs:
           for p in api database importers server config install.php; do
             if [ -e "$p" ]; then cp -R "$p" dist/Estrada-Play-Comunista-Servidor/; fi
           done
-          (cd dist && zip -qr Estrada-Play-Comunista-Servidor-4.0.zip Estrada-Play-Comunista-Servidor)
+          (cd dist && zip -qr Estrada-Play-Comunista-Servidor-4.1.zip Estrada-Play-Comunista-Servidor)
 
-      - name: Upload candidate APKs
+      - name: Upload Universal candidate APK
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-4.0-CANDIDATOS
-          path: |
-            estrada-play-comunista-app/app/build/outputs/apk/universal/candidate/*.apk
-            estrada-play-comunista-app/app/build/outputs/apk/vertical/candidate/*.apk
-            estrada-play-comunista-app/app/build/outputs/apk/horizontal/candidate/*.apk
+          name: Estrada-Play-Comunista-4.1-UNIVERSAL
+          path: estrada-play-comunista-app/app/build/outputs/apk/universal/candidate/*.apk
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload production server package
+      - name: Upload server package
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-Servidor-4.0
-          path: dist/Estrada-Play-Comunista-Servidor-4.0.zip
+          name: Estrada-Play-Comunista-Servidor-4.1
+          path: dist/Estrada-Play-Comunista-Servidor-4.1.zip
           if-no-files-found: error
           retention-days: 7
