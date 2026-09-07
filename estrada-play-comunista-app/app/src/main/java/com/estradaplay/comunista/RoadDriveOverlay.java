@@ -11,7 +11,6 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import java.util.Locale;
 
 /** Persistent compact trip HUD fed by the same deterministic road broadcast as the map. */
 final class RoadDriveOverlay {
@@ -21,6 +20,10 @@ final class RoadDriveOverlay {
 
     static void update(Context c,FrameLayout host,Intent i){
         if(c==null||host==null||i==null||c instanceof CameraActivity)return;
+        // ROAD_CLEAN_UI_V340: RoadMapActivity already owns route/trip information. Rendering this
+        // second HUD there caused the overlapping metrics visible at the bottom of the map.
+        // DriveRuntimeEnhancer keeps the trip session updated in background, so no function is lost.
+        if(c instanceof RoadMapActivity){View old=host.findViewWithTag(TAG);if(old!=null)host.removeView(old);return;}
         double lat=i.getDoubleExtra("lat",Double.NaN),lon=i.getDoubleExtra("lon",Double.NaN),speed=i.getDoubleExtra("speed_kmh",0);Location l=null;if(Double.isFinite(lat)&&Double.isFinite(lon)){l=new Location("estradaplay");l.setLatitude(lat);l.setLongitude(lon);}
         DriveSessionStore session=new DriveSessionStore(c);DriveSessionStore.Snapshot s=session.update(l,speed);
         long now=System.currentTimeMillis();if(now-lastRenderAt<3000L)return;lastRenderAt=now;
