@@ -11,7 +11,7 @@ def releaseKeyAlias = project.findProperty('ESTRADAPLAY_RELEASE_KEY_ALIAS') ?: S
 def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD') ?: System.getenv('ESTRADAPLAY_RELEASE_KEY_PASSWORD')
 def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
-// EPC_300_PRODUCTION_BASELINE
+// EPC_301_PRODUCTION_STABILIZATION
 // Android 16 / API 36, adaptive windows, offline-first startup, local diagnostics,
 // hardened HTTPS endpoint handling and controlled authenticated redirects.
 android {
@@ -22,8 +22,8 @@ android {
         applicationId 'com.estradaplay.comunista'
         minSdk 24
         targetSdk 36
-        versionCode 300
-        versionName '3.0.0'
+        versionCode 301
+        versionName '3.0.1'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
     }
@@ -77,7 +77,9 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
+            debuggable false
             minifyEnabled false
+            shrinkResources false
             if (releaseSigningReady) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -86,6 +88,18 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// Never silently produce an unsigned artifact that could be mistaken for the production build.
+// Debug validation remains available without release secrets.
+gradle.taskGraph.whenReady { graph ->
+    boolean wantsReleaseArtifact = graph.allTasks.any { task ->
+        String n = task.name == null ? '' : task.name.toLowerCase(java.util.Locale.ROOT)
+        (n.startsWith('assemble') || n.startsWith('bundle')) && n.contains('release')
+    }
+    if (wantsReleaseArtifact && !releaseSigningReady) {
+        throw new GradleException('Release bloqueado: configure ESTRADAPLAY_RELEASE_KEYSTORE, ESTRADAPLAY_RELEASE_STORE_PASSWORD, ESTRADAPLAY_RELEASE_KEY_ALIAS e ESTRADAPLAY_RELEASE_KEY_PASSWORD com a chave permanente de produção.')
     }
 }
 
