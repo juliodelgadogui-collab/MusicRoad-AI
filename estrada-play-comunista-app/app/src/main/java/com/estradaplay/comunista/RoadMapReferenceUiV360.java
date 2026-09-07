@@ -320,7 +320,7 @@ final class RoadMapReferenceUiV360 implements Application.ActivityLifecycleCallb
         mic.setTextSize(28);
         mic.setBackground(round(Color.rgb(222, 13, 39), 22, 0, 0));
         ptt.setOnClickListener(v -> a.startActivity(new Intent(a, RoadRadioActivity.class)));
-        mic.setOnClickListener(v -> CopilotService.requestListenNow(a));
+        mic.setOnClickListener(v -> a.requestCopilotNow());
         dash.setOnClickListener(v -> a.startActivity(new Intent(a, CameraActivity.class)));
         drive.addView(ptt, new LinearLayout.LayoutParams(0, -1, 1f));
         LinearLayout.LayoutParams micLp = new LinearLayout.LayoutParams(0, -1, 1.12f);

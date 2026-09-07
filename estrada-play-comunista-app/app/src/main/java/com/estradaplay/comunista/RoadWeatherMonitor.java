@@ -49,6 +49,10 @@ final class RoadWeatherMonitor {
         final int routeRainChance;
         final String routeLabel;
         final long updatedAt;
+        final double currentPrecipMm;
+        final double nextRainMm;
+        final double next6hTotalMm;
+        final double routeRainMm;
         final String error;
 
         Snapshot(boolean available, boolean currentWet, int currentChance,
@@ -56,10 +60,12 @@ final class RoadWeatherMonitor {
                  String condition, int nextRainMinutes, int nextRainChance,
                  int next6hMaxChance, double next6hMinTempC, double next6hMaxTempC,
                  double routeRainKm, int routeRainMinutes, int routeRainChance,
-                 String routeLabel, long updatedAt, String error) {
+                 String routeLabel, long updatedAt, double currentPrecipMm, double nextRainMm,
+                 double next6hTotalMm, double routeRainMm, String error) {
             this.available = available;
             this.currentWet = currentWet;
             this.currentChance = currentChance;
+            this.currentPrecipMm = currentPrecipMm;
             this.currentTempC = currentTempC;
             this.feelsLikeC = feelsLikeC;
             this.windKmh = windKmh;
@@ -75,6 +81,10 @@ final class RoadWeatherMonitor {
             this.routeRainChance = routeRainChance;
             this.routeLabel = routeLabel == null ? "" : routeLabel;
             this.updatedAt = updatedAt;
+            this.currentPrecipMm = currentPrecipMm;
+            this.nextRainMm = nextRainMm;
+            this.next6hTotalMm = next6hTotalMm;
+            this.routeRainMm = routeRainMm;
             this.error = error == null ? "" : error;
         }
 
@@ -95,11 +105,11 @@ final class RoadWeatherMonitor {
             if (!available) return "CLIMA · atualizando…";
             String temp = Double.isFinite(currentTempC) ? Math.round(currentTempC) + "°" : "";
             String prefix = temp.isEmpty() ? "CLIMA" : "CLIMA · " + temp;
-            if (currentWet) return prefix + " · CHUVA AGORA" + chanceText(currentChance);
+            if (currentWet) return prefix + " · CHUVA AGORA" + mmText(currentPrecipMm) + chanceText(currentChance);
             if (routeRisk()) {
-                return prefix + " · CHUVA EM " + distance(routeRainKm) + " (~" + routeRainMinutes + " min)" + chanceText(routeRainChance);
+                return prefix + " · CHUVA EM " + distance(routeRainKm) + " (~" + routeRainMinutes + " min)" + mmText(routeRainMm) + chanceText(routeRainChance);
             }
-            if (nextRainMinutes >= 0) return prefix + " · CHUVA EM ~" + nextRainMinutes + " min" + chanceText(nextRainChance);
+            if (nextRainMinutes >= 0) return prefix + " · CHUVA EM ~" + nextRainMinutes + " min" + mmText(nextRainMm) + chanceText(nextRainChance);
             if (gustKmh >= 55) return prefix + " · VENTO FORTE · rajadas " + Math.round(gustKmh) + " km/h";
             return prefix + " · " + condition + " · seco nas próximas 3 h";
         }
@@ -108,17 +118,19 @@ final class RoadWeatherMonitor {
             if (!available) return "Ainda não tenho uma previsão do tempo atualizada.";
             String temp = Double.isFinite(currentTempC) ? " Temperatura de " + Math.round(currentTempC) + " graus." : "";
             if (currentWet) {
-                String base = "Chuva agora na sua região." + temp;
+                String base = "Chuva agora na sua região." + spokenMm(currentPrecipMm) + temp;
                 return currentChance > 0 ? base + " Probabilidade de " + currentChance + " por cento." : base;
             }
             if (routeRisk()) {
                 String base = "Chuva prevista à frente, a aproximadamente " + spokenDistance(routeRainKm)
                         + ", em cerca de " + routeRainMinutes + " minutos.";
+                base += spokenMm(routeRainMm);
                 if (routeRainChance > 0) base += " Probabilidade de " + routeRainChance + " por cento.";
                 return base + temp;
             }
             if (nextRainMinutes >= 0) {
                 String base = "Há chuva prevista para esta região em cerca de " + nextRainMinutes + " minutos.";
+                base += spokenMm(nextRainMm);
                 if (nextRainChance > 0) base += " Probabilidade de " + nextRainChance + " por cento.";
                 return base + temp;
             }
@@ -154,9 +166,15 @@ final class RoadWeatherMonitor {
                 if (out.length() > 0) out.append(" · ");
                 out.append("baixa chance de chuva");
             }
+            if (next6hTotalMm > 0.04) {
+                if (out.length() > 0) out.append(" · ");
+                out.append("~").append(String.format(Locale.getDefault(), "%.1f", next6hTotalMm)).append(" mm/6h");
+            }
             return out.toString();
         }
 
+        private static String mmText(double mm) { return Double.isFinite(mm) && mm > 0.04 ? " · " + String.format(Locale.getDefault(), "%.1f mm", mm) : ""; }
+        private static String spokenMm(double mm) { return Double.isFinite(mm) && mm > 0.04 ? " Previsão de cerca de " + String.format(Locale.getDefault(), "%.1f", mm) + " milímetros de precipitação." : ""; }
         private static String chanceText(int chance) { return chance > 0 ? " · " + chance + "%" : ""; }
         private static String distance(double km) { return km < 10 ? String.format(Locale.getDefault(), "%.1f km", km) : Math.round(km) + " km"; }
         private static String spokenDistance(double km) { return km < 10 ? String.format(Locale.getDefault(), "%.1f quilômetros", km) : Math.round(km) + " quilômetros"; }
@@ -186,6 +204,10 @@ final class RoadWeatherMonitor {
                 p.getInt("route_rain_chance", 0),
                 p.getString("route_label", ""),
                 at,
+                p.getFloat("current_precip_mm", Float.NaN),
+                p.getFloat("next_rain_mm", Float.NaN),
+                p.getFloat("next_6h_total_mm", Float.NaN),
+                p.getFloat("route_rain_mm", Float.NaN),
                 p.getString("last_error", "")
         );
     }
@@ -208,12 +230,14 @@ final class RoadWeatherMonitor {
         try {
             Forecast f = fetchSingle(lat, lon, LOCAL_HOURS);
             int nextMin = -1, nextChance = 0;
+            double nextRainMm = Double.NaN, totalMm6h = 0;
             int maxChance6h = 0;
             double minTemp6h = Double.NaN, maxTemp6h = Double.NaN;
             int horizon = Math.min(6, f.size());
             for (int i = 0; i < horizon; i++) {
                 Risk r = f.riskAt(i);
                 maxChance6h = Math.max(maxChance6h, r.chance);
+                if (Double.isFinite(r.mm) && r.mm > 0) totalMm6h += r.mm;
                 double t = f.temperatureAt(i);
                 if (Double.isFinite(t)) {
                     minTemp6h = !Double.isFinite(minTemp6h) ? t : Math.min(minTemp6h, t);
@@ -222,12 +246,14 @@ final class RoadWeatherMonitor {
                 if (nextMin < 0 && r.rain && !(i == 0 && f.currentWet)) {
                     nextMin = i * 60;
                     nextChance = r.chance;
+                    nextRainMm = r.mm;
                 }
             }
             long now = System.currentTimeMillis();
             prefs(app).edit()
                     .putBoolean("current_wet", f.currentWet)
                     .putInt("current_chance", f.currentChance)
+                    .putFloat("current_precip_mm", finiteFloat(f.currentPrecipMm))
                     .putFloat("current_temp_c", finiteFloat(f.currentTempC))
                     .putFloat("feels_like_c", finiteFloat(f.feelsLikeC))
                     .putFloat("wind_kmh", finiteFloat(f.windKmh))
@@ -235,6 +261,8 @@ final class RoadWeatherMonitor {
                     .putString("condition", conditionFromCode(f.currentCode))
                     .putInt("next_rain_min", nextMin)
                     .putInt("next_rain_chance", nextChance)
+                    .putFloat("next_rain_mm", finiteFloat(nextRainMm))
+                    .putFloat("next_6h_total_mm", finiteFloat(totalMm6h))
                     .putInt("next_6h_max_chance", maxChance6h)
                     .putFloat("next_6h_min_temp", finiteFloat(minTemp6h))
                     .putFloat("next_6h_max_temp", finiteFloat(maxTemp6h))
@@ -287,6 +315,7 @@ final class RoadWeatherMonitor {
                 .putLong("route_rain_km_bits", Double.doubleToRawLongBits(Double.NaN))
                 .putInt("route_rain_min", -1)
                 .putInt("route_rain_chance", 0)
+                .putFloat("route_rain_mm", Float.NaN)
                 .apply();
     }
 
@@ -313,6 +342,7 @@ final class RoadWeatherMonitor {
             ArrayList<Forecast> forecasts = fetchMany(samples, ROUTE_HOURS);
             double riskKm = Double.NaN;
             int riskMin = -1, riskChance = 0;
+            double riskMm = Double.NaN;
             int count = Math.min(samples.size(), forecasts.size());
             for (int i = 0; i < count; i++) {
                 Sample s = samples.get(i);
@@ -324,12 +354,14 @@ final class RoadWeatherMonitor {
                 riskKm = s.km;
                 riskMin = s.minutes;
                 riskChance = risk.chance;
+                riskMm = risk.mm;
                 break;
             }
             p.edit()
                     .putLong("route_rain_km_bits", Double.doubleToRawLongBits(riskKm))
                     .putInt("route_rain_min", riskMin)
                     .putInt("route_rain_chance", riskChance)
+                    .putFloat("route_rain_mm", finiteFloat(riskMm))
                     .apply();
         } catch (Throwable e) {
             p.edit().putString("last_error", cleanError(e)).apply();
@@ -341,6 +373,7 @@ final class RoadWeatherMonitor {
                 .putLong("route_rain_km_bits", Double.doubleToRawLongBits(Double.NaN))
                 .putInt("route_rain_min", -1)
                 .putInt("route_rain_chance", 0)
+                .putFloat("route_rain_mm", Float.NaN)
                 .apply();
     }
 
@@ -411,17 +444,19 @@ final class RoadWeatherMonitor {
     private static final class Risk {
         final boolean rain;
         final int chance;
-        Risk(boolean rain, int chance) { this.rain = rain; this.chance = Math.max(0, Math.min(100, chance)); }
+        final double mm;
+        Risk(boolean rain, int chance, double mm) { this.rain = rain; this.chance = Math.max(0, Math.min(100, chance)); this.mm = Math.max(0, Double.isFinite(mm) ? mm : 0); }
     }
 
     private static final class Forecast {
         final boolean currentWet;
         final int currentChance;
+        final double currentPrecipMm;
         final double currentTempC, feelsLikeC, windKmh, gustKmh;
         final int currentCode;
         final JSONArray temperature, probability, precipitation, rain, showers, code;
 
-        Forecast(boolean currentWet, int currentChance, double currentTempC, double feelsLikeC,
+        Forecast(boolean currentWet, int currentChance, double currentPrecipMm, double currentTempC, double feelsLikeC,
                  double windKmh, double gustKmh, int currentCode,
                  JSONArray temperature, JSONArray probability, JSONArray precipitation,
                  JSONArray rain, JSONArray showers, JSONArray code) {
@@ -449,12 +484,13 @@ final class RoadWeatherMonitor {
             JSONArray rain = hourly == null ? null : hourly.optJSONArray("rain");
             JSONArray showers = hourly == null ? null : hourly.optJSONArray("showers");
             JSONArray code = hourly == null ? null : hourly.optJSONArray("weather_code");
-            double nowP = current == null ? 0 : current.optDouble("precipitation", 0) + current.optDouble("rain", 0) + current.optDouble("showers", 0);
+            double nowP = current == null ? 0 : current.optDouble("precipitation", Double.NaN);
+            if (!Double.isFinite(nowP)) nowP = current == null ? 0 : current.optDouble("rain", 0) + current.optDouble("showers", 0);
             int nowCode = current == null ? 0 : current.optInt("weather_code", 0);
             boolean wet = nowP > 0.05 || rainyCode(nowCode);
             int chance = probability == null || probability.length() == 0 ? (wet ? 100 : 0) : probability.optInt(0, wet ? 100 : 0);
             return new Forecast(
-                    wet, chance,
+                    wet, chance, nowP,
                     current == null ? Double.NaN : current.optDouble("temperature_2m", Double.NaN),
                     current == null ? Double.NaN : current.optDouble("apparent_temperature", Double.NaN),
                     current == null ? Double.NaN : current.optDouble("wind_speed_10m", Double.NaN),
@@ -469,25 +505,28 @@ final class RoadWeatherMonitor {
         double temperatureAt(int i) { return i < 0 ? Double.NaN : temperature.optDouble(i, Double.NaN); }
 
         Risk riskAt(int i) {
-            if (i < 0) return new Risk(false, 0);
+            if (i < 0) return new Risk(false, 0, 0);
             int chance = probability.optInt(i, 0);
-            double mm = precipitation.optDouble(i, 0) + rain.optDouble(i, 0) + showers.optDouble(i, 0);
+            double mm = precipitation.optDouble(i, Double.NaN);
+            if (!Double.isFinite(mm)) mm = rain.optDouble(i, 0) + showers.optDouble(i, 0);
             int weather = code.optInt(i, 0);
             boolean risk = chance >= 40 || mm >= 0.10 || rainyCode(weather);
             if (risk && chance <= 0) chance = mm >= 0.10 || rainyCode(weather) ? 70 : 40;
-            return new Risk(risk, chance);
+            return new Risk(risk, chance, mm);
         }
 
         Risk riskAround(int hour) {
             boolean rain = false;
             int chance = 0;
+            double mm = 0;
             int from = Math.max(0, hour - 1), to = Math.min(Math.max(0, size() - 1), hour + 1);
             for (int i = from; i <= to; i++) {
                 Risk r = riskAt(i);
                 rain = rain || r.rain;
                 chance = Math.max(chance, r.chance);
+                mm = Math.max(mm, r.mm);
             }
-            return new Risk(rain, chance);
+            return new Risk(rain, chance, mm);
         }
     }
 

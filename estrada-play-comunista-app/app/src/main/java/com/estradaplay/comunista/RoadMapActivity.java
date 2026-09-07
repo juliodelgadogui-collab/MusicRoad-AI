@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class RoadMapActivity extends ComponentActivity {
     private static final String UI_PREFS = "estradaplay_ui_v1";
     private static final String KEY_ACCOUNT = "account";
+    private static final int REQ_COPILOT_AUDIO = 2202;
 
     private final int BG = Color.rgb(6, 4, 5);
     private final int SURFACE = Color.rgb(14, 8, 10);
@@ -298,6 +299,20 @@ public final class RoadMapActivity extends ComponentActivity {
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);DestinationStore.Destination fresh=DestinationStore.read(this);if(!DestinationStore.same(destination,fresh)){destination=fresh;activeRoute=null;routeProgressM=0;routeSegmentHint=-1;offRouteSamples=0;routeArrived=false;intelligentContext=null;lastContextAttemptAt=0L;lastRouteAt=0L;if(roadMap!=null)roadMap.setRouteGeoJson(null);if(root!=null)buildResponsiveUi();if(Double.isFinite(lastLat)&&Double.isFinite(lastLon))refreshDestinationRoute(lastLat,lastLon);}}
     private void seedLocation(){try{LocationManager lm=(LocationManager)getSystemService(LOCATION_SERVICE);if(lm==null||(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED))return;Location best=null;for(String provider:new String[]{LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER}){try{Location l=lm.getLastKnownLocation(provider);if(l!=null&&(best==null||l.getTime()>best.getTime()))best=l;}catch(Throwable ignored){}}if(best!=null){lastLat=best.getLatitude();lastLon=best.getLongitude();if(best.hasBearing())lastHeading=best.getBearing();if(roadMap!=null)roadMap.setUserLocation(lastLat,lastLon,lastHeading);refreshMapData(lastLat,lastLon,0);refreshDestinationRoute(lastLat,lastLon);refreshIntelligentContext(lastLat,lastLon);}}catch(Throwable ignored){}}
     private void registerRoadReceiver(){if(receiverRegistered)return;try{IntentFilter f=new IntentFilter(RoadSafetyService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)InternalBroadcasts.register(this, roadReceiver, f);else InternalBroadcasts.register(this, roadReceiver, f);receiverRegistered=true;}catch(Throwable ignored){}}
+    void requestCopilotNow(){
+        if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){
+            CopilotService.requestListenNow(this);return;
+        }
+        try{requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQ_COPILOT_AUDIO);}catch(Throwable ignored){
+            Toast.makeText(this,"Não foi possível solicitar acesso ao microfone.",Toast.LENGTH_SHORT).show();
+        }
+    }
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+        if(requestCode!=REQ_COPILOT_AUDIO)return;
+        if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)CopilotService.requestListenNow(this);
+        else Toast.makeText(this,"Autorize o microfone para falar com o Copiloto.",Toast.LENGTH_LONG).show();
+    }
     private void startSafety(){try{Intent i=new Intent(this,RoadSafetyService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Throwable ignored){}}
     private boolean hasAccount(){try{SharedPreferences p=getSharedPreferences(UI_PREFS,MODE_PRIVATE);JSONObject a=new JSONObject(p.getString(KEY_ACCOUNT,"{}"));return a.optBoolean("authenticated",false)||a.optJSONObject("user")!=null;}catch(Throwable e){return false;}}
     private boolean hasLocation(){return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED||checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED;}

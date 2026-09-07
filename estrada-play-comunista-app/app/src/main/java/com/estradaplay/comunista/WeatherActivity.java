@@ -51,6 +51,7 @@ public final class WeatherActivity extends ComponentActivity {
         String temp="—";if(Double.isFinite(s.currentTempC)){temp=Math.round(s.currentTempC)+" °C";if(Double.isFinite(s.feelsLikeC))temp+=" · sensação "+Math.round(s.feelsLikeC)+" °C";}
         local.addView(metric("TEMPERATURA",temp,TEXT));
         local.addView(metric("CHANCE DE CHUVA AGORA",s.available?(s.currentChance+"%"):"—",s.currentChance>=40?GOLD:GREEN));
+        local.addView(metric("PRECIPITAÇÃO AGORA",s.available?mm(s.currentPrecipMm):"—",s.currentPrecipMm>=1?GOLD:TEXT));
         String wind="—";if(Double.isFinite(s.windKmh)){wind=Math.round(s.windKmh)+" km/h";if(Double.isFinite(s.gustKmh)&&s.gustKmh>s.windKmh+5)wind+=" · rajadas "+Math.round(s.gustKmh)+" km/h";}
         local.addView(metric("VENTO",wind,s.gustKmh>=55?GOLD:TEXT));
         add(page,local,0,8,0,16,-1,-2);
@@ -58,7 +59,8 @@ public final class WeatherActivity extends ComponentActivity {
         page.addView(section("PRÓXIMAS 6 HORAS","Resumo para saber o que muda sem precisar interpretar muitos números."));
         LinearLayout next=card();
         next.addView(metric("TENDÊNCIA",s.available?s.nextHoursSummary():"SEM DADOS",s.next6hMaxChance>=40?GOLD:GREEN));
-        next.addView(metric("PRÓXIMA CHUVA",s.nextRainMinutes>=0?("~"+s.nextRainMinutes+" min · "+s.nextRainChance+"%"):"não prevista nas próximas horas",s.nextRainMinutes>=0?GOLD:GREEN));
+        next.addView(metric("ACUMULADO PREVISTO · 6H",s.available?mm(s.next6hTotalMm):"—",s.next6hTotalMm>=5?RED:(s.next6hTotalMm>=1?GOLD:GREEN)));
+        next.addView(metric("PRÓXIMA CHUVA",s.nextRainMinutes>=0?("~"+s.nextRainMinutes+" min · "+mm(s.nextRainMm)+" · "+s.nextRainChance+"%"):"não prevista nas próximas horas",s.nextRainMinutes>=0?GOLD:GREEN));
         add(page,next,0,8,0,16,-1,-2);
 
         page.addView(section("AO LONGO DA ROTA","O Estrada Play cruza vários pontos do percurso com o horário estimado de chegada."));
@@ -66,7 +68,7 @@ public final class WeatherActivity extends ComponentActivity {
         if(s.routeRisk()){
             route.addView(over("CHUVA NO CAMINHO",RED));
             route.addView(text(String.format(Locale.getDefault(),"Aproximadamente %.0f km à frente",s.routeRainKm),20,TEXT,true));
-            route.addView(text("Chegada estimada ao trecho em ~"+s.routeRainMinutes+" min · chance "+s.routeRainChance+"%",12,GOLD,true));
+            route.addView(text("Chegada estimada ao trecho em ~"+s.routeRainMinutes+" min · "+mm(s.routeRainMm)+" · chance "+s.routeRainChance+"%",12,GOLD,true));
             if(!s.routeLabel.isEmpty())route.addView(text("Destino: "+s.routeLabel,10,MUTED,false));
         }else if(!s.routeLabel.isEmpty()){
             route.addView(over("ROTA MONITORADA",GREEN));route.addView(text("Sem chuva relevante detectada nos pontos analisados do caminho.",15,TEXT,true));route.addView(text("Destino: "+s.routeLabel,10,MUTED,false));
@@ -78,13 +80,14 @@ public final class WeatherActivity extends ComponentActivity {
         Button refresh=button("ATUALIZAR CLIMA AGORA",true);add(page,refresh,0,0,0,8,-1,dp(56));refresh.setOnClickListener(v->refresh(refresh));
         Button toggle=button(DriveSettings.autoRain(this)?"CLIMA AUTOMÁTICO · ATIVO":"CLIMA AUTOMÁTICO · DESLIGADO",false);add(page,toggle,0,0,0,16,-1,dp(50));toggle.setOnClickListener(v->{boolean n=!DriveSettings.autoRain(this);DriveSettings.toggle(this,"rain_auto",n);toast(n?"Clima automático ativado":"Clima automático desativado");build();});
 
-        LinearLayout explain=card();explain.addView(over("COMO FUNCIONA",MUTED));explain.addView(text("• condição atual: temperatura, sensação, chuva, vento e código meteorológico\n• próximas horas: faixa de temperatura e maior chance de chuva\n• rota: até seis pontos do percurso comparados com o horário previsto de chegada\n• sem resposta do provedor, o app mantém a última informação válida e indica quando ficou antiga",11,TEXT,false));add(page,explain,0,0,0,0,-1,-2);
+        LinearLayout explain=card();explain.addView(over("COMO FUNCIONA",MUTED));explain.addView(text("• condição atual: temperatura, sensação, chuva em milímetros, vento e código meteorológico\n• próximas horas: faixa de temperatura, chance e acumulado de chuva em mm\n• rota: até seis pontos do percurso comparados com o horário previsto de chegada e volume previsto no trecho\n• sem resposta do provedor, o app mantém a última informação válida e indica quando ficou antiga",11,TEXT,false));add(page,explain,0,0,0,0,-1,-2);
         if(!s.error.isEmpty()){TextView e=text("Última falha de atualização: "+s.error,9,MUTED,false);add(page,e,2,8,0,0,-1,-2);}
     }
 
     private void refresh(Button b){if(!DriveSettings.autoRain(this)){toast("Ative Clima Automático primeiro.");return;}Location l=last();if(l==null){toast("Ainda não tenho uma posição GPS válida.");return;}b.setEnabled(false);b.setText("ATUALIZANDO…");io.execute(()->{RoadWeatherMonitor.refresh(getApplicationContext(),l.getLatitude(),l.getLongitude());runOnUiThread(()->{b.setEnabled(true);toast("Clima atualizado");build();});});}
 
     private Location last(){if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED)return null;try{LocationManager m=(LocationManager)getSystemService(Context.LOCATION_SERVICE);Location best=null;for(String p:new String[]{LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER}){Location x=m.getLastKnownLocation(p);if(x!=null&&(best==null||x.getTime()>best.getTime()))best=x;}return best;}catch(Throwable e){return null;}}
+    private String mm(double value){if(!Double.isFinite(value)||value<0)return "—";return String.format(Locale.getDefault(),"%.1f mm",Math.max(0,value));}
     private View section(String title,String sub){LinearLayout x=col();x.addView(over(title,MUTED));x.addView(text(sub,10,MUTED,false));return x;}
     private View metric(String label,String value,int accent){LinearLayout x=col();x.setPadding(dp(12),dp(10),dp(12),dp(10));x.setBackground(panel(SURFACE2,13,BORDER));x.addView(over(label,MUTED));x.addView(text(value,16,accent,true));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,0,0,dp(8));x.setLayoutParams(p);return x;}
     private LinearLayout card(){LinearLayout c=col();c.setPadding(dp(16),dp(15),dp(16),dp(15));c.setBackground(panel(SURFACE,17,BORDER));return c;}

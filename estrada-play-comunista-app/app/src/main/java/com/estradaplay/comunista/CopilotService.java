@@ -1,6 +1,7 @@
 package com.estradaplay.comunista;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -68,6 +69,7 @@ public final class CopilotService extends Service {
     private boolean safetyAudioBusy;
     private boolean pttBusy;
     private boolean registered;
+    private boolean foregroundStarted;
     private boolean oneShot;
     private int utteranceCounter;
     private Runnable wakeRetry;
@@ -83,6 +85,7 @@ public final class CopilotService extends Service {
     private float lastHeading = Float.NaN;
 
     static void requestStart(Context context) {
+        if (!canStartMicrophoneFgs(context)) return;
         Intent intent = new Intent(context, CopilotService.class).setAction(ACTION_START);
         try {
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
@@ -96,6 +99,7 @@ public final class CopilotService extends Service {
     }
 
     static void requestListenNow(Context context) {
+        if (!canStartMicrophoneFgs(context)) return;
         Intent intent = new Intent(context, CopilotService.class).setAction(ACTION_LISTEN_NOW);
         try {
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
@@ -108,10 +112,19 @@ public final class CopilotService extends Service {
         try { context.startService(intent); } catch (Throwable ignored) {}
     }
 
+    private static boolean canStartMicrophoneFgs(Context context) {
+        if (context == null) return false;
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return false;
+        // Android 14+ rejects creation of a microphone FGS from a background-only context.
+        // If the process dies, ActivityLifecycleCallbacks re-arm it when the app is visible again.
+        return Build.VERSION.SDK_INT < 34 || context instanceof Activity;
+    }
+
     @Override public void onCreate() {
         super.onCreate();
         createChannel();
-        startForeground(NOTIFICATION_ID, notification("Copiloto", "Preparando serviço de voz"));
+        // Do not call startForeground here. Android 14+ may recreate a service before the
+        // while-in-use microphone eligibility exists; onStartCommand validates it safely.
         initTts();
         registerContextReceivers();
     }
@@ -124,25 +137,46 @@ public final class CopilotService extends Service {
             stopSelfSafely();
             return START_NOT_STICKY;
         }
+        if (ACTION_QUERY.equals(action)) {
+            publishCurrentState();
+            return START_NOT_STICKY;
+        }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             setState(STATE_OFF, "Autorize o microfone para usar o Copiloto");
             stopSelfSafely();
             return START_NOT_STICKY;
         }
-        if (ACTION_QUERY.equals(action)) {
-            publishCurrentState();
-            return START_STICKY;
+        if (!ensureForeground()) {
+            // Never crash/restart-loop. The next visible Activity safely re-arms the service.
+            setState(STATE_OFF, "Abra o Estrada Play para reativar o microfone do Copiloto");
+            stopSelfSafely();
+            return START_NOT_STICKY;
         }
         if (ACTION_LISTEN_NOW.equals(action)) {
             oneShot = !CopilotSettings.enabled(this);
             beginCommandListening();
-            return START_STICKY;
+            return START_NOT_STICKY;
         }
         CopilotSettings.setEnabled(this, true);
         oneShot = false;
         enterWaiting("Diga “" + CopilotSettings.wakeWord(this) + "”");
         scheduleWake(180L);
-        return START_STICKY;
+        return START_NOT_STICKY;
+    }
+
+    private boolean ensureForeground() {
+        if (foregroundStarted) return true;
+        try {
+            startForeground(NOTIFICATION_ID, notification("Copiloto", "Preparando serviço de voz"));
+            foregroundStarted = true;
+            return true;
+        } catch (SecurityException | IllegalStateException denied) {
+            foregroundStarted = false;
+            return false;
+        } catch (Throwable denied) {
+            foregroundStarted = false;
+            return false;
+        }
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
@@ -613,6 +647,7 @@ public final class CopilotService extends Service {
         cancelRecognition();
         duckPlayer(false);
         try { stopForeground(true); } catch (Throwable ignored) {}
+        foregroundStarted = false;
         stopSelf();
     }
 
