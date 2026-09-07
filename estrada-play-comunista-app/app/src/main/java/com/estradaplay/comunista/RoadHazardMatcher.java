@@ -28,33 +28,48 @@ final class RoadHazardMatcher {
         if("QUEBRA_MOLAS".equals(hazard.type)){if(forward < -12.0)return Match.no();}
         else if(forward<=12.0)return Match.no();
 
-        double maxDistance,maxLateral,minSpeed;
+        double maxDistance=warningDistance(hazard.type,speedKmh,rain);
+        double maxLateral,minSpeed;
         switch(hazard.type){
-            case "SEMAFORO_RADAR":
-                maxDistance=speedKmh>=70?900:(speedKmh>=45?650:450);maxLateral=85;minSpeed=8;break;
-            case "SEMAFORO":
-                maxDistance=speedKmh>=55?300:220;maxLateral=55;minSpeed=18;break;
-            case "QUEBRA_MOLAS":
-                maxDistance=speedKmh>=55?430:300;maxLateral=55;minSpeed=3;break;
-            case "CAMERA_MONITORAMENTO":
-                maxDistance=speedKmh>=80?650:450;maxLateral=75;minSpeed=8;break;
-            case "PEDAGIO":
-                maxDistance=speedKmh>=80?1100:800;maxLateral=150;minSpeed=10;break;
-            case "PASSAGEM_NIVEL":
-                maxDistance=speedKmh>=70?700:500;maxLateral=85;minSpeed=10;break;
-            default:
-                maxDistance=speedKmh>=95?1250:(speedKmh>=70?1000:700);maxLateral=speedKmh>=70?115:85;minSpeed=10;break;
+            case "SEMAFORO_RADAR": maxLateral=72;minSpeed=7;break;
+            case "SEMAFORO": maxLateral=48;minSpeed=12;break;
+            case "QUEBRA_MOLAS": maxLateral=50;minSpeed=3;break;
+            case "CAMERA_MONITORAMENTO": maxLateral=65;minSpeed=7;break;
+            case "PEDAGIO": maxLateral=135;minSpeed=8;break;
+            case "PASSAGEM_NIVEL": maxLateral=75;minSpeed=8;break;
+            default: maxLateral=speedKmh>=70?100:78;minSpeed=8;break;
         }
-        if(rain)maxDistance*=1.18;
-        if(speedKmh<minSpeed||forward>maxDistance||lateral>maxLateral||distance>maxDistance*1.18)return Match.no();
-        if(Double.isFinite(hazard.heading)&&angleDiff(heading,hazard.heading)>75.0)return Match.no();
+        if(speedKmh<minSpeed||forward>maxDistance||lateral>maxLateral||distance>maxDistance*1.16)return Match.no();
+
+        // Equipment with a known direction gets a stricter tolerance at road speed.
+        // Low speed gets a little more tolerance for curves and junction approaches.
+        if(Double.isFinite(hazard.heading)){
+            double allowed=speedKmh>=80?48.0:(speedKmh>=40?58.0:72.0);
+            if(angleDiff(heading,hazard.heading)>allowed)return Match.no();
+        }
         return new Match(true,forward,lateral,distance);
     }
 
+    /** Continuous warning window: faster travel means earlier warning, without abrupt thresholds. */
+    static double warningDistance(String type,double speedKmh,boolean rain){
+        double v=Math.max(0.0,Math.min(180.0,speedKmh));
+        double d;
+        switch(type==null?"":type){
+            case "QUEBRA_MOLAS": d=210.0+v*4.1; d=clamp(d,260,720); break;
+            case "SEMAFORO_RADAR": d=330.0+v*5.8; d=clamp(d,420,1050); break;
+            case "SEMAFORO": d=150.0+v*2.8; d=clamp(d,190,500); break;
+            case "CAMERA_MONITORAMENTO": d=300.0+v*4.0; d=clamp(d,380,850); break;
+            case "PEDAGIO": d=580.0+v*5.8; d=clamp(d,720,1450); break;
+            case "PASSAGEM_NIVEL": d=360.0+v*4.6; d=clamp(d,480,1050); break;
+            default: d=470.0+v*7.2; d=clamp(d,620,1450); break;
+        }
+        return rain?Math.min(1650.0,d*1.18):d;
+    }
+
     static double priorityBias(String type) {
-        if("QUEBRA_MOLAS".equals(type))return -220.0;
+        if("QUEBRA_MOLAS".equals(type))return -240.0;
         if("RADAR".equals(type))return -160.0;
-        if("SEMAFORO_RADAR".equals(type))return -150.0;
+        if("SEMAFORO_RADAR".equals(type))return -155.0;
         if("PASSAGEM_NIVEL".equals(type))return -130.0;
         if("SEMAFORO".equals(type))return -90.0;
         if("CAMERA_MONITORAMENTO".equals(type))return -35.0;
@@ -62,4 +77,5 @@ final class RoadHazardMatcher {
     }
 
     static double angleDiff(double a,double b){double d=Math.abs(a-b)%360.0;return d>180.0?360.0-d:d;}
+    private static double clamp(double v,double min,double max){return Math.max(min,Math.min(max,v));}
 }
