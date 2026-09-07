@@ -1,3 +1,269 @@
 package com.estradaplay.comunista;
-import android.Manifest;import android.content.*;import android.content.pm.PackageManager;import android.graphics.*;import android.os.*;import android.speech.*;import android.speech.tts.TextToSpeech;import android.view.*;import android.widget.*;import androidx.activity.ComponentActivity;import java.util.*;
-public final class VoiceCommandActivity extends ComponentActivity implements RecognitionListener{private static final int REQ=2201;private SpeechRecognizer sr;private TextToSpeech tts;private TextView state;private int lastLimit;private String lastHazard="",upcoming="",core="";private double lastDistance,lastLat=Double.NaN,lastLon=Double.NaN,lastSpeed;private boolean reg;private BroadcastReceiver rx;@Override protected void onCreate(Bundle b){super.onCreate(b);LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setGravity(Gravity.CENTER);p.setPadding(dp(24),dp(24),dp(24),dp(24));p.setBackgroundColor(Color.rgb(9,5,7));setContentView(UnifiedAppShell.wrap(this,"central",p));p.addView(t("COPILOTO · COMANDO CURTO",28,Color.rgb(246,238,224),true));TextView hint=t("‘qual o limite’, ‘o que vem’, ‘tem radar’, ‘autonomia’, ‘offline’, ‘planejar’, ‘comboio’, ‘estrada viva’, ‘vai chover’, ‘clima’, ‘manutenção’, ‘combustível’, ‘OBD’, ‘SOS’, ‘câmera’, ‘posto’, ‘histórico’.",13,Color.rgb(174,151,146),false);hint.setGravity(Gravity.CENTER);p.addView(hint);state=t("TOQUE PARA FALAR",16,Color.rgb(224,184,76),true);state.setGravity(Gravity.CENTER);p.addView(state);Button speak=new Button(this);speak.setText("FALAR");speak.setOnClickListener(v->listen());p.addView(speak,new LinearLayout.LayoutParams(-1,dp(62)));tts=new TextToSpeech(this,x->{if(x==TextToSpeech.SUCCESS)tts.setLanguage(new Locale("pt","BR"));});}private void listen(){if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQ);return;}if(!SpeechRecognizer.isRecognitionAvailable(this)){say("Reconhecimento de voz não disponível neste aparelho.");return;}if(sr==null){sr=SpeechRecognizer.createSpeechRecognizer(this);sr.setRecognitionListener(this);}Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"pt-BR");i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,3);state.setText("OUVINDO...");sr.startListening(i);}@Override public void onRequestPermissionsResult(int r,String[] p,int[] g){super.onRequestPermissionsResult(r,p,g);if(r==REQ&&g.length>0&&g[0]==PackageManager.PERMISSION_GRANTED)listen();}@Override public void onResults(Bundle b){ArrayList<String>a=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);String q=a==null||a.isEmpty()?"":a.get(0).toLowerCase(Locale.ROOT);state.setText(q.isEmpty()?"NÃO ENTENDI":q.toUpperCase(Locale.ROOT));handle(q);}private void handle(String q){if(q.contains("limite")){say(lastLimit>0?"O limite registrado aqui é "+lastLimit+" quilômetros por hora.":"Ainda não tenho limite confirmado para esta via.");return;}if(q.contains("o que vem")||q.contains("pela frente")||q.contains("próximo")||q.contains("proximo")){say(upcoming.isEmpty()?"Não tenho perigo próximo dentro da faixa atual.":"À frente: "+upcoming.replace("→","depois"));return;}if(q.contains("radar")){say(lastHazard.toLowerCase(Locale.ROOT).contains("radar")?"Há radar a aproximadamente "+Math.round(lastDistance)+" metros.":"Não há radar dentro da janela de alerta atual.");return;}if(q.contains("autonomia")||q.contains("combustível")||q.contains("combustivel")){VehicleProfileStore.Profile v=VehicleProfileStore.active(this);say("Autonomia estimada de "+Math.round(v.autonomyKm())+" quilômetros, com "+Math.round(v.fuelPercent)+" por cento de combustível informado.");return;}if(q.contains("offline")){say(core.isEmpty()?"Ainda estou lendo a base offline.":"Base offline: "+core.replace("✓","pronto"));return;}if(q.contains("vai chover")||q.contains("chuva")||q.contains("clima")||q.contains("previsão do tempo")||q.contains("previsao do tempo")){say(RoadWeatherMonitor.spokenStatus(this));return;}if(q.contains("planej")){open(TripPlannerActivity.class);return;}if(q.contains("favorit")){open(RoadFavoritesActivity.class);return;}if(q.contains("salvar isso")||q.contains("salva isso")||q.contains("salvar acontecimento")){IncidentStore.save(this,lastLat,lastLon,lastSpeed,lastHazard,upcoming,"Salvo por voz");say("Acontecimento salvo neste aparelho.");return;}if(q.contains("comboio")){open(ConvoyActivity.class);return;}if(q.contains("estrada viva")||q.contains("alerta comunit")){open(EstradaVivaActivity.class);return;}if(q.contains("manutenção")||q.contains("manutencao")||q.contains("revisão")||q.contains("revisao")){open(MaintenanceActivity.class);return;}if(q.contains("preço do combustível")||q.contains("preco do combustivel")||q.contains("combustível barato")||q.contains("combustivel barato")){open(FuelCommunityActivity.class);return;}if(q.contains("obd")||q.contains("motor")&&q.contains("temperatura")){open(Obd2Activity.class);return;}if(q.contains("sos")||q.contains("socorro")||q.contains("emergência")||q.contains("emergencia")){open(EmergencyActivity.class);return;}if(q.contains("rádio")||q.contains("radio")){open(RoadRadioActivity.class);return;}if(q.contains("câmera")||q.contains("camera")){open(CameraActivity.class);return;}if(q.contains("posto")||q.contains("hospital")||q.contains("oficina")||q.contains("restaurante")){open(NearbyServicesActivity.class);return;}if(q.contains("histórico")||q.contains("historico")){open(TripHistoryActivity.class);return;}if(q.contains("hud")){say("HUD ainda não está disponível nesta versão.");return;}if(q.contains("report")){open(RoadReportActivity.class);return;}if(q.contains("destino")||q.contains("endereço")||q.contains("endereco")){open(DestinationActivity.class);return;}say("Comando não reconhecido ainda.");}private void open(Class<?>c){startActivity(new Intent(this,c));}private void say(String v){state.setText(v);try{if(tts!=null)tts.speak(v,TextToSpeech.QUEUE_FLUSH,null,"epc-command");}catch(Throwable ignored){}}@Override protected void onStart(){super.onStart();rx=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){lastLimit=i.getIntExtra("road_limit_kmh",0);lastLat=i.getDoubleExtra("lat",Double.NaN);lastLon=i.getDoubleExtra("lon",Double.NaN);lastSpeed=i.getDoubleExtra("speed_kmh",0);String h=i.getStringExtra("hazard_label");if(h!=null&&!h.isEmpty()){lastHazard=h;lastDistance=i.getDoubleExtra("distance_m",0);}String u=i.getStringExtra("upcoming_text");if(u!=null)upcoming=u;String cs=i.getStringExtra("core_states_status");if(cs!=null)core=cs;}};IntentFilter f=new IntentFilter(RoadSafetyService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(rx,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(rx,f);reg=true;}@Override protected void onStop(){if(reg)try{unregisterReceiver(rx);}catch(Throwable ignored){}reg=false;super.onStop();}@Override protected void onDestroy(){try{if(sr!=null)sr.destroy();}catch(Throwable ignored){}try{if(tts!=null){tts.stop();tts.shutdown();}}catch(Throwable ignored){}super.onDestroy();}@Override public void onReadyForSpeech(Bundle p){}@Override public void onBeginningOfSpeech(){}@Override public void onRmsChanged(float r){}@Override public void onBufferReceived(byte[] b){}@Override public void onEndOfSpeech(){}@Override public void onError(int e){state.setText("TOQUE PARA TENTAR NOVAMENTE");}@Override public void onPartialResults(Bundle b){}@Override public void onEvent(int e,Bundle b){}private TextView t(String v,float s,int c,boolean bold){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}}
+
+import android.Manifest;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
+import android.os.Bundle;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.activity.ComponentActivity;
+
+/** Copilot configuration. Conversation itself now lives in CopilotService. */
+public final class VoiceCommandActivity extends ComponentActivity {
+    private static final int REQ_AUDIO = 2201;
+    private final int BG = Color.rgb(9, 5, 7), TEXT = Color.rgb(246, 238, 224), MUTED = Color.rgb(174, 151, 146),
+            RED = Color.rgb(184, 20, 38), GREEN = Color.rgb(69, 205, 126), GOLD = Color.rgb(224, 184, 76), BORDER = Color.rgb(73, 35, 40);
+
+    private TextView state, localStatus;
+    private Button power;
+    private EditText wakeWord;
+    private boolean registered;
+    private BroadcastReceiver receiver;
+    private int pendingPermissionAction;
+
+    @Override protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        build();
+    }
+
+    private void build() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(20), dp(18), dp(20), dp(32));
+        page.setBackgroundColor(BG);
+        scroll.addView(page);
+        setContentView(UnifiedAppShell.wrap(this, "central", scroll));
+
+        page.addView(text("COPILOTO", 30, TEXT, true));
+        page.addView(text("Disponível durante mapa, música, alertas, comboio e demais telas.", 12, MUTED, false));
+
+        LinearLayout card = panel();
+        card.addView(text("ASSISTENTE EM SEGUNDO PLANO", 11, RED, true));
+        state = text("Carregando estado…", 18, TEXT, true);
+        card.addView(state);
+        localStatus = text(CopilotSettings.localWakeWordStatus(this), 11,
+                CopilotSettings.localWakeWordAvailable(this) ? GREEN : GOLD, true);
+        card.addView(localStatus);
+        card.addView(text("A palavra de ativação só fica em escuta contínua quando o Android oferece reconhecimento local no aparelho. O Estrada Play não envia esse áudio continuamente ao servidor.", 11, MUTED, false));
+        page.addView(card);
+
+        page.addView(section("ATIVAÇÃO"));
+        power = button(CopilotSettings.enabled(this) ? "DESATIVAR COPILOTO" : "ATIVAR COPILOTO", CopilotSettings.enabled(this));
+        power.setOnClickListener(v -> togglePower());
+        page.addView(power);
+
+        page.addView(section("PALAVRA DE ATIVAÇÃO"));
+        wakeWord = new EditText(this);
+        wakeWord.setText(CopilotSettings.wakeWord(this));
+        wakeWord.setTextColor(TEXT);
+        wakeWord.setHintTextColor(MUTED);
+        wakeWord.setHint("Copiloto");
+        wakeWord.setSingleLine(true);
+        wakeWord.setTextSize(16f);
+        wakeWord.setPadding(dp(14), 0, dp(14), 0);
+        wakeWord.setBackground(panelDrawable(Color.rgb(22, 11, 14), 13, BORDER));
+        page.addView(wakeWord, new LinearLayout.LayoutParams(-1, dp(54)));
+        Button saveWake = button("SALVAR PALAVRA DE ATIVAÇÃO", false);
+        saveWake.setOnClickListener(v -> {
+            CopilotSettings.setWakeWord(this, wakeWord.getText() == null ? "" : wakeWord.getText().toString());
+            wakeWord.setText(CopilotSettings.wakeWord(this));
+            Toast.makeText(this, "Palavra de ativação salva.", Toast.LENGTH_SHORT).show();
+            if (CopilotSettings.enabled(this)) CopilotService.requestStart(this);
+            refreshLocalState();
+        });
+        page.addView(saveWake);
+
+        page.addView(section("TESTE"));
+        Button listen = button("FALAR AGORA", true);
+        listen.setOnClickListener(v -> requestAudioThen(2));
+        page.addView(listen);
+        page.addView(text("Use este botão em aparelhos sem wake word local. Os mesmos comandos continuam funcionando.", 10, MUTED, false));
+
+        page.addView(section("EXEMPLOS"));
+        page.addView(text("“Quanto falta para chegar?”  ·  “Qual o limite?”  ·  “Tem radar?”  ·  “O que vem pela frente?”  ·  “Vai chover?”  ·  “Próxima música”  ·  “Abrir comboio”  ·  “SOS”", 12, TEXT, false));
+
+        page.addView(section("VOZ"));
+        Button voice = button("VOZ E DIAGNÓSTICO", false);
+        voice.setOnClickListener(v -> startActivity(new Intent(this, VoiceDiagnosticsActivity.class)));
+        page.addView(voice);
+    }
+
+    private void togglePower() {
+        if (CopilotSettings.enabled(this)) {
+            CopilotSettings.setEnabled(this, false);
+            CopilotService.requestStop(this);
+            refreshLocalState();
+        } else requestAudioThen(1);
+    }
+
+    private void requestAudioThen(int action) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            runPermissionAction(action);
+            return;
+        }
+        pendingPermissionAction = action;
+        requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO);
+    }
+
+    private void runPermissionAction(int action) {
+        if (action == 1) {
+            CopilotSettings.setEnabled(this, true);
+            CopilotService.requestStart(this);
+        } else if (action == 2) {
+            CopilotService.requestListenNow(this);
+        }
+        refreshLocalState();
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_AUDIO) return;
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            int action = pendingPermissionAction;
+            pendingPermissionAction = 0;
+            runPermissionAction(action);
+        } else {
+            pendingPermissionAction = 0;
+            Toast.makeText(this, "O microfone é necessário para o Copiloto.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        receiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (intent == null) return;
+                String value = intent.getStringExtra("state");
+                String detail = intent.getStringExtra("text");
+                renderState(value, detail);
+            }
+        };
+        IntentFilter filter = new IntentFilter(CopilotService.ACTION_STATE);
+        try {
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            else registerReceiver(receiver, filter);
+            registered = true;
+        } catch (Throwable ignored) {}
+        refreshLocalState();
+        if (CopilotSettings.enabled(this)
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            CopilotService.requestStart(this);
+        }
+    }
+
+    @Override protected void onStop() {
+        if (registered && receiver != null) try { unregisterReceiver(receiver); } catch (Throwable ignored) {}
+        registered = false;
+        receiver = null;
+        super.onStop();
+    }
+
+    private void refreshLocalState() {
+        boolean enabled = CopilotSettings.enabled(this);
+        if (power != null) {
+            power.setText(enabled ? "DESATIVAR COPILOTO" : "ATIVAR COPILOTO");
+            styleButton(power, enabled);
+        }
+        if (localStatus != null) {
+            localStatus.setText(CopilotSettings.localWakeWordStatus(this));
+            localStatus.setTextColor(CopilotSettings.localWakeWordAvailable(this) ? GREEN : GOLD);
+        }
+        if (state != null && !enabled) state.setText("DESLIGADO");
+        else if (state != null) state.setText(CopilotSettings.localWakeWordAvailable(this)
+                ? "EM ESPERA · DIGA “" + CopilotSettings.wakeWord(this).toUpperCase() + "”"
+                : "ATIVO · USE FALAR AGORA");
+    }
+
+    private void renderState(String value, String detail) {
+        if (state == null) return;
+        if (CopilotService.STATE_LISTENING.equals(value)) state.setText("OUVINDO O COMANDO…");
+        else if (CopilotService.STATE_PROCESSING.equals(value)) state.setText("PROCESSANDO…");
+        else if (CopilotService.STATE_SPEAKING.equals(value)) state.setText("RESPONDENDO…");
+        else if (CopilotService.STATE_WAITING.equals(value)) state.setText(detail == null || detail.isEmpty() ? "EM ESPERA" : detail.toUpperCase());
+        else if (CopilotService.STATE_OFF.equals(value)) state.setText("DESLIGADO");
+        refreshPowerOnly();
+    }
+
+    private void refreshPowerOnly() {
+        if (power == null) return;
+        boolean enabled = CopilotSettings.enabled(this);
+        power.setText(enabled ? "DESATIVAR COPILOTO" : "ATIVAR COPILOTO");
+        styleButton(power, enabled);
+    }
+
+    private LinearLayout panel() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(15), dp(14), dp(15), dp(14));
+        card.setBackground(panelDrawable(Color.rgb(17, 10, 12), 16, BORDER));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(14), 0, dp(8));
+        card.setLayoutParams(lp);
+        return card;
+    }
+
+    private TextView section(String value) {
+        TextView text = text(value, 10, MUTED, true);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(18), 0, dp(6));
+        text.setLayoutParams(lp);
+        return text;
+    }
+
+    private Button button(String value, boolean primary) {
+        Button button = new Button(this);
+        button.setText(value);
+        button.setAllCaps(false);
+        button.setTextSize(12f);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setStateListAnimator(null);
+        styleButton(button, primary);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(54));
+        lp.setMargins(0, dp(7), 0, 0);
+        button.setLayoutParams(lp);
+        return button;
+    }
+
+    private void styleButton(Button button, boolean primary) {
+        button.setTextColor(Color.WHITE);
+        button.setBackground(panelDrawable(primary ? RED : Color.rgb(36, 17, 21), 13, primary ? RED : BORDER));
+    }
+
+    private GradientDrawable panelDrawable(int color, int radius, int stroke) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(radius));
+        if (stroke != 0) drawable.setStroke(dp(1), stroke);
+        return drawable;
+    }
+
+    private TextView text(String value, float size, int color, boolean bold) {
+        TextView text = new TextView(this);
+        text.setText(value);
+        text.setTextSize(size);
+        text.setTextColor(color);
+        text.setPadding(0, dp(4), 0, dp(4));
+        if (bold) text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return text;
+    }
+
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+}
