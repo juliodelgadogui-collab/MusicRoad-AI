@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.Application;
+import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -30,18 +31,13 @@ public final class EstradaPlayApplication extends Application {
     private DriveRuntimeEnhancer driveRuntimeEnhancer;
     private CopilotOverlayController copilotOverlayController;
 
-    // FOREGROUND_ONLY_ROAD_ALERTS_V411: road protection, wake-word microphone and PTT are
-    // user-visible-session features. They must not keep the app alive after every Activity leaves
-    // the screen. A short delay avoids false stops while rotating or moving between Activities.
+    // FOREGROUND_ONLY_ROAD_ALERTS_V412: road protection, wake-word microphone and PTT only
+    // exist while at least one Estrada Play Activity is visible. Configuration changes do not
+    // interrupt the session, while Home/lock/switch-app reliably tears the road stack down.
     private final Handler foregroundHandler = new Handler(Looper.getMainLooper());
     private int visibleActivities;
-    private Activity lastVisibleActivity;
-    private final Runnable stopForegroundOnlyServices = () -> {
-        if (visibleActivities != 0) return;
-        try { stopService(new Intent(this, RoadSafetyService.class)); } catch (Throwable ignored) {}
-        try { stopService(new Intent(this, CopilotService.class)); } catch (Throwable ignored) {}
-        try { stopService(new Intent(this, RoadRadioService.class)); } catch (Throwable ignored) {}
-    };
+    private boolean uiHidden = true;
+    private final Runnable stopForegroundOnlyServices = this::stopForegroundOnlyServicesNow;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -56,7 +52,7 @@ public final class EstradaPlayApplication extends Application {
         try { ProductionTelemetryV400.install(this); } catch (Throwable ignored) {}
         try { MapStyleConfigV400.refreshAsync(this); } catch (Throwable ignored) {}
 
-        // COPILOT_BACKGROUND_V1 evolved in V411: the service may listen while the app is visible,
+        // COPILOT_BACKGROUND_V1 evolved in V411/V412: the service may listen while the app is visible,
         // but is explicitly stopped as soon as the whole app goes to background.
         try { copilotOverlayController = CopilotOverlayController.install(this); } catch (Throwable ignored) {}
 
@@ -135,36 +131,53 @@ public final class EstradaPlayApplication extends Application {
             @Override public void onActivityStarted(Activity activity) {
                 boolean returningToForeground = visibleActivities == 0;
                 visibleActivities++;
-                lastVisibleActivity = activity;
+                uiHidden = false;
                 foregroundHandler.removeCallbacks(stopForegroundOnlyServices);
                 if (returningToForeground) resumeForegroundServices(activity);
             }
 
             @Override public void onActivityResumed(Activity activity) {
-                lastVisibleActivity = activity;
+                uiHidden = false;
+                foregroundHandler.removeCallbacks(stopForegroundOnlyServices);
             }
 
             @Override public void onActivityPaused(Activity activity) {}
 
             @Override public void onActivityStopped(Activity activity) {
                 visibleActivities = Math.max(0, visibleActivities - 1);
+                if (activity != null && activity.isChangingConfigurations()) return;
                 if (visibleActivities == 0) {
-                    // Activity transitions and rotation can briefly report zero. Wait before stopping.
                     foregroundHandler.removeCallbacks(stopForegroundOnlyServices);
-                    foregroundHandler.postDelayed(stopForegroundOnlyServices, 900L);
+                    // Small grace period only for genuine Activity hand-offs on slower devices.
+                    foregroundHandler.postDelayed(stopForegroundOnlyServices, 700L);
                 }
             }
 
             @Override public void onActivitySaveInstanceState(Activity activity, Bundle outState) {}
-
-            @Override public void onActivityDestroyed(Activity activity) {
-                if (lastVisibleActivity == activity) lastVisibleActivity = null;
-            }
+            @Override public void onActivityDestroyed(Activity activity) {}
         });
+    }
+
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && visibleActivities == 0) {
+            uiHidden = true;
+            foregroundHandler.removeCallbacks(stopForegroundOnlyServices);
+            foregroundHandler.post(stopForegroundOnlyServices);
+        }
+    }
+
+    private void stopForegroundOnlyServicesNow() {
+        if (visibleActivities != 0) return;
+        uiHidden = true;
+        try { stopService(new Intent(this, RoadSafetyService.class)); } catch (Throwable ignored) {}
+        try { stopService(new Intent(this, CopilotService.class)); } catch (Throwable ignored) {}
+        try { stopService(new Intent(this, RoadRadioService.class)); } catch (Throwable ignored) {}
     }
 
     private void resumeForegroundServices(Activity activity) {
         if (activity == null || !roadProtectionEligible()) return;
+        uiHidden = false;
         try {
             Intent safety = new Intent(this, RoadSafetyService.class);
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(safety);
