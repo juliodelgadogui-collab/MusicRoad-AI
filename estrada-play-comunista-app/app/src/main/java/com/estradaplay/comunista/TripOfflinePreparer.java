@@ -23,12 +23,10 @@ final class TripOfflinePreparer {
 
     static Result prepare(Context context,RouteEngine.Route route){
         Result result=prepareInternal(context,route,Integer.MAX_VALUE);
-        // OFFLINE_READINESS_V330: never mark a partially downloaded route as fully prepared.
         if(result.complete())RouteOfflineCache.markPrepared(context);
         return result;
     }
 
-    /** Automatic lightweight preparation: only the first few route reserves are fetched. */
     static Result prepareAhead(Context context,RouteEngine.Route route,int maxSamples){
         return prepareInternal(context,route,Math.max(1,maxSamples));
     }
@@ -41,7 +39,13 @@ final class TripOfflinePreparer {
         if(samples.get(samples.size()-1)!=pts.size()-1)samples.add(pts.size()-1);
         if(samples.size()>maxSamples){ArrayList<Integer> limited=new ArrayList<>();for(int i=0;i<maxSamples;i++)limited.add(samples.get(i));samples=limited;}
         ApiClient api=new ApiClient(context);OfflineRoadStore map=new OfflineRoadStore(context);RoadPackStore safety=new RoadPackStore(context);int mapOk=0,safetyOk=0;
-        for(int n=0;n<samples.size();n++){int idx=samples.get(n);double[] p=pts.get(idx);int next=Math.min(pts.size()-1,idx+Math.max(1,Math.min(20,pts.size()-idx-1)));double[] q=pts.get(next);float heading=(float)bearing(p[0],p[1],q[0],q[1]);try{if(map.prepare(api,p[0],p[1],heading))mapOk++;}catch(Throwable ignored){}try{if(safety.prepareTravelReserve(api,p[0],p[1],heading))safetyOk++;}catch(Throwable ignored){}}
+        for(int n=0;n<samples.size();n++){
+            int idx=samples.get(n);double[] p=pts.get(idx);float heading;
+            if(idx<pts.size()-1){int next=Math.min(pts.size()-1,idx+Math.max(1,Math.min(20,pts.size()-idx-1)));double[] q=pts.get(next);heading=(float)bearing(p[0],p[1],q[0],q[1]);}
+            else if(idx>0){double[] q=pts.get(Math.max(0,idx-1));heading=(float)bearing(q[0],q[1],p[0],p[1]);}
+            else heading=0f;
+            try{if(map.prepare(api,p[0],p[1],heading))mapOk++;}catch(Throwable ignored){}try{if(safety.prepareTravelReserve(api,p[0],p[1],heading))safetyOk++;}catch(Throwable ignored){}
+        }
         return new Result(samples.size(),mapOk,safetyOk,route.distanceM/1000.0);
     }
 
