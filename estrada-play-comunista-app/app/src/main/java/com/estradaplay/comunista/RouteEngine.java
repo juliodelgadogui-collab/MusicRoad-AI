@@ -111,8 +111,10 @@ final class RouteEngine {
 
         double remainingDuration(double alongM) {
             if (distanceM <= 1) return 0;
-            double ratio = Math.max(0, Math.min(1, remainingDistance(alongM) / distanceM));
-            return durationS * ratio;
+            double remaining = remainingDistance(alongM);
+            double ratio = Math.max(0, Math.min(1, remaining / distanceM));
+            double baseline = durationS * ratio;
+            return RouteTravelPace.estimateRemaining(remaining, baseline);
         }
 
         Match match(double lat, double lon, double headingDeg, int hintSegment, double previousAlongM) {
@@ -120,12 +122,14 @@ final class RouteEngine {
             int n = lats.length - 1;
             Candidate best = null;
             if (hintSegment >= 0 && hintSegment < n) {
-                int from = Math.max(0, hintSegment - 90);
-                int to = Math.min(n - 1, hintSegment + 260);
-                best = search(lat, lon, headingDeg, previousAlongM, from, to, best);
+                int from = Math.max(0, hintSegment - 55);
+                int to = Math.min(n - 1, hintSegment + 190);
+                best = search(lat, lon, headingDeg, previousAlongM, hintSegment, from, to, best);
             }
-            if (best == null || best.lateralM > 115) {
-                best = search(lat, lon, headingDeg, previousAlongM, 0, n - 1, best);
+            // MAP_MATCH_V330: global search is a recovery path, not the default. A tighter local
+            // threshold prevents the GPS from jumping to a distant loop/marginal with similar geometry.
+            if (best == null || best.lateralM > 88) {
+                best = search(lat, lon, headingDeg, previousAlongM, hintSegment, 0, n - 1, best);
             }
             if (best == null) return Match.invalid();
             return new Match(true, best.segment, best.alongM, best.lateralM,
@@ -133,7 +137,7 @@ final class RouteEngine {
         }
 
         private Candidate search(double lat, double lon, double headingDeg, double previousAlongM,
-                                 int from, int to, Candidate initial) {
+                                 int preferredSegment, int from, int to, Candidate initial) {
             Candidate best = initial;
             double cos = Math.cos(Math.toRadians(lat));
             double mx = 111320.0 * Math.max(0.2, Math.abs(cos));
@@ -154,12 +158,27 @@ final class RouteEngine {
                 double along = cumulativeM[i] + segLen * t;
                 double bearing = bearingDeg(lats[i], lons[i], lats[i + 1], lons[i + 1]);
                 double score = lateral;
+
                 if (Double.isFinite(headingDeg) && headingDeg >= 0 && segLen >= 8) {
-                    score += Math.min(45.0, angleDiff(headingDeg, bearing) * 0.23);
+                    double diff = angleDiff(headingDeg, bearing);
+                    // Direction is much more useful than raw proximity on duplicated carriageways.
+                    score += Math.min(112.0, diff * 0.46);
+                    if (diff > 118.0) score += 48.0;
+                    if (diff > 150.0 && lateral > 12.0) score += 72.0;
                 }
-                if (previousAlongM > 100 && along < previousAlongM - 150) {
-                    score += Math.min(140, (previousAlongM - along - 150) * 0.28 + 45);
+
+                if (previousAlongM > 60) {
+                    double backwards = previousAlongM - along;
+                    if (backwards > 70) score += Math.min(245.0, 42.0 + (backwards - 70.0) * 0.42);
+                    double forwardJump = along - previousAlongM;
+                    if (forwardJump > 1800) score += Math.min(190.0, 55.0 + (forwardJump - 1800.0) * 0.045);
                 }
+
+                if (preferredSegment >= 0) {
+                    int delta = Math.abs(i - preferredSegment);
+                    if (delta > 220) score += Math.min(125.0, (delta - 220) * 0.18);
+                }
+
                 if (best == null || score < best.score) {
                     double snapLat = lat + py / my;
                     double snapLon = lon + px / mx;
@@ -191,8 +210,6 @@ final class RouteEngine {
         return fetchOsrmFallback(fromLat, fromLon, toLat, toLon);
     }
 
-    // ROUTE_RECOVERY_V310: online routing remains primary; an already-calculated route is the
-    // deterministic fallback during temporary connection loss, process recreation or offline test.
     static Route fetch(Context context, double fromLat, double fromLon, double toLat, double toLon) throws Exception {
         Route cached = RouteOfflineCache.load(context, fromLat, fromLon, toLat, toLon);
         if (DriveSettings.offlineTestMode(context)) {
@@ -241,6 +258,8 @@ final class RouteEngine {
             if (d != null && distanceM(d.lat, d.lon, toLat, toLon) <= 300) label = d.label;
         } catch (Throwable ignored) {}
         RouteOfflineCache.save(context, fromLat, fromLon, toLat, toLon, label, route, false);
+        try { RoadWeatherMonitor.saveActiveRoute(context, route, label); } catch (Throwable ignored) {}
+        try { RouteAheadPrefetch.schedule(context, route); } catch (Throwable ignored) {}
     }
 
     private static Route fetchOsrmFallback(double fromLat, double fromLon, double toLat, double toLon) throws Exception {
@@ -252,7 +271,7 @@ final class RouteEngine {
         c.setReadTimeout(25000);
         c.setInstanceFollowRedirects(true);
         c.setRequestProperty("Accept", "application/json");
-        c.setRequestProperty("User-Agent", "EstradaPlayComunista/3.1 Android");
+        c.setRequestProperty("User-Agent", "EstradaPlayComunista/3.3 Android");
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) {
             c.disconnect();
