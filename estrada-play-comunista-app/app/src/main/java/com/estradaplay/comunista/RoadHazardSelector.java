@@ -25,13 +25,9 @@ final class RoadHazardSelector {
 
     static Selection select(List<RoadHazard> nearby, double lat, double lon, double heading,
                             double speedKmh, boolean rain, RoadAlertCooldown cooldown, long nowMs) {
-        // MOBILITY_MODE_V301: after one full minute classified as walking, automotive road
-        // warnings stay quiet. They become eligible again automatically when vehicle motion returns.
         if (MobilityModeState.isPedestrian()) return Selection.empty();
 
-        // TRAJECTORY_HEADING_V302: use recent real movement to stabilize direction. This is
-        // especially important on duplicated/parallel carriageways where one GPS bearing jump
-        // could otherwise select equipment from the opposite side.
+        // TRAJECTORY_HEADING_V302: recent movement stabilizes the direction used on parallel lanes.
         double stableHeading = RoadTrajectoryHeading.observe(lat, lon, heading, speedKmh, nowMs);
         if (nearby == null || nearby.isEmpty() || !Double.isFinite(stableHeading) || speedKmh < 3.0) {
             return Selection.empty();
@@ -44,6 +40,9 @@ final class RoadHazardSelector {
             if (hazard == null || (cooldown != null && !cooldown.shouldAlert(hazard.id, nowMs))) continue;
             RoadHazardMatcher.Match match = RoadHazardMatcher.match(lat, lon, stableHeading, speedKmh, hazard, rain);
             if (!match.valid) continue;
+            // ALERT_SEQUENCE_V330: keep a second hazard queued briefly instead of interrupting
+            // the warning that has just started speaking.
+            if (!RoadAlertSequenceGate.allow(hazard, match, speedKmh, nowMs)) continue;
             double score = match.forwardM + RoadHazardMatcher.priorityBias(hazard.type);
             if (score < bestScore) {
                 best = hazard;
@@ -52,7 +51,10 @@ final class RoadHazardSelector {
             }
         }
         if (best == null || bestMatch == null) return Selection.empty();
+        RoadAlertSequenceGate.remember(best, bestMatch, nowMs);
 
+        // Next is only a visual preview. It is not sequence-gated because the spoken gate is
+        // applied when that point becomes the active warning on a later GPS sample.
         RoadHazard next = null;
         RoadHazardMatcher.Match nextMatch = null;
         double nextScore = Double.MAX_VALUE;
