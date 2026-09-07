@@ -34,11 +34,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class RoadSafetyService extends Service {
-    // BASE_CONSOLIDADA_V210: Android Service coordinates extracted/tested policies.
     static final String ACTION_STATE = "com.estradaplay.comunista.ROAD_SAFETY_STATE";
     private static final String CHANNEL = "estradaplay_road_safety";
     private static final int NOTIFICATION_ID = 4110;
     private static final long ALERT_COOLDOWN_MS = 8L * 60L * 1000L;
+    private static final String HEALTH_PREFS = "epc_protection_health_v303";
     static final String ACTION_PREFETCH_CORE = "com.estradaplay.comunista.PREFETCH_CORE";
     static final String ACTION_SAFETY_AUDIO = "com.estradaplay.comunista.SAFETY_AUDIO";
 
@@ -47,6 +47,7 @@ public final class RoadSafetyService extends Service {
     private final AtomicBoolean fetching = new AtomicBoolean(false);
     private final RoadAlertCooldown alertCooldown = new RoadAlertCooldown(ALERT_COOLDOWN_MS, 300);
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final long serviceStartedAt = System.currentTimeMillis();
 
     private LocationManager locationManager;
     private volatile RoadPackStore packs;
@@ -55,7 +56,6 @@ public final class RoadSafetyService extends Service {
     private final AtomicBoolean coreStatesPriming = new AtomicBoolean(false);
     private ApiClient api;
     private TextToSpeech tts;
-    // OFFLINE_VOICE_V204: primary deterministic voice; Android TTS is fallback only.
     private EstradaPlayOfflineVoice offlineVoice;
     private CommunistCopilot copilot;
     private TripRecorder tripRecorder;
@@ -63,7 +63,6 @@ public final class RoadSafetyService extends Service {
     private RoadSurfaceMonitor surfaceMonitor;
     private RoadQualityStore roadQualityStore;
     private long lastWeatherCheckAt;
-    // CLIMA_ROTA_V191: announce only meaningful changes, never every refresh.
     private long lastWeatherVoiceAt;
     private String lastWeatherVoiceKey="";
     private boolean ttsReady;
@@ -78,30 +77,25 @@ public final class RoadSafetyService extends Service {
     private long motionAnchorWallMs;
     private boolean stationaryConfirmed;
     private long lastNotificationAt;
-    // ANR_GUARD_V201: keep repetitive disk/status/coverage work out of the 1 Hz GPS hot path.
     private long lastCoverageCheckAt;
     private long lastStateRefreshAt;
     private String lastStateText = "GPS ativo · preparando proteção";
-    // ROAD_LIMIT_V202: announce road limit changes, radar limits and one-shot overspeed.
     private final AtomicBoolean roadLimitResolving = new AtomicBoolean(false);
     private final RoadLimitPolicy roadLimitPolicy = new RoadLimitPolicy();
     private long lastRoadLimitCheckAt;
-    // ROAD_THOUGHTS_V142: low-priority cultural layer; safety always wins.
     private final long thoughtSessionStartedAt = System.currentTimeMillis();
     private long lastThoughtCheckAt;
     private long lastSafetyVoiceAt;
     private long continuousDrivingStartedAt,lastMovingForRestAt;
     private boolean restSuggested;
     private long lastUpcomingAt; private String upcomingCache="";
-    // VOICE_RELIABILITY_V151: stale callbacks from an older utterance must never alter a newer one.
     private int voiceSessionCounter;
     private int activeVoiceToken;
     private String activeVoiceKind="";
     private long voiceBusyUntil;
     private Runnable voiceRestoreWatchdog;
+    private boolean protectionGpsUnavailable;
 
-    // STATIONARY_SPEED_V178: if the head unit stops delivering fresh GPS fixes,
-    // a previous moving speed must never remain frozen on screen indefinitely.
     private final Runnable staleSpeedWatchdog = () -> {
         long age = System.currentTimeMillis() - lastSpeedFixWallMs;
         if (lastSpeedFixWallMs > 0L && age >= 4500L && lastSpeedKmh > 0.0 && previous != null) {
@@ -112,9 +106,44 @@ public final class RoadSafetyService extends Service {
         }
     };
 
+    // PROTECTION_CONTINUITY_V303: detect a frozen/no-update GPS stream and recover the
+    // listener without pretending protection is healthy. This watchdog never fabricates a fix.
+    private final Runnable protectionWatchdog = new Runnable() {
+        @Override public void run() {
+            try {
+                long now = System.currentTimeMillis();
+                long age = lastSpeedFixWallMs > 0L ? now - lastSpeedFixWallMs : now - serviceStartedAt;
+                boolean stale = age >= 25_000L;
+                getSharedPreferences(HEALTH_PREFS, MODE_PRIVATE).edit()
+                        .putLong("heartbeat_at", now)
+                        .putLong("gps_age_ms", Math.max(0L, age))
+                        .putBoolean("gps_ok", !stale)
+                        .apply();
+                if (stale) {
+                    startLocation();
+                    if (!protectionGpsUnavailable) {
+                        protectionGpsUnavailable = true;
+                        updateNotification("Proteção temporariamente indisponível",
+                                "GPS sem sinal confiável · tentando recuperar", true);
+                        Location p = previous;
+                        if (p != null && packs != null && mapRoads != null) {
+                            Intent state = baseBroadcast(p.getLatitude(), p.getLongitude(), 0.0,
+                                    "Proteção temporariamente indisponível · GPS sem sinal confiável");
+                            state.putExtra("protection_available", false);
+                            state.putExtra("gps_fix_age_ms", age);
+                            sendBroadcast(state);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            } finally {
+                main.postDelayed(this, 15_000L);
+            }
+        }
+    };
+
     @Override public void onCreate() {
         super.onCreate();
-        // ANR_ROAD_INIT_V211: heavy offline JSON parsing is deferred to IO.
         api = new ApiClient(this);
         offlineVoice = new EstradaPlayOfflineVoice(this);
         copilot = new CommunistCopilot(this);
@@ -127,13 +156,17 @@ public final class RoadSafetyService extends Service {
         audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
         createChannel();
         startForeground(NOTIFICATION_ID, notification("Proteção na estrada ativa", "GPS aguardando localização", false));
+        getSharedPreferences(HEALTH_PREFS, MODE_PRIVATE).edit()
+                .putLong("service_started_at", System.currentTimeMillis())
+                .putBoolean("service_alive", true)
+                .apply();
+        main.removeCallbacks(protectionWatchdog);
+        main.postDelayed(protectionWatchdog, 15_000L);
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
                 ttsReady = true;
                 try {
                     tts.setLanguage(new Locale("pt", "BR"));
-                    // ESTRADAPLAY_VOICE_V203: branded automotive profile.
-                    // Slightly lower pitch + calmer pace makes road warnings firm and distinct.
                     tts.setSpeechRate(0.91f);
                     tts.setPitch(0.84f);
                     selectEstradaPlayVoice();
@@ -177,11 +210,10 @@ public final class RoadSafetyService extends Service {
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (packs != null && mapRoads != null) { startLocation(); primeOfflineRadarCore(); } else initializeStoresAsync();
         if(intent!=null&&ACTION_PREFETCH_CORE.equals(intent.getAction())) primeOfflineRadarCore();
-        return START_NOT_STICKY;
+        getSharedPreferences(HEALTH_PREFS, MODE_PRIVATE).edit().putLong("last_start_command_at", System.currentTimeMillis()).apply();
+        return START_STICKY;
     }
 
-    // OFFLINE_RADAR_CORE_V141: state radar packs are prepared before route/map extras.
-    // They remain fully local once downloaded and do not depend on live internet to alert.
     private void primeOfflineRadarCore() {
         RoadPackStore local = packs;
         if (local == null || local.coreStatesReady() || !coreStatesPriming.compareAndSet(false, true)) return;
@@ -242,10 +274,17 @@ public final class RoadSafetyService extends Service {
         if (LocationManager.GPS_PROVIDER.equals(provider)) {
             lastGpsFixWallMs = nowWall;
         } else if (LocationManager.NETWORK_PROVIDER.equals(provider) && nowWall - lastGpsFixWallMs < 4000L) {
-            // A recent GPS fix is more useful than an interleaved network fix that can
-            // report speed=0 and erase the vehicle speed on automotive Android ROMs.
             return;
         }
+
+        if (protectionGpsUnavailable) {
+            protectionGpsUnavailable = false;
+            updateNotification("Proteção na estrada ativa", "GPS recuperado · proteção retomada", false);
+        }
+        getSharedPreferences(HEALTH_PREFS, MODE_PRIVATE).edit()
+                .putLong("last_fix_at", nowWall)
+                .putBoolean("gps_ok", true)
+                .apply();
 
         float heading = heading(loc);
         double speedKmh = speedKmh(loc);
@@ -557,6 +596,7 @@ public final class RoadSafetyService extends Service {
         String distance = distanceSpeech(forward);
         switch (h.type) {
             case "SEMAFORO": return "Atenção. Semáforo à frente. " + distance + ".";
+            case "SEMAFORO_RADAR": return "Atenção. Semáforo fiscalizado à frente. " + distance + ".";
             case "QUEBRA_MOLAS": return "Reduza. Quebra-molas à frente. " + distance + ".";
             case "PEDAGIO": return "Pedágio à frente. " + distance + ".";
             case "PASSAGEM_NIVEL": return "Atenção. Passagem de nível à frente. " + distance + ". Reduza.";
@@ -601,7 +641,10 @@ public final class RoadSafetyService extends Service {
 
     private Intent baseBroadcast(double lat, double lon, double speedKmh, String status) {
         Intent i = new Intent(ACTION_STATE).setPackage(getPackageName());
+        long now = System.currentTimeMillis();
+        long fixAge = lastSpeedFixWallMs > 0L ? Math.max(0L, now - lastSpeedFixWallMs) : Math.max(0L, now - serviceStartedAt);
         i.putExtra("lat", lat); i.putExtra("lon", lon); i.putExtra("speed_kmh", speedKmh); i.putExtra("road_limit_kmh", roadLimitPolicy.currentLimit()); i.putExtra("heading", Float.isFinite(lastHeading) ? lastHeading : -1f); i.putExtra("pack_count", packs.packCount()); i.putExtra("state_pack_count", packs.statePackCount()); i.putExtra("core_state_count", packs.coreStatePackCount()); i.putExtra("core_states_status", packs.coreStatesStatus()); i.putExtra("thermal_status", thermalStatus()); i.putExtra("rain_mode", DriveSettings.rainNow(this)); i.putExtra("weather_status", RoadWeatherMonitor.compactStatus(this)); i.putExtra("weather_rain_ahead", RoadWeatherMonitor.snapshot(this).shouldAnnounce()); i.putExtra("night_mode", DriveSettings.nightNow(this)); i.putExtra("offline_test_mode", DriveSettings.offlineTestMode(this)); i.putExtra("reserve_km", 250); i.putExtra("hazard_count", packs.hazardCount()); i.putExtra("map_pack_count", mapRoads.packCount());
+        i.putExtra("protection_available", !protectionGpsUnavailable); i.putExtra("gps_fix_age_ms", fixAge);
         if(collectiveStore!=null){i.putExtra("collective_impact_count",collectiveStore.impactCount());i.putExtra("collective_queue_count",collectiveStore.queuedCount());}
         i.putExtra("upcoming_text",upcomingCache); i.putExtra("status", status == null ? "" : status); return i;
     }
@@ -653,11 +696,18 @@ public final class RoadSafetyService extends Service {
     @Override public void onTaskRemoved(Intent rootIntent) {
         try { stopService(new Intent(this, PlayerService.class)); } catch (Throwable ignored) {}
         try { stopService(new Intent(this, DownloadService.class)); } catch (Throwable ignored) {}
-        stopSelf(); super.onTaskRemoved(rootIntent);
+        getSharedPreferences(HEALTH_PREFS, MODE_PRIVATE).edit().putLong("task_removed_at", System.currentTimeMillis()).apply();
+        // Do not stop RoadSafetyService: road protection is intentionally independent of the UI task.
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override public void onDestroy() {
         main.removeCallbacks(staleSpeedWatchdog);
+        main.removeCallbacks(protectionWatchdog);
+        getSharedPreferences(HEALTH_PREFS, MODE_PRIVATE).edit()
+                .putBoolean("service_alive", false)
+                .putLong("service_destroyed_at", System.currentTimeMillis())
+                .apply();
         activeVoiceToken = ++voiceSessionCounter;
         if (voiceRestoreWatchdog != null) main.removeCallbacks(voiceRestoreWatchdog);
         forceRestoreAudio();
