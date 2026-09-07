@@ -38,10 +38,9 @@ public final class EstradaPlayApplication extends Application {
         RoadProtectionStatusUiV303.install(this);
         RoadRouteWeatherBridgeV303.install(this);
 
-        // ROAD_REFERENCE_UI_V350: the Estrada screen is rebuilt as an automotive map-first cockpit.
-        // Landscape keeps only CENTRAL as navigation access; portrait follows the phone reference.
-        RoadMapReferenceUiV350.install(this);
-        RoadMapReferencePolishV350.install(this);
+        // ROAD_REFERENCE_UI_V360: validated against real-device screenshots. It never hides mapPane,
+        // removes legacy duplicates and sizes the cockpit from actual viewport proportions.
+        RoadMapReferenceUiV360.install(this);
 
         // DRIVE_QUALITY_V330: one receiver feeds stable ETA and short tunnel continuity from the
         // already existing road-state stream. It does not create another GPS listener.
