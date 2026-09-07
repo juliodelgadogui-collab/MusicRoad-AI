@@ -23,7 +23,7 @@ import java.lang.reflect.Field;
 /** Final visual safeguards for the reference cockpit: dark map tint and compact route cancellation. */
 final class RoadMapReferencePolishV350 implements Application.ActivityLifecycleCallbacks {
     private final Application app;private final Handler main=new Handler(Looper.getMainLooper());private WeakReference<RoadMapActivity> resumed=new WeakReference<>(null);
-    static void install(Application app){if(app==null)return;RoadMapReferencePolishV350 x=new RoadMapReferencePolishV350(app);app.registerActivityLifecycleCallbacks(x);IntentFilter f=new IntentFilter(RoadSafetyService.ACTION_STATE);try{if(Build.VERSION.SDK_INT>=33)app.registerReceiver(x.rx,f,Context.RECEIVER_NOT_EXPORTED);else app.registerReceiver(x.rx,f);}catch(Throwable ignored){}}
+    static void install(Application app){if(app==null)return;RoadMapReferencePolishV350 x=new RoadMapReferencePolishV350(app);app.registerActivityLifecycleCallbacks(x);IntentFilter f=new IntentFilter(RoadSafetyService.ACTION_STATE);try{if(Build.VERSION.SDK_INT>=33)InternalBroadcasts.register(app, x.rx, f);else InternalBroadcasts.register(app, x.rx, f);}catch(Throwable ignored){}}
     private RoadMapReferencePolishV350(Application app){this.app=app;}
     private final BroadcastReceiver rx=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){RoadMapActivity a=resumed.get();if(a!=null&&!a.isFinishing())main.postDelayed(()->apply(a),70L);}};
     private void apply(RoadMapActivity a){FrameLayout root=field(a,"root",FrameLayout.class);RoadMapView map=field(a,"roadMap",RoadMapView.class);if(root==null||map==null)return;try{View tint=field(map,"nightTint",View.class);if(tint!=null)tint.setBackgroundColor(Color.argb(126,3,0,7));}catch(Throwable ignored){}

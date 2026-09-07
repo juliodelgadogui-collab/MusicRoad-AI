@@ -60,8 +60,8 @@ final class RoadMapMinimalUiV340 implements Application.ActivityLifecycleCallbac
         f.addAction(RoadSafetyService.ACTION_STATE);
         f.addAction(PlayerService.ACTION_STATE);
         try {
-            if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(receiver, f, Context.RECEIVER_NOT_EXPORTED);
-            else app.registerReceiver(receiver, f);
+            if (Build.VERSION.SDK_INT >= 33) InternalBroadcasts.register(app, receiver, f);
+            else InternalBroadcasts.register(app, receiver, f);
         } catch (Throwable ignored) {}
     }
 

@@ -24,7 +24,7 @@ final class DriveRuntimeEnhancer {
     static DriveRuntimeEnhancer install(Application app){
         DriveRuntimeEnhancer x=new DriveRuntimeEnhancer(app);
         IntentFilter f=new IntentFilter(RoadSafetyService.ACTION_STATE);
-        try{if(Build.VERSION.SDK_INT>=33)app.registerReceiver(x.receiver,f,Context.RECEIVER_NOT_EXPORTED);else app.registerReceiver(x.receiver,f);}catch(Throwable ignored){}
+        try{if(Build.VERSION.SDK_INT>=33)InternalBroadcasts.register(app, x.receiver, f);else InternalBroadcasts.register(app, x.receiver, f);}catch(Throwable ignored){}
         x.main.postDelayed(x.gapWatch,4000L);
         return x;
     }

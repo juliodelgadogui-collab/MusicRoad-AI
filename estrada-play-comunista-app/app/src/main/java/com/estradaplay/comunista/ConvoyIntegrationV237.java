@@ -89,8 +89,8 @@ final class ConvoyIntegrationV237 implements Application.ActivityLifecycleCallba
         app.registerActivityLifecycleCallbacks(bridge);
         try {
             IntentFilter filter = new IntentFilter(ConvoyLiveBridge.ACTION_STATE);
-            if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(bridge.stateReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-            else app.registerReceiver(bridge.stateReceiver, filter);
+            if (Build.VERSION.SDK_INT >= 33) InternalBroadcasts.register(app, bridge.stateReceiver, filter);
+            else InternalBroadcasts.register(app, bridge.stateReceiver, filter);
         } catch (Throwable ignored) {}
     }
 

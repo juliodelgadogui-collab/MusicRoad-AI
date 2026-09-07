@@ -65,8 +65,8 @@ final class RoadProductionGuardV400 implements Application.ActivityLifecycleCall
     private void register() {
         IntentFilter filter = new IntentFilter(RoadSafetyService.ACTION_STATE);
         try {
-            if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
-            else app.registerReceiver(receiver, filter);
+            if (Build.VERSION.SDK_INT >= 33) InternalBroadcasts.register(app, receiver, filter);
+            else InternalBroadcasts.register(app, receiver, filter);
         } catch (Throwable ignored) {}
     }
 

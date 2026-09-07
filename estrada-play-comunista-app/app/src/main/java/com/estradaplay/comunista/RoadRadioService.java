@@ -118,7 +118,7 @@ public final class RoadRadioService extends Service {
         IntentFilter f=new IntentFilter();
         f.addAction(RoadSafetyService.ACTION_STATE);
         f.addAction(RoadSafetyService.ACTION_SAFETY_AUDIO);
-        if(Build.VERSION.SDK_INT>=33)registerReceiver(roadRx,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(roadRx,f);
+        if(Build.VERSION.SDK_INT>=33)InternalBroadcasts.register(this, roadRx, f);else InternalBroadcasts.register(this, roadRx, f);
         registered=true;
     }
 

@@ -86,6 +86,7 @@ public final class MainActivity extends ComponentActivity {
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private boolean downloadInitialFlow;
+    private boolean pendingOpenCockpitAfterPermission;
     private TextView downloadTitle, downloadState;
     private ProgressBar downloadProgress;
     private TextView nowTitle, nowArtist, nowState;
@@ -222,6 +223,15 @@ private void openConfiguredTarget() {
             showLocationPermissionGate();
             return;
         }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            pendingOpenCockpitAfterPermission = true;
+            requestNotifications();
+            return;
+        }
+        launchCockpitNow();
+    }
+
+    private void launchCockpitNow() {
         Intent i = new Intent(this, RoadMapActivity.class);
         startActivity(i);
         finish();
@@ -1189,13 +1199,13 @@ private void refreshLibraryAndOpenChooser() {
         IntentFilter p = new IntentFilter(PlayerService.ACTION_STATE);
         IntentFilter r = new IntentFilter(RoadSafetyService.ACTION_STATE);
         if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(downloadReceiver, d, Context.RECEIVER_NOT_EXPORTED);
-            registerReceiver(playerReceiver, p, Context.RECEIVER_NOT_EXPORTED);
-            registerReceiver(roadReceiver, r, Context.RECEIVER_NOT_EXPORTED);
+            InternalBroadcasts.register(this, downloadReceiver, d);
+            InternalBroadcasts.register(this, playerReceiver, p);
+            InternalBroadcasts.register(this, roadReceiver, r);
         } else {
-            registerReceiver(downloadReceiver, d);
-            registerReceiver(playerReceiver, p);
-            registerReceiver(roadReceiver, r);
+            InternalBroadcasts.register(this, downloadReceiver, d);
+            InternalBroadcasts.register(this, playerReceiver, p);
+            InternalBroadcasts.register(this, roadReceiver, r);
         }
     }
 
@@ -1402,9 +1412,17 @@ private void refreshLibraryAndOpenChooser() {
         if (requestCode == REQ_LOCATION) {
             if (hasLocationPermission()) {
                 startRoadSafetyIfAllowed();
-                showHome();
+                openCockpit();
             } else {
+                pendingOpenCockpitAfterPermission = false;
                 showLocationPermissionGate();
+            }
+            return;
+        }
+        if (requestCode == REQ_NOTIFICATIONS) {
+            if (pendingOpenCockpitAfterPermission) {
+                pendingOpenCockpitAfterPermission = false;
+                launchCockpitNow();
             }
         }
     }

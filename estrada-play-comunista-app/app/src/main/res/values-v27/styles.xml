@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.EstradaPlay" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">#06080C</item>
+        <item name="android:statusBarColor">#06080C</item>
+        <item name="android:navigationBarColor">#06080C</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:colorAccent">#E01E2F</item>
+        <item name="android:alertDialogTheme">@style/Theme.EstradaPlay.Dialog</item>
+    </style>
+</resources>

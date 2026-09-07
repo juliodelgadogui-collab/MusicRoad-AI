@@ -54,7 +54,7 @@ public final class ConvoyActivity extends ComponentActivity {
     @Override public void onLowMemory(){super.onLowMemory();if(map!=null)map.onLowMemoryMap();}
     @Override protected void onDestroy(){ui.removeCallbacks(tick);unregisterLive();if(map!=null)map.onDestroyMap();io.shutdownNow();super.onDestroy();}
 
-    private void registerLive(){if(liveRegistered)return;try{IntentFilter f=new IntentFilter(ConvoyLiveBridge.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(liveReceiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(liveReceiver,f);liveRegistered=true;}catch(Throwable ignored){}}
+    private void registerLive(){if(liveRegistered)return;try{IntentFilter f=new IntentFilter(ConvoyLiveBridge.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)InternalBroadcasts.register(this, liveReceiver, f);else InternalBroadcasts.register(this, liveReceiver, f);liveRegistered=true;}catch(Throwable ignored){}}
     private void unregisterLive(){if(!liveRegistered)return;try{unregisterReceiver(liveReceiver);}catch(Throwable ignored){}liveRegistered=false;}
 
     private void build(){if(map!=null)try{map.onPauseMap();map.onStopMap();map.onDestroyMap();}catch(Throwable ignored){}map=null;if(store.code().isEmpty())buildJoin();else buildActive();}

@@ -76,6 +76,14 @@ android {
             manifestPlaceholders = [appLabel: 'Estrada Play Comunista Teste']
             signingConfig signingConfigs.debug
         }
+        candidate {
+            // Production candidate: real package/name, no .teste suffix. Signed only for field validation.
+            debuggable false
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.debug
+            manifestPlaceholders = [appLabel: 'Estrada Play Comunista']
+        }
         release {
             debuggable false
             minifyEnabled false
@@ -105,6 +113,7 @@ gradle.taskGraph.whenReady { graph ->
 
 dependencies {
     implementation 'androidx.activity:activity:1.10.1'
+    implementation 'androidx.core:core:1.15.0'
     implementation 'org.maplibre.gl:android-sdk:13.4.1'
     implementation 'androidx.camera:camera-core:1.4.2'
     implementation 'androidx.camera:camera-camera2:1.4.2'

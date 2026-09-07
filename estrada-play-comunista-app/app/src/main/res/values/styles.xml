@@ -8,7 +8,6 @@
         <item name="android:statusBarColor">#06080C</item>
         <item name="android:navigationBarColor">#06080C</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
         <item name="android:colorAccent">#E01E2F</item>
         <item name="android:alertDialogTheme">@style/Theme.EstradaPlay.Dialog</item>
     </style>

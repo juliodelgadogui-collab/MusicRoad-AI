@@ -557,12 +557,12 @@ public final class MusicPlayerActivity extends ComponentActivity {
     private void register(){
         if(!registered){
             IntentFilter f=new IntentFilter(PlayerService.ACTION_STATE);
-            if(Build.VERSION.SDK_INT>=33)registerReceiver(playerState,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(playerState,f);
+            if(Build.VERSION.SDK_INT>=33)InternalBroadcasts.register(this, playerState, f);else InternalBroadcasts.register(this, playerState, f);
             registered=true;
         }
         if(!downloadRegistered){
             IntentFilter f=new IntentFilter(DownloadService.ACTION_STATE);
-            if(Build.VERSION.SDK_INT>=33)registerReceiver(downloadState,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(downloadState,f);
+            if(Build.VERSION.SDK_INT>=33)InternalBroadcasts.register(this, downloadState, f);else InternalBroadcasts.register(this, downloadState, f);
             downloadRegistered=true;
         }
     }

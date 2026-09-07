@@ -156,8 +156,8 @@ public final class VoiceCommandActivity extends ComponentActivity {
         };
         IntentFilter filter = new IntentFilter(CopilotService.ACTION_STATE);
         try {
-            if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
-            else registerReceiver(receiver, filter);
+            if (Build.VERSION.SDK_INT >= 33) InternalBroadcasts.register(this, receiver, filter);
+            else InternalBroadcasts.register(this, receiver, filter);
             registered = true;
         } catch (Throwable ignored) {}
         refreshLocalState();

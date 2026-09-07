@@ -64,8 +64,8 @@ final class RouteNavigationAssist implements Application.ActivityLifecycleCallba
         app.registerActivityLifecycleCallbacks(assist);
         IntentFilter filter = new IntentFilter(RoadSafetyService.ACTION_STATE);
         try {
-            if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(assist.roadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-            else app.registerReceiver(assist.roadReceiver, filter);
+            if (Build.VERSION.SDK_INT >= 33) InternalBroadcasts.register(app, assist.roadReceiver, filter);
+            else InternalBroadcasts.register(app, assist.roadReceiver, filter);
         } catch (Throwable ignored) {}
         assist.initVoice();
         return assist;

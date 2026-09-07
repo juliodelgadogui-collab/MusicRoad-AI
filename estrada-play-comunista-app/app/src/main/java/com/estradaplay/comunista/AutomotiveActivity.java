@@ -523,7 +523,7 @@ public final class AutomotiveActivity extends ComponentActivity {
     private void seedLocation() {
         try {
             LocationManager lm = (LocationManager)getSystemService(LOCATION_SERVICE);
-            if (lm == null || !hasLocation()) return;
+            if (lm == null || (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) return;
             Location best = null;
             for (String provider : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
                 try {
@@ -544,11 +544,11 @@ public final class AutomotiveActivity extends ComponentActivity {
         IntentFilter road = new IntentFilter(RoadSafetyService.ACTION_STATE);
         IntentFilter player = new IntentFilter(PlayerService.ACTION_STATE);
         if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(roadReceiver, road, Context.RECEIVER_NOT_EXPORTED);
-            registerReceiver(playerReceiver, player, Context.RECEIVER_NOT_EXPORTED);
+            InternalBroadcasts.register(this, roadReceiver, road);
+            InternalBroadcasts.register(this, playerReceiver, player);
         } else {
-            registerReceiver(roadReceiver, road);
-            registerReceiver(playerReceiver, player);
+            InternalBroadcasts.register(this, roadReceiver, road);
+            InternalBroadcasts.register(this, playerReceiver, player);
         }
     }
 

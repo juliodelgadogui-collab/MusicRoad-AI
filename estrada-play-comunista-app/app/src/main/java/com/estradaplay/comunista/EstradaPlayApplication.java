@@ -84,9 +84,9 @@ public final class EstradaPlayApplication extends Application {
             MobilityModeState.restore(this);
             mobilityReceiver = new MobilityModeState.Receiver();
             if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(mobilityReceiver, roadState, Context.RECEIVER_NOT_EXPORTED);
+                InternalBroadcasts.register(this, mobilityReceiver, roadState);
             } else {
-                registerReceiver(mobilityReceiver, roadState);
+                InternalBroadcasts.register(this, mobilityReceiver, roadState);
             }
         } catch (Throwable ignored) {
             try { if (mobilityReceiver != null) unregisterReceiver(mobilityReceiver); } catch (Throwable ignored2) {}
@@ -96,9 +96,9 @@ public final class EstradaPlayApplication extends Application {
         try {
             contextReceiver = new RouteContextV7BackgroundReceiver();
             if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(contextReceiver, roadState, Context.RECEIVER_NOT_EXPORTED);
+                InternalBroadcasts.register(this, contextReceiver, roadState);
             } else {
-                registerReceiver(contextReceiver, roadState);
+                InternalBroadcasts.register(this, contextReceiver, roadState);
             }
         } catch (Throwable ignored) {
             try { if (contextReceiver != null) unregisterReceiver(contextReceiver); } catch (Throwable ignored2) {}
@@ -108,9 +108,9 @@ public final class EstradaPlayApplication extends Application {
         try {
             convoyReceiver = new ConvoyLiveBridge();
             if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(convoyReceiver, roadState, Context.RECEIVER_NOT_EXPORTED);
+                InternalBroadcasts.register(this, convoyReceiver, roadState);
             } else {
-                registerReceiver(convoyReceiver, roadState);
+                InternalBroadcasts.register(this, convoyReceiver, roadState);
             }
         } catch (Throwable ignored) {
             try { if (convoyReceiver != null) unregisterReceiver(convoyReceiver); } catch (Throwable ignored2) {}

@@ -36,8 +36,8 @@ final class CopilotOverlayController implements Application.ActivityLifecycleCal
         filter.addAction(CopilotService.ACTION_STATE);
         filter.addAction(CopilotService.ACTION_OPEN_SCREEN);
         try {
-            if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(controller.receiver, filter, Context.RECEIVER_NOT_EXPORTED);
-            else app.registerReceiver(controller.receiver, filter);
+            if (Build.VERSION.SDK_INT >= 33) InternalBroadcasts.register(app, controller.receiver, filter);
+            else InternalBroadcasts.register(app, controller.receiver, filter);
         } catch (Throwable ignored) {}
         return controller;
     }

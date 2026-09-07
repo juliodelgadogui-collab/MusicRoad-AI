@@ -26,8 +26,8 @@ final class RoadRouteWeatherBridgeV303 {
         RoadRouteWeatherBridgeV303 bridge = new RoadRouteWeatherBridgeV303(app);
         IntentFilter f = new IntentFilter(RoadSafetyService.ACTION_STATE);
         try {
-            if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(bridge.receiver, f, Context.RECEIVER_NOT_EXPORTED);
-            else app.registerReceiver(bridge.receiver, f);
+            if (Build.VERSION.SDK_INT >= 33) InternalBroadcasts.register(app, bridge.receiver, f);
+            else InternalBroadcasts.register(app, bridge.receiver, f);
         } catch (Throwable ignored) {}
     }
 
