@@ -41,6 +41,14 @@ final class RoadAlertSequenceGate {
         lastForwardM = match.forwardM;
     }
 
+    /** Test isolation only; production code never calls this. */
+    static synchronized void resetForTests() {
+        lastHazardId = "";
+        lastType = "";
+        lastAcceptedAt = 0L;
+        lastForwardM = Double.POSITIVE_INFINITY;
+    }
+
     private static long minimumGapMs(double speedKmh, String type, double forwardM) {
         long gap = speedKmh >= 90 ? 4_800L : 5_600L;
         if ("CAMERA_MONITORAMENTO".equals(type)) gap += 900L;
