@@ -32,7 +32,7 @@ import java.lang.ref.WeakReference;
  * session, not as a protection failure. Real stale streams while moving still surface a warning and
  * re-kick RoadSafetyService.
  *
- * It also keeps a permanent way back to Central on the road screen and forces a clean Activity
+ * It also keeps a permanent way back to Premium Central on the road screen and forces a clean Activity
  * reconstruction when the physical layout crosses portrait/landscape, avoiding a half-rotated cockpit.
  */
 final class RoadProtectionStatusUiV303 implements Application.ActivityLifecycleCallbacks {
@@ -93,8 +93,6 @@ final class RoadProtectionStatusUiV303 implements Application.ActivityLifecycleC
 
             long gpsAge = intent.getLongExtra("gps_fix_age_ms", now - Math.max(1L, lastGoodFixAt));
             if (stationaryWithRecentFix(a, gpsAge)) {
-                // The vehicle is stopped and Android simply has not emitted another movement-qualified fix.
-                // Do not present this normal condition as a protection outage.
                 hideUnavailable(a);
                 recoverProtection();
             } else {
@@ -112,11 +110,8 @@ final class RoadProtectionStatusUiV303 implements Application.ActivityLifecycleC
                 long age = now - lastStateAt;
                 if (lastStateAt > 0L && age >= UI_STALE_MS) {
                     hideEstimate(a);
-                    if (stationaryWithRecentFix(a, age)) {
-                        hideUnavailable(a);
-                    } else {
-                        showUnavailable(a, "Sem atualização da proteção · tentando recuperar");
-                    }
+                    if (stationaryWithRecentFix(a, age)) hideUnavailable(a);
+                    else showUnavailable(a, "Sem atualização da proteção · tentando recuperar");
                     recoverProtection();
                 }
                 ensureNavigation(a);
@@ -265,7 +260,7 @@ final class RoadProtectionStatusUiV303 implements Application.ActivityLifecycleC
 
     private void openCentral(Activity a) {
         try {
-            Intent i = new Intent(a, MainActivity.class);
+            Intent i = new Intent(a, PremiumHomeActivity.class);
             i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             a.startActivity(i);
             a.finish();
