@@ -1,9 +1,6 @@
 name: Build Estrada Play Universal
 
 on:
-  push:
-    branches:
-      - agent/estrada-play-comunista
   workflow_dispatch:
     inputs:
       run_device_tests:
