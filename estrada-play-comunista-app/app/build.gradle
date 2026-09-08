@@ -12,15 +12,17 @@ def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD'
 def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
 android {
+    // Source namespace remains stable for the 5.0.x implementation. The Android install identity
+    // is intentionally clean and independent from that historical source namespace.
     namespace 'com.estradaplay.comunista'
     compileSdk 36
 
     defaultConfig {
-        applicationId 'com.estradaplay.comunista'
+        applicationId 'com.estradaplay'
         minSdk 24
         targetSdk 36
-        versionCode 502
-        versionName '5.0.2'
+        versionCode 503
+        versionName '5.0.3'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
