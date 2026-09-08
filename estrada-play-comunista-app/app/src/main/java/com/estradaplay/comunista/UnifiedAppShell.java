@@ -130,8 +130,9 @@ final class UnifiedAppShell {
             s.setBackground(PremiumUi.panel(a, theme.surfaceAlt, theme.border, theme.radiusDp));
         } else if (v instanceof TextView) {
             TextView text = (TextView) v;
-            int mapped = mapLegacyColor(text.getCurrentTextColor(), theme);
-            if (mapped != text.getCurrentTextColor()) text.setTextColor(mapped);
+            int original = text.getCurrentTextColor();
+            int mapped = mapLegacyColor(original, theme);
+            if (mapped != original) text.setTextColor(mapped);
         }
 
         if (v instanceof ViewGroup) {
@@ -154,13 +155,9 @@ final class UnifiedAppShell {
             if (fill == null) return;
             int original = fill.getDefaultColor();
             int mapped = mapLegacyColor(original, theme);
-            if (mapped == original) return;
-            int stroke = theme.border;
-            try {
-                ColorStateList oldStroke = gradient.getStrokeColor();
-                if (oldStroke != null) stroke = mapLegacyColor(oldStroke.getDefaultColor(), theme);
-            } catch (Throwable ignored) {}
-            v.setBackground(PremiumUi.panel(a, mapped, stroke, theme.radiusDp));
+            if (mapped != original) {
+                v.setBackground(PremiumUi.panel(a, mapped, theme.border, theme.radiusDp));
+            }
         }
     }
 
