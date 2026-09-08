@@ -1,9 +1,7 @@
 package com.estradaplay.comunista;
 
-import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -17,7 +15,7 @@ import androidx.activity.ComponentActivity;
 
 import org.json.JSONObject;
 
-/** Local startup gate. Configured drivers enter the new Premium Central; onboarding stays isolated. */
+/** Local startup gate. Signed drivers enter Premium Central; unsigned drivers enter Premium Account. */
 public final class GateActivity extends ComponentActivity {
     private static final String UI_PREFS = "estradaplay_ui_v1";
     private static final String KEY_ACCOUNT = "account";
@@ -31,8 +29,8 @@ public final class GateActivity extends ComponentActivity {
         getWindow().setStatusBarColor(theme.background);
         getWindow().setNavigationBarColor(theme.background);
         showBrandIntro(theme);
-        if (configured()) ui.postDelayed(this::launchPremium, 180L);
-        else ui.postDelayed(this::launchOnboarding, 520L);
+        if (signedIn()) ui.postDelayed(this::launchPremium, 180L);
+        else ui.postDelayed(this::launchAccount, 380L);
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -41,19 +39,15 @@ public final class GateActivity extends ComponentActivity {
         ConvoyIntegrationV237.captureInvite(this, intent);
         launched = false;
         ui.removeCallbacksAndMessages(null);
-        if (configured()) ui.postDelayed(this::launchPremium, 80L);
-        else ui.postDelayed(this::launchOnboarding, 100L);
+        if (signedIn()) ui.postDelayed(this::launchPremium, 80L);
+        else ui.postDelayed(this::launchAccount, 100L);
     }
 
-    private boolean configured() {
+    private boolean signedIn() {
         try {
             SharedPreferences p = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
             JSONObject account = new JSONObject(p.getString(KEY_ACCOUNT, "{}"));
-            boolean signed = account.optBoolean("authenticated", false) || account.optJSONObject("user") != null;
-            boolean location = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                    || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-            boolean setup = new LibraryStore(this).hasSetupDone();
-            return signed && location && setup;
+            return account.optBoolean("authenticated", false) || account.optJSONObject("user") != null;
         } catch (Throwable ignored) {
             return false;
         }
@@ -76,19 +70,27 @@ public final class GateActivity extends ComponentActivity {
         TextView brand = PremiumUi.text(this, "ESTRADA PLAY", 29, theme.text, true);
         brand.setGravity(Gravity.CENTER);
         brand.setLetterSpacing(.07f);
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2); bp.setMargins(0, dp(22),0,0); center.addView(brand,bp);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2);
+        bp.setMargins(0, dp(22), 0, 0);
+        center.addView(brand, bp);
 
         TextView subtitle = PremiumUi.overline(this, "NAVEGAÇÃO  ·  MÚSICA  ·  PROTEÇÃO", theme.secondary);
         subtitle.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-2,-2); sp.setMargins(0,dp(8),0,0); center.addView(subtitle,sp);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-2, -2);
+        sp.setMargins(0, dp(8), 0, 0);
+        center.addView(subtitle, sp);
 
         TextView version = PremiumUi.text(this, "v" + BuildConfig.VERSION_NAME, 9, theme.muted, true);
         version.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(-2,-2); vp.setMargins(0,dp(12),0,0); center.addView(version,vp);
+        LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(-2, -2);
+        vp.setMargins(0, dp(12), 0, 0);
+        center.addView(version, vp);
 
         View glow = new View(this);
         glow.setBackgroundColor(theme.primary);
-        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(dp(58), dp(3)); gp.setMargins(0,dp(18),0,0); center.addView(glow,gp);
+        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(dp(58), dp(3));
+        gp.setMargins(0, dp(18), 0, 0);
+        center.addView(glow, gp);
     }
 
     private void launchPremium() {
@@ -99,10 +101,10 @@ public final class GateActivity extends ComponentActivity {
         finish();
     }
 
-    private void launchOnboarding() {
+    private void launchAccount() {
         if (launched || isFinishing()) return;
         launched = true;
-        startActivity(new Intent(this, MainActivity.class));
+        startActivity(new Intent(this, PremiumAccountActivity.class));
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
         finish();
     }
