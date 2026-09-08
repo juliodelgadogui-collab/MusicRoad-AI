@@ -20,7 +20,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
-    <!-- Android 11+ package visibility for the platform speech recognition service. -->
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
@@ -40,8 +39,6 @@
         android:theme="@style/Theme.EstradaPlay"
         android:usesCleartextTraffic="false">
 
-        <!-- ANDROID16_ADAPTIVE_V280: the app now accepts resizeable/large-screen windows.
-             Flavor orientation remains a phone/car preference, while API 36 may override it on large displays. -->
         <activity
             android:name=".GateActivity"
             android:exported="true"
@@ -60,6 +57,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".PremiumHomeActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".ThemeSettingsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".AutomotiveActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
         <activity android:name=".RoadMapActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
         <activity android:name=".DestinationActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
