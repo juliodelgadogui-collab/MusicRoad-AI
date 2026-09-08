@@ -49,6 +49,7 @@ public final class EstradaPlayApplication extends Application {
         installForegroundOnlyRoadSession();
 
         UiVersionLabelFix.register(this);
+        PremiumBrandTextFix.register(this);
         try { ProductionTelemetryV400.install(this); } catch (Throwable ignored) {}
         try { MapStyleConfigV400.refreshAsync(this); } catch (Throwable ignored) {}
 
