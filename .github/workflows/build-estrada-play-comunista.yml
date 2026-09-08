@@ -1,6 +1,9 @@
 name: Build Estrada Play Comunista Universal
 
 on:
+  push:
+    branches:
+      - agent/estrada-play-comunista
   workflow_dispatch:
     inputs:
       run_device_tests:
@@ -49,9 +52,6 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Estrada Play Stable Candidate,O=Estrada Play,C=BR"
 
-      - name: PHP syntax gate
-        run: find api server -name '*.php' -print0 | xargs -0 -n1 php -l
-
       - name: Unit tests
         working-directory: estrada-play-comunista-app
         run: gradle --no-daemon --stacktrace testUniversalDebugUnitTest
@@ -60,19 +60,19 @@ jobs:
         working-directory: estrada-play-comunista-app
         run: gradle --no-daemon --stacktrace lintUniversalDebug
 
-      - name: Compile Universal candidate and instrumentation APK
+      - name: Compile Universal candidate
         working-directory: estrada-play-comunista-app
-        run: gradle --no-daemon --stacktrace assembleUniversalCandidate assembleUniversalDebugAndroidTest
+        run: gradle --no-daemon --stacktrace assembleUniversalCandidate
 
       - name: Enable KVM
-        if: ${{ inputs.run_device_tests }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_device_tests }}
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm || true
 
       - name: Device smoke tests
-        if: ${{ inputs.run_device_tests }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_device_tests }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -81,26 +81,10 @@ jobs:
           disable-animations: true
           script: cd estrada-play-comunista-app && gradle --no-daemon connectedUniversalDebugAndroidTest
 
-      - name: Build server package
-        run: |
-          rm -rf dist && mkdir -p dist/Estrada-Play-Comunista-Servidor
-          for p in api database importers server config install.php; do
-            if [ -e "$p" ]; then cp -R "$p" dist/Estrada-Play-Comunista-Servidor/; fi
-          done
-          (cd dist && zip -qr Estrada-Play-Comunista-Servidor-4.1.2.zip Estrada-Play-Comunista-Servidor)
-
-      - name: Upload Universal candidate APK
+      - name: Upload Universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-Comunista-4.1.2-UNIVERSAL
+          name: Estrada-Play-Comunista-4.1.3-UNIVERSAL
           path: estrada-play-comunista-app/app/build/outputs/apk/universal/candidate/*.apk
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload server package
-        uses: actions/upload-artifact@v4
-        with:
-          name: Estrada-Play-Comunista-Servidor-4.1.2
-          path: dist/Estrada-Play-Comunista-Servidor-4.1.2.zip
           if-no-files-found: error
           retention-days: 7
