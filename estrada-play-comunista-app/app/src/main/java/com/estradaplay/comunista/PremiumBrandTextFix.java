@@ -131,8 +131,9 @@ final class PremiumBrandTextFix {
         // The 5.x product no longer exposes the old ideological qualifier anywhere in user-facing UI.
         value = LEGACY_WORD.matcher(value).replaceAll("");
         value = LEGACY_ACRONYM.matcher(value).replaceAll("EP");
+        // Keep the intentional visual separator spacing around the middle dot (" · ").
         value = value.replaceAll("[ \\t]{2,}", " ")
-                .replaceAll("[ \\t]+([,;:·])", "$1")
+                .replaceAll("[ \\t]+([,;:])", "$1")
                 .replaceAll("([·|:-])[ \\t]*$", "")
                 .trim();
         return value;
