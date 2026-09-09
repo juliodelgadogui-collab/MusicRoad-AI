@@ -22,9 +22,10 @@ import org.json.JSONObject;
  * Single premium entry point for the road cockpit.
  *
  * The 5.x install id is new, so Android permissions from the historical package do not migrate.
- * This activity owns the permission gate and only opens RoadMapActivity after location is granted.
+ * This activity owns the permission gate and only opens road features after location is granted.
  */
 public final class RoadEntryActivity extends ComponentActivity {
+    public static final String EXTRA_DESTINATION = "open_destination";
     private static final int REQ_LOCATION = 5601;
     private static final String PREFS = "estradaplay_ui_v1";
     private static final String KEY_ACCOUNT = "account";
@@ -40,7 +41,7 @@ public final class RoadEntryActivity extends ComponentActivity {
             return;
         }
         if (hasLocation()) {
-            openRoad();
+            openTarget();
             return;
         }
         renderGate(false);
@@ -48,7 +49,7 @@ public final class RoadEntryActivity extends ComponentActivity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (hasLocation() && !isFinishing()) openRoad();
+        if (hasLocation() && !isFinishing()) openTarget();
     }
 
     private void renderGate(boolean denied) {
@@ -130,12 +131,13 @@ public final class RoadEntryActivity extends ComponentActivity {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != REQ_LOCATION) return;
-        if (hasLocation()) openRoad();
+        if (hasLocation()) openTarget();
         else renderGate(true);
     }
 
-    private void openRoad() {
-        Intent i = new Intent(this, RoadMapActivity.class);
+    private void openTarget() {
+        boolean destination = getIntent() != null && getIntent().getBooleanExtra(EXTRA_DESTINATION, false);
+        Intent i = new Intent(this, destination ? DestinationActivity.class : RoadMapActivity.class);
         i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(i);
         finish();
