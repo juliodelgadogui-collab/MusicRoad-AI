@@ -1,6 +1,11 @@
 name: Build Estrada Play Universal
 
 on:
+  push:
+    branches:
+      - agent/estrada-play-comunista
+    paths:
+      - '.github/workflows/build-estrada-play-comunista.yml'
   workflow_dispatch:
     inputs:
       run_device_tests:
@@ -62,14 +67,14 @@ jobs:
         run: gradle --no-daemon --stacktrace assembleUniversalCandidate assembleUniversalDebugAndroidTest
 
       - name: Enable KVM
-        if: ${{ inputs.run_device_tests }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_device_tests }}
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm || true
 
       - name: Device smoke tests
-        if: ${{ inputs.run_device_tests }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_device_tests }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -81,7 +86,7 @@ jobs:
       - name: Upload Universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-5.0.5-UNIVERSAL
+          name: Estrada-Play-5.0.6-UNIVERSAL
           path: estrada-play-comunista-app/app/build/outputs/apk/universal/candidate/*.apk
           if-no-files-found: error
           retention-days: 7
