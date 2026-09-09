@@ -317,7 +317,7 @@ public final class DownloadService extends Service {
     private Notification notification(String text, int done, int total, boolean indeterminate) {
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         b.setSmallIcon(android.R.drawable.stat_sys_download)
-                .setContentTitle("Estrada Play Comunista")
+                .setContentTitle("Estrada Play")
                 .setContentText(text)
                 .setOngoing(running)
                 .setOnlyAlertOnce(true)
