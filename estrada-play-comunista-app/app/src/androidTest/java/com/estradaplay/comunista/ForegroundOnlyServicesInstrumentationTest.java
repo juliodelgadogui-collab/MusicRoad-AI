@@ -18,7 +18,7 @@ import org.junit.runner.RunWith;
 
 import java.util.Arrays;
 
-/** Regression gates for the V4.1 foreground-only road-alert policy. */
+/** Regression gates for foreground-only road services and intentional media playback. */
 @RunWith(AndroidJUnit4.class)
 public class ForegroundOnlyServicesInstrumentationTest {
 
@@ -40,6 +40,14 @@ public class ForegroundOnlyServicesInstrumentationTest {
         assertStopWithTask(info.services, RoadRadioService.class.getName());
     }
 
+    @Test public void intentionalMusicIsNotKilledWithRoadTask() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        PackageInfo info = context.getPackageManager().getPackageInfo(
+                context.getPackageName(), PackageManager.GET_SERVICES);
+        assertNotNull(info.services);
+        assertDoesNotStopWithTask(info.services, PlayerService.class.getName());
+    }
+
     @Test public void bootReceiverIsNotRegistered() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         PackageInfo info = context.getPackageManager().getPackageInfo(
@@ -55,6 +63,17 @@ public class ForegroundOnlyServicesInstrumentationTest {
         for (ServiceInfo service : services) {
             if (service != null && serviceName.equals(service.name)) {
                 assertTrue(serviceName + " must stop with app task",
+                        (service.flags & ServiceInfo.FLAG_STOP_WITH_TASK) != 0);
+                return;
+            }
+        }
+        throw new AssertionError("Service not found: " + serviceName);
+    }
+
+    private static void assertDoesNotStopWithTask(ServiceInfo[] services, String serviceName) {
+        for (ServiceInfo service : services) {
+            if (service != null && serviceName.equals(service.name)) {
+                assertFalse(serviceName + " must be allowed to continue intentional playback",
                         (service.flags & ServiceInfo.FLAG_STOP_WITH_TASK) != 0);
                 return;
             }
