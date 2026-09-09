@@ -82,7 +82,7 @@ final class UnifiedAppShell {
         if (index == 0) cls = PremiumHomeActivity.class;
         else if (index == 1) cls = PremiumMusicActivity.class;
         else if (index == 2) cls = PremiumDownloadsActivity.class;
-        else if (index == 3) cls = RoadMapActivity.class;
+        else if (index == 3) cls = RoadEntryActivity.class;
         else cls = ThemeSettingsActivity.class;
         Intent i = new Intent(a, cls);
         i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
