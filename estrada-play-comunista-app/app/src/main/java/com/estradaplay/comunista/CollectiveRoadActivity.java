@@ -1,8 +1,177 @@
 package com.estradaplay.comunista;
-import android.graphics.*;import android.graphics.drawable.GradientDrawable;import android.os.*;import android.view.*;import android.widget.*;import androidx.activity.ComponentActivity;import org.json.*;import java.text.*;import java.util.*;
-public final class CollectiveRoadActivity extends ComponentActivity{
- private final int BG=Color.rgb(9,5,7),TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(174,151,146),RED=Color.rgb(190,18,38),GREEN=Color.rgb(69,212,131),BORDER=Color.rgb(76,38,43);private LinearLayout page;private CollectiveRoadStore store;
- @Override protected void onCreate(Bundle b){super.onCreate(b);store=new CollectiveRoadStore(this);build();}
- private void build(){ScrollView sv=new ScrollView(this);page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setPadding(dp(18),dp(18),dp(18),dp(30));page.setBackgroundColor(BG);sv.addView(page);setContentView(UnifiedAppShell.wrap(this,"central",sv));page.addView(t("INTELIGÊNCIA COLETIVA",27,TEXT,true));page.addView(t("O aparelho detecta irregularidades pelos sensores. Só pequenos eventos e coordenadas podem ir ao servidor; vídeos nunca são enviados.",12,MUTED,false));CheckBox on=new CheckBox(this);on.setText("PARTICIPAR DA BASE COLETIVA");on.setTextColor(TEXT);on.setChecked(DriveSettings.collectiveEnabled(this));on.setOnCheckedChangeListener((b,v)->DriveSettings.toggle(this,"collective_enabled",v));page.addView(on);CheckBox protect=new CheckBox(this);protect.setText("PROTEGER VÍDEO DA DASHCAM EM IMPACTO\nFunciona apenas quando a câmera/dashcam estiver aberta e gravando.");protect.setTextColor(TEXT);protect.setChecked(DriveSettings.protectImpactVideo(this));protect.setOnCheckedChangeListener((b,v)->DriveSettings.toggle(this,"protect_impact_video",v));page.addView(protect);page.addView(t("Impactos detectados neste aparelho: "+store.impactCount()+" · fila para sincronizar: "+store.queuedCount(),13,GREEN,true));TextView h=t("RADARES PARA CONFIRMAR DEPOIS",15,RED,true);page.addView(h);JSONArray a=store.pending();if(a.length()==0)page.addView(t("Nenhum radar pendente. Quando um radar for alertado, ele entra aqui para você confirmar quando estiver seguro.",12,MUTED,false));for(int i=0;i<a.length();i++){JSONObject o=a.optJSONObject(i);if(o==null)continue;String id=o.optString("radar_id");LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(12),dp(12),dp(12),dp(12));c.setBackground(box(Color.rgb(22,10,13),10,BORDER));String road=o.optString("road","Radar");int lim=o.optInt("limit_kmh",0);c.addView(t(road+(lim>0?" · "+lim+" km/h":""),15,TEXT,true));long at=o.optLong("seen_at");if(at>0)c.addView(t(new SimpleDateFormat("dd/MM HH:mm",Locale.getDefault()).format(new Date(at))+" · "+o.optString("source",""),10,MUTED,false));LinearLayout r=new LinearLayout(this);r.setOrientation(LinearLayout.HORIZONTAL);Button yes=b("AINDA EXISTE",GREEN);Button no=b("NÃO ESTÁ MAIS",RED);r.addView(yes,new LinearLayout.LayoutParams(0,dp(48),1));LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,dp(48),1);np.setMargins(dp(6),0,0,0);r.addView(no,np);c.addView(r);yes.setOnClickListener(v->{store.resolveRadar(id,"exists");build();});no.setOnClickListener(v->{store.resolveRadar(id,"removed");build();});page.addView(c);}}
- private Button b(String s,int c){Button b=new Button(this);b.setText(s);b.setTextColor(TEXT);b.setBackgroundColor(c);return b;}private TextView t(String v,float s,int c,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);if(b)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}private GradientDrawable box(int c,int r,int st){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(dp(r));d.setStroke(dp(1),st);return d;}private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}
+
+import android.graphics.Typeface;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+
+import androidx.activity.ComponentActivity;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+/** Premium collective-road review and privacy controls. */
+public final class CollectiveRoadActivity extends ComponentActivity {
+    private LinearLayout page;
+    private CollectiveRoadStore store;
+    private EstradaTheme theme;
+
+    @Override protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        store = new CollectiveRoadStore(this);
+        build();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        EstradaTheme current = EstradaTheme.get(this);
+        if (theme != null && !current.name.equals(theme.name)) build();
+    }
+
+    private void build() {
+        theme = EstradaTheme.get(this);
+        getWindow().setStatusBarColor(theme.background);
+        getWindow().setNavigationBarColor(theme.background);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        page = PremiumUi.col(this);
+        page.setPadding(dp(18), dp(18), dp(18), dp(30));
+        page.setBackgroundColor(theme.background);
+        scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+        setContentView(UnifiedAppShell.wrap(this, "central", scroll));
+
+        page.addView(PremiumUi.overline(this, "ESTRADA VIVA", theme.secondary));
+        TextView title = PremiumUi.text(this, "Inteligência coletiva", 27, theme.text, true);
+        page.addView(title);
+        margin(title, 0, 5, 0, 4);
+        TextView intro = PremiumUi.text(this,
+                "O aparelho pode detectar irregularidades pelos sensores. Somente pequenos eventos e coordenadas podem ser sincronizados; vídeos nunca são enviados.",
+                12, theme.muted, false);
+        page.addView(intro);
+        margin(intro, 0, 0, 0, 16);
+
+        LinearLayout privacy = card();
+        privacy.addView(PremiumUi.overline(this, "PRIVACIDADE E CONTRIBUIÇÃO", theme.secondary));
+
+        CheckBox on = check("PARTICIPAR DA BASE COLETIVA",
+                "Compartilha somente eventos necessários para melhorar os alertas da estrada.");
+        on.setChecked(DriveSettings.collectiveEnabled(this));
+        on.setOnCheckedChangeListener((button, value) -> DriveSettings.toggle(this, "collective_enabled", value));
+        privacy.addView(on);
+
+        CheckBox protect = check("PROTEGER VÍDEO DA DASHCAM EM IMPACTO",
+                "Funciona apenas enquanto a dashcam estiver aberta e gravando.");
+        protect.setChecked(DriveSettings.protectImpactVideo(this));
+        protect.setOnCheckedChangeListener((button, value) -> DriveSettings.toggle(this, "protect_impact_video", value));
+        privacy.addView(protect);
+
+        TextView stats = PremiumUi.text(this,
+                "Impactos detectados: " + store.impactCount() + "  ·  fila para sincronizar: " + store.queuedCount(),
+                11, theme.success, true);
+        privacy.addView(stats);
+        margin(stats, 0, 10, 0, 0);
+        page.addView(privacy, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView pendingTitle = PremiumUi.overline(this, "RADARES PARA CONFIRMAR DEPOIS", theme.warning);
+        page.addView(pendingTitle);
+        margin(pendingTitle, 0, 20, 0, 8);
+
+        JSONArray pending = store.pending();
+        if (pending.length() == 0) {
+            LinearLayout empty = card();
+            empty.addView(PremiumUi.text(this, "Nenhuma confirmação pendente", 15, theme.text, true));
+            TextView detail = PremiumUi.text(this,
+                    "Quando um radar for alertado, ele pode aparecer aqui para você confirmar quando estiver seguro.",
+                    11, theme.muted, false);
+            empty.addView(detail);
+            margin(detail, 0, 5, 0, 0);
+            page.addView(empty, new LinearLayout.LayoutParams(-1, -2));
+            return;
+        }
+
+        for (int i = 0; i < pending.length(); i++) {
+            JSONObject item = pending.optJSONObject(i);
+            if (item == null) continue;
+            renderRadar(item);
+        }
+    }
+
+    private void renderRadar(JSONObject item) {
+        String id = item.optString("radar_id");
+        String road = item.optString("road", "Radar");
+        int limit = item.optInt("limit_kmh", 0);
+
+        LinearLayout card = card();
+        card.addView(PremiumUi.text(this,
+                road + (limit > 0 ? "  ·  " + limit + " km/h" : ""),
+                15, theme.text, true));
+
+        long at = item.optLong("seen_at");
+        if (at > 0) {
+            String meta = new SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(new Date(at));
+            String source = item.optString("source", "").trim();
+            if (!source.isEmpty()) meta += "  ·  " + source;
+            TextView detail = PremiumUi.text(this, meta, 10, theme.muted, false);
+            card.addView(detail);
+            margin(detail, 0, 4, 0, 10);
+        }
+
+        LinearLayout actions = PremiumUi.row(this);
+        Button yes = PremiumUi.button(this, "AINDA EXISTE", true);
+        Button no = PremiumUi.button(this, "NÃO ESTÁ MAIS", false);
+        no.setTextColor(theme.danger);
+        actions.addView(yes, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        np.setMargins(dp(7), 0, 0, 0);
+        actions.addView(no, np);
+        card.addView(actions);
+
+        yes.setOnClickListener(v -> {
+            store.resolveRadar(id, "exists");
+            build();
+        });
+        no.setOnClickListener(v -> {
+            store.resolveRadar(id, "removed");
+            build();
+        });
+
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, -2);
+        cp.setMargins(0, 0, 0, dp(8));
+        page.addView(card, cp);
+    }
+
+    private CheckBox check(String title, String subtitle) {
+        CheckBox box = new CheckBox(this);
+        box.setText(title + "\n" + subtitle);
+        box.setTextColor(theme.text);
+        box.setTextSize(12);
+        box.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+        box.setPadding(0, dp(8), 0, dp(8));
+        return box;
+    }
+
+    private LinearLayout card() {
+        LinearLayout card = PremiumUi.col(this);
+        card.setPadding(dp(14), dp(14), dp(14), dp(14));
+        card.setBackground(PremiumUi.panel(this, theme.glass, theme.border, theme.radiusDp));
+        return card;
+    }
+
+    private void margin(View view, int l, int t, int r, int b) {
+        if (!(view.getLayoutParams() instanceof LinearLayout.LayoutParams)) return;
+        LinearLayout.LayoutParams p = (LinearLayout.LayoutParams) view.getLayoutParams();
+        p.setMargins(dp(l), dp(t), dp(r), dp(b));
+        view.setLayoutParams(p);
+    }
+
+    private int dp(float value) { return PremiumUi.dp(this, value); }
 }
