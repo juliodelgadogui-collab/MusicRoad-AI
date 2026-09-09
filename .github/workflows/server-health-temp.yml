@@ -15,34 +15,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Inspect Estrada Play server hosts
+      - name: Inspect client links and preview host
         shell: bash
         run: |
           set +e
-          echo '===== DNS candidates ====='
-          for host in \
-            musicroad1.gestao2.store \
-            musicroad.gestao2.store \
-            gestao2.store \
-            www.gestao2.store \
-            eventmenu.atwebpages.com
-          do
-            echo "--- $host ---"
-            getent ahosts "$host" | head -10 || true
+          echo '===== eventmenu root (diagnostic only, certificate mismatch bypassed) ====='
+          curl -k -sS -L --max-time 15 --connect-timeout 8 \
+            https://eventmenu.atwebpages.com/ -o /tmp/root.html || true
+          echo "size=$(wc -c </tmp/root.html 2>/dev/null || echo 0)"
+          head -c 3000 /tmp/root.html 2>/dev/null || true
+          echo
+          echo '===== absolute URLs found ====='
+          grep -Eo 'https?://[^"'"'"' <>)]+' /tmp/root.html 2>/dev/null | sort -u | head -100 || true
+          echo
+          echo '===== likely API/server terms ====='
+          grep -Eio '.{0,90}(api|server|native_app|musicroad|estradaplay).{0,140}' /tmp/root.html 2>/dev/null | head -80 || true
+          echo
+          echo '===== valid certificate hostname ====='
+          for path in / /api/ping.php '/api/native_app.php?action=session'; do
+            echo "--- https://f28-preview.runhosting.com$path ---"
+            curl -sS -D - -L --max-time 15 --connect-timeout 8 \
+              "https://f28-preview.runhosting.com$path" -o /tmp/preview.txt || true
+            head -c 1200 /tmp/preview.txt 2>/dev/null || true
+            echo
           done
-
-          echo '===== eventmenu TLS certificate ====='
-          echo | openssl s_client -connect 185.176.43.100:443 -servername eventmenu.atwebpages.com -showcerts 2>/tmp/tls.err \
-            | openssl x509 -noout -subject -issuer -dates -ext subjectAltName || true
-          cat /tmp/tls.err | tail -20 || true
-
-          echo '===== eventmenu insecure diagnostic only ====='
-          curl -k -sS -D - --max-time 15 --connect-timeout 8 \
-            https://eventmenu.atwebpages.com/api/ping.php -o /tmp/event-ping.txt || true
-          head -c 2000 /tmp/event-ping.txt 2>/dev/null || true
-          echo
-          curl -k -sS -D - --max-time 15 --connect-timeout 8 \
-            'https://eventmenu.atwebpages.com/api/native_app.php?action=session' \
-            -H 'Content-Type: application/json' --data '{}' -o /tmp/event-native.txt || true
-          head -c 2000 /tmp/event-native.txt 2>/dev/null || true
-          echo
