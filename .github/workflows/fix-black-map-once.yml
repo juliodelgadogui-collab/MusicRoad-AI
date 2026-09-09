@@ -27,16 +27,8 @@ jobs:
 
           activity = Path('estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java')
           s = activity.read_text(encoding='utf-8')
-          old = '''                buildResponsiveUi();
-                if (Double.isFinite(lastLat) && Double.isFinite(lastLon) && roadMap != null) {'''
-          new = '''                buildResponsiveUi();
-                // MAP_REBUILD_LIFECYCLE_V511: this resize callback normally runs after Activity.onResume().
-                // The freshly-created MapView must receive its lifecycle again or MapLibre can stay black.
-                if (roadMap != null) {
-                    try { roadMap.onStartMap(); } catch (Throwable ignored) {}
-                    try { roadMap.onResumeMap(); } catch (Throwable ignored) {}
-                }
-                if (Double.isFinite(lastLat) && Double.isFinite(lastLon) && roadMap != null) {'''
+          old = "                buildResponsiveUi();\n                if (Double.isFinite(lastLat) && Double.isFinite(lastLon) && roadMap != null) {"
+          new = "                buildResponsiveUi();\n                // MAP_REBUILD_LIFECYCLE_V511: resize can rebuild MapView after Activity.onResume().\n                if (roadMap != null) {\n                    try { roadMap.onStartMap(); } catch (Throwable ignored) {}\n                    try { roadMap.onResumeMap(); } catch (Throwable ignored) {}\n                }\n                if (Double.isFinite(lastLat) && Double.isFinite(lastLon) && roadMap != null) {"
           if old not in s:
               raise SystemExit('RoadMapActivity resize block not found')
           s = s.replace(old, new, 1)
@@ -50,10 +42,7 @@ jobs:
               raise SystemExit('MapStyleConfig fallback not found')
           s = s.replace(old, new, 1)
           old = 'return valid(v)?v:FALLBACK;'
-          new = '''// OpenFreeMap dark is kept out of the automatic fallback path because a style/source failure
-        // can look like a completely black map on some MapLibre/driver combinations.
-        if(valid(v) && !"https://tiles.openfreemap.org/styles/dark".equalsIgnoreCase(v.trim())) return v;
-        return FALLBACK;'''
+          new = '// Avoid the legacy dark fallback when MapLibre/source loading can become visually black.\n        if(valid(v) && !"https://tiles.openfreemap.org/styles/dark".equalsIgnoreCase(v.trim())) return v;\n        return FALLBACK;'
           if old not in s:
               raise SystemExit('MapStyleConfig selection line not found')
           s = s.replace(old, new, 1)
@@ -66,19 +55,8 @@ jobs:
           if old not in s:
               raise SystemExit('RoadMapView open style not found')
           s = s.replace(old, new, 1)
-          old = '''        ui.postDelayed(() -> {
-            if (!mapReady) loadOfflineMap();
-        }, 6500L);'''
-          new = '''        ui.postDelayed(() -> {
-            if (mapReady) return;
-            // Do not replace a slow online basemap with the intentionally minimal offline style.
-            // That style has no base tiles and can look like a black screen until local road data arrives.
-            if (!online()) loadOfflineMap();
-            else {
-                fallback.setText("Mapa online demorando…\\nGPS e alertas continuam ativos");
-                fallback.setVisibility(View.VISIBLE);
-            }
-        }, 12000L);'''
+          old = '        ui.postDelayed(() -> {\n            if (!mapReady) loadOfflineMap();\n        }, 6500L);'
+          new = '        ui.postDelayed(() -> {\n            if (mapReady) return;\n            // Slow online tiles must not be replaced by the intentionally minimal offline style.\n            if (!online()) loadOfflineMap();\n            else {\n                fallback.setText("Mapa online demorando…\\nGPS e alertas continuam ativos");\n                fallback.setVisibility(View.VISIBLE);\n            }\n        }, 12000L);'
           if old not in s:
               raise SystemExit('RoadMapView timeout block not found')
           s = s.replace(old, new, 1)
