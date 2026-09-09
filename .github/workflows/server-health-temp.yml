@@ -1,0 +1,45 @@
+name: Server health temporary
+
+on:
+  push:
+    branches:
+      - agent/estrada-play-comunista
+    paths:
+      - '.github/workflows/server-health-temp.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Estrada Play endpoints
+        shell: bash
+        run: |
+          set +e
+          for base in \
+            "https://musicroad1.gestao2.store" \
+            "https://eventmenu.atwebpages.com"
+          do
+            host="${base#https://}"
+            echo "===== $base ====="
+            echo "--- DNS ---"
+            getent ahosts "$host" | head -10 || true
+            echo "--- HTTPS root ---"
+            curl -sS -I -L --max-time 15 --connect-timeout 8 "$base/" || true
+            echo "--- API ping ---"
+            rm -f /tmp/ping.txt
+            curl -sS -D - --max-time 15 --connect-timeout 8 "$base/api/ping.php" -o /tmp/ping.txt || true
+            head -c 1200 /tmp/ping.txt 2>/dev/null || true
+            echo
+            echo "--- native session no-auth ---"
+            rm -f /tmp/native.txt
+            curl -sS -D - --max-time 15 --connect-timeout 8 \
+              "$base/api/native_app.php?action=session" \
+              -H "Content-Type: application/json" \
+              --data '{}' -o /tmp/native.txt || true
+            head -c 1200 /tmp/native.txt 2>/dev/null || true
+            echo
+          done
