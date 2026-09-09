@@ -12,7 +12,7 @@ import androidx.activity.ComponentActivity;
 public final class AutomotiveActivity extends ComponentActivity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        Intent next = new Intent(this, RoadMapActivity.class);
+        Intent next = new Intent(this, RoadEntryActivity.class);
         next.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(next);
         finish();
