@@ -184,8 +184,10 @@ public final class RoadMapActivity extends ComponentActivity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-        if (!hasAccount()) { startActivity(new Intent(this, MainActivity.class)); finish(); return; }
-        if (!hasLocation()) { startActivity(new Intent(this, MainActivity.class)); finish(); return; }
+        if (!hasAccount()) { startActivity(new Intent(this, PremiumAccountActivity.class)); finish(); return; }
+        // ROAD_ENTRY_SINGLE_GATE_V511: every permission miss returns to the dedicated gate,
+        // never to the compatibility router, preventing Central -> Estrada -> Central loops.
+        if (!hasLocation()) { startActivity(new Intent(this, RoadEntryActivity.class)); finish(); return; }
         destination = DestinationStore.read(this);
         root = new FrameLayout(this); root.setBackgroundColor(BG); setContentView(root);
         buildResponsiveUi(); forceTouchableWindow(); startSafety(); registerRoadReceiver(); registerPlayerReceiver(); queryPlayerState(); seedLocation();

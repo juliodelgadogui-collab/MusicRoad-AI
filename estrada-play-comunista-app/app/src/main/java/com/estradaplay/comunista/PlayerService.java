@@ -599,7 +599,13 @@ public final class PlayerService extends Service {
 
     private static final class StagedQueue { final ArrayList<Track> unused = null; final ArrayList<String> keys = new ArrayList<>(); final LinkedHashMap<String, String> sources = new LinkedHashMap<>(); }
 
-    @Override public void onTaskRemoved(Intent rootIntent) { saveSnapshot(); stopSelf(); super.onTaskRemoved(rootIntent); }
+    @Override public void onTaskRemoved(Intent rootIntent) {
+        // PLAYER_TASK_POLICY_V511: intentional playback may continue after the UI task is removed.
+        // A paused/idle player still shuts down so it cannot become a zombie background service.
+        saveSnapshot();
+        if (!isPlaying()) stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
 
     @Override public void onDestroy() {
         saveSnapshot(); io.shutdownNow(); playerGeneration++; releasePlayerOnly(); abandonFocus();

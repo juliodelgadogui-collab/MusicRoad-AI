@@ -20,8 +20,8 @@ android {
         applicationId 'com.estradaplay'
         minSdk 24
         targetSdk 36
-        versionCode 510
-        versionName '5.1.0'
+        versionCode 511
+        versionName '5.1.1'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
