@@ -8,11 +8,6 @@ on:
         required: false
         default: true
         type: boolean
-  push:
-    branches:
-      - agent/estrada-play-comunista
-    paths:
-      - .github/workflows/build-estrada-play-comunista.yml
 
 permissions:
   contents: read
@@ -67,14 +62,14 @@ jobs:
         run: gradle --no-daemon --stacktrace assembleUniversalCandidate assembleUniversalDebugAndroidTest
 
       - name: Enable KVM
-        if: ${{ github.event_name == 'push' || inputs.run_device_tests }}
+        if: ${{ inputs.run_device_tests }}
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm || true
 
       - name: Device smoke tests
-        if: ${{ github.event_name == 'push' || inputs.run_device_tests }}
+        if: ${{ inputs.run_device_tests }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
