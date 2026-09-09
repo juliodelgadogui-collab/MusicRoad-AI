@@ -10,8 +10,10 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.UnknownHostException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -149,6 +151,15 @@ final class ApiClient {
             if (raw != null && encoding != null && encoding.toLowerCase().contains("gzip")) in = new java.util.zip.GZIPInputStream(raw);
             String body = read(in, maxChars);
             response = new Response(code, body);
+        } catch (UnknownHostException dnsFailure) {
+            // NETWORK_DNS_FALLBACK_V505: Chrome may resolve the same host through Secure DNS while
+            // Android's system resolver fails. Retry only this DNS failure with DoH while keeping
+            // the original HTTPS hostname, certificate validation and same-origin auth rules.
+            SecureDnsHttpFallback.Result fallback = SecureDnsHttpFallback.execute(
+                    method, target, data, connectTimeout, readTimeout, maxChars,
+                    fallbackHeaders(trusted, credentialAction, refreshCall));
+            if (trusted) captureCookies(fallback.headers);
+            response = new Response(fallback.code, fallback.body);
         } finally {
             // API_CONNECTION_CLEANUP_V300: also runs when getResponseCode/read/gzip throws.
             if (c != null) try { c.disconnect(); } catch (Throwable ignored) {}
@@ -165,6 +176,25 @@ final class ApiClient {
             }
         }
         return response;
+    }
+
+    private Map<String, String> fallbackHeaders(boolean trusted, boolean credentialAction, boolean refreshCall) {
+        LinkedHashMap<String, String> headers = new LinkedHashMap<>();
+        headers.put("Accept", "application/json");
+        headers.put("User-Agent", "EstradaPlay/" + BuildConfig.VERSION_NAME + " Android");
+        if (!trusted) return headers;
+
+        headers.put("X-MusicRoad-Native", "1");
+        headers.put("X-EstradaPlay-Device", DeviceIdentity.token(app));
+        headers.put("X-EstradaPlay-Device-Label", DeviceIdentity.label());
+
+        // device_secret is already mirrored in the same-origin JSON body for credential actions.
+        // Avoid depending on custom FastCGI headers during the recovery transport.
+        String access = credentialAction || refreshCall ? "" : credential.accessToken();
+        if (!access.isEmpty()) headers.put("Authorization", "Bearer " + access);
+        String sessionCookie = cookie();
+        if (sessionCookie != null && !sessionCookie.trim().isEmpty()) headers.put("Cookie", sessionCookie.trim());
+        return headers;
     }
 
     private void bootstrapSecureSessionIfNeeded() {
