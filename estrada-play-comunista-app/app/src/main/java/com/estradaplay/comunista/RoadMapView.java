@@ -35,7 +35,7 @@ import static org.maplibre.android.style.layers.PropertyFactory.lineOpacity;
 import static org.maplibre.android.style.layers.PropertyFactory.lineWidth;
 
 final class RoadMapView extends FrameLayout {
-    private static final String OPEN_STYLE = "https://tiles.openfreemap.org/styles/dark";
+    private static final String OPEN_STYLE = "https://tiles.openfreemap.org/styles/liberty";
     private static final String EMPTY_GEOJSON = "{\"type\":\"FeatureCollection\",\"features\":[]}";
     private static final String LOCAL_STYLE = "{\"version\":8,\"name\":\"EPC Night\",\"sources\":{},\"layers\":[{\"id\":\"background\",\"type\":\"background\",\"paint\":{\"background-color\":\"#080507\"}}]}";
 
@@ -128,8 +128,14 @@ final class RoadMapView extends FrameLayout {
             return;
         }
         ui.postDelayed(() -> {
-            if (!mapReady) loadOfflineMap();
-        }, 6500L);
+            if (mapReady) return;
+            // Slow online tiles must not be replaced by the intentionally minimal offline style.
+            if (!online()) loadOfflineMap();
+            else {
+                fallback.setText("Mapa online demorando…\nGPS e alertas continuam ativos");
+                fallback.setVisibility(View.VISIBLE);
+            }
+        }, 12000L);
     }
 
     private void loadOfflineMap() {

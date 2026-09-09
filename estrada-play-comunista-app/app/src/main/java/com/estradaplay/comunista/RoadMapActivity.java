@@ -194,6 +194,11 @@ public final class RoadMapActivity extends ComponentActivity {
             int w = root.getWidth(), h = root.getHeight();
             if (w > 0 && h > 0 && (Math.abs(w-lastWidth)>dp(40) || Math.abs(h-lastHeight)>dp(40))) {
                 buildResponsiveUi();
+                // MAP_REBUILD_LIFECYCLE_V511: resize can rebuild MapView after Activity.onResume().
+                if (roadMap != null) {
+                    try { roadMap.onStartMap(); } catch (Throwable ignored) {}
+                    try { roadMap.onResumeMap(); } catch (Throwable ignored) {}
+                }
                 if (Double.isFinite(lastLat) && Double.isFinite(lastLon) && roadMap != null) {
                     roadMap.setUserLocation(lastLat,lastLon,lastHeading); refreshMapData(lastLat,lastLon,0); refreshDestinationRoute(lastLat,lastLon);
                 }

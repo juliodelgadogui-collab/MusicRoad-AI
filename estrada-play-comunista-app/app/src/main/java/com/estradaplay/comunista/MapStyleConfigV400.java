@@ -12,13 +12,15 @@ import java.util.concurrent.Executors;
 final class MapStyleConfigV400 {
     private static final String PREFS="epc_map_style_v400";
     private static final String KEY="style_url";
-    private static final String FALLBACK="https://tiles.openfreemap.org/styles/dark";
+    private static final String FALLBACK="https://tiles.openfreemap.org/styles/liberty";
     private static final ExecutorService IO=Executors.newSingleThreadExecutor();
     private MapStyleConfigV400(){}
 
     static String styleUri(Context c){
         String v=c.getApplicationContext().getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY,"");
-        return valid(v)?v:FALLBACK;
+        // Avoid the legacy dark fallback when MapLibre/source loading can become visually black.
+        if(valid(v) && !"https://tiles.openfreemap.org/styles/dark".equalsIgnoreCase(v.trim())) return v;
+        return FALLBACK;
     }
 
     static void refreshAsync(Context c){
