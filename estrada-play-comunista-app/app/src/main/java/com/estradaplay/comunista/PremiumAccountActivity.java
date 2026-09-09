@@ -19,8 +19,12 @@ import androidx.activity.ComponentActivity;
 
 import org.json.JSONObject;
 
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import javax.net.ssl.SSLException;
 
 /** Native Premium account/login screen. It intentionally does not reuse MainActivity. */
 public final class PremiumAccountActivity extends ComponentActivity {
@@ -147,14 +151,32 @@ public final class PremiumAccountActivity extends ComponentActivity {
                     new LibraryStore(this).setSetupDone(true);
                     runOnUiThread(this::openCentral);
                 } catch (Throwable e) {
+                    String detail = networkFailureMessage(e);
                     runOnUiThread(() -> {
                         submit.setEnabled(true);
                         submit.setText(register ? "CRIAR CONTA" : "ENTRAR");
-                        toast("Não consegui falar com o servidor agora.");
+                        toast(detail);
                     });
                 }
             });
         });
+    }
+
+    private String networkFailureMessage(Throwable error) {
+        Throwable e = error;
+        for (int i = 0; i < 6 && e != null; i++, e = e.getCause()) {
+            if (e instanceof UnknownHostException) {
+                return "O Android não conseguiu resolver o endereço do servidor. A 5.0.5 tentou DNS seguro, mas a rede ainda bloqueou a resolução.";
+            }
+            if (e instanceof SSLException) {
+                return "Falha no HTTPS do servidor. Verifique certificado e data/hora do aparelho.";
+            }
+            if (e instanceof SocketTimeoutException) {
+                return "O servidor demorou demais para responder. Tente novamente com outra rede.";
+            }
+        }
+        String type = error == null ? "rede" : error.getClass().getSimpleName();
+        return "Falha de conexão com o servidor (" + type + ").";
     }
 
     private void showAccount() {
