@@ -15,31 +15,34 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check Estrada Play endpoints
+      - name: Inspect Estrada Play server hosts
         shell: bash
         run: |
           set +e
-          for base in \
-            "https://musicroad1.gestao2.store" \
-            "https://eventmenu.atwebpages.com"
+          echo '===== DNS candidates ====='
+          for host in \
+            musicroad1.gestao2.store \
+            musicroad.gestao2.store \
+            gestao2.store \
+            www.gestao2.store \
+            eventmenu.atwebpages.com
           do
-            host="${base#https://}"
-            echo "===== $base ====="
-            echo "--- DNS ---"
+            echo "--- $host ---"
             getent ahosts "$host" | head -10 || true
-            echo "--- HTTPS root ---"
-            curl -sS -I -L --max-time 15 --connect-timeout 8 "$base/" || true
-            echo "--- API ping ---"
-            rm -f /tmp/ping.txt
-            curl -sS -D - --max-time 15 --connect-timeout 8 "$base/api/ping.php" -o /tmp/ping.txt || true
-            head -c 1200 /tmp/ping.txt 2>/dev/null || true
-            echo
-            echo "--- native session no-auth ---"
-            rm -f /tmp/native.txt
-            curl -sS -D - --max-time 15 --connect-timeout 8 \
-              "$base/api/native_app.php?action=session" \
-              -H "Content-Type: application/json" \
-              --data '{}' -o /tmp/native.txt || true
-            head -c 1200 /tmp/native.txt 2>/dev/null || true
-            echo
           done
+
+          echo '===== eventmenu TLS certificate ====='
+          echo | openssl s_client -connect 185.176.43.100:443 -servername eventmenu.atwebpages.com -showcerts 2>/tmp/tls.err \
+            | openssl x509 -noout -subject -issuer -dates -ext subjectAltName || true
+          cat /tmp/tls.err | tail -20 || true
+
+          echo '===== eventmenu insecure diagnostic only ====='
+          curl -k -sS -D - --max-time 15 --connect-timeout 8 \
+            https://eventmenu.atwebpages.com/api/ping.php -o /tmp/event-ping.txt || true
+          head -c 2000 /tmp/event-ping.txt 2>/dev/null || true
+          echo
+          curl -k -sS -D - --max-time 15 --connect-timeout 8 \
+            'https://eventmenu.atwebpages.com/api/native_app.php?action=session' \
+            -H 'Content-Type: application/json' --data '{}' -o /tmp/event-native.txt || true
+          head -c 2000 /tmp/event-native.txt 2>/dev/null || true
+          echo
