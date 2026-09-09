@@ -1,22 +1,257 @@
 package com.estradaplay.comunista;
 
-import android.Manifest;import android.content.*;import android.content.pm.PackageManager;import android.graphics.*;import android.graphics.drawable.GradientDrawable;import android.location.*;import android.net.Uri;import android.os.*;import android.view.*;import android.widget.*;import androidx.activity.ComponentActivity;import java.util.Locale;
+import android.Manifest;
+import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
 
-/** SOS screen with local coordinates, road context and shareable rescue message. */
+import androidx.activity.ComponentActivity;
+
+import java.util.Locale;
+
+/** Roadside SOS with local coordinates, road context and shareable rescue message. */
 public final class EmergencyActivity extends ComponentActivity {
-    private final int BG=Color.rgb(8,5,7),SURFACE=Color.rgb(18,9,12),SURFACE2=Color.rgb(28,14,18),BORDER=Color.rgb(76,38,44),TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(174,151,146),RED=Color.rgb(190,18,38),GREEN=Color.rgb(72,212,134),GOLD=Color.rgb(226,185,76);private double lat=Double.NaN,lon=Double.NaN,roadKm=Double.NaN;private String road="";private TextView roadText,coordText;private boolean receiverRegistered;
-    private final BroadcastReceiver roadReceiver=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){double a=i.getDoubleExtra("lat",Double.NaN),b=i.getDoubleExtra("lon",Double.NaN);if(Double.isFinite(a)&&Double.isFinite(b)){lat=a;lon=b;}String r=i.getStringExtra("road");if(r!=null&&!r.trim().isEmpty())road=r.trim();double km=i.getDoubleExtra("road_km",Double.NaN);if(Double.isFinite(km)&&km>=0)roadKm=km;refreshContext();}};
-    @Override protected void onCreate(Bundle b){super.onCreate(b);seed();build();}@Override protected void onStart(){super.onStart();registerRoad();}@Override protected void onStop(){unregisterRoad();super.onStop();}
-    private void seed(){road=KnownRoadCatalog.selected(this);if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED)return;try{LocationManager m=(LocationManager)getSystemService(LOCATION_SERVICE);Location best=null;for(String p:new String[]{LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER}){Location x=m.getLastKnownLocation(p);if(x!=null&&(best==null||x.getTime()>best.getTime()))best=x;}if(best!=null){lat=best.getLatitude();lon=best.getLongitude();}}catch(Throwable ignored){}}
-    private void build(){ScrollView sv=new ScrollView(this);LinearLayout page=col();page.setPadding(dp(18),dp(16),dp(18),dp(28));page.setBackgroundColor(BG);sv.addView(page);setContentView(UnifiedAppShell.wrap(this,"central",sv));LinearLayout h=row();Button back=btn("‹ CENTRAL",false);h.addView(back,new LinearLayout.LayoutParams(dp(100),dp(46)));back.setOnClickListener(v->finish());LinearLayout tt=col();tt.addView(over("SOS RODOVIÁRIO",RED));tt.addView(text("Ajuda na estrada",28,TEXT,true));tt.addView(text("Use somente quando estiver parado em local seguro sempre que possível.",11,MUTED,false));h.addView(tt,new LinearLayout.LayoutParams(0,-2,1));page.addView(h);
-        LinearLayout loc=card();loc.addView(over(Double.isFinite(lat)?"LOCALIZAÇÃO PRONTA":"AGUARDANDO GPS",Double.isFinite(lat)?GREEN:GOLD));roadText=text("",18,TEXT,true);coordText=text("",12,MUTED,false);loc.addView(roadText);loc.addView(coordText);Button share=btn("SOS · COMPARTILHAR LOCALIZAÇÃO",true);add(loc,share,0,12,0,0,-1,dp(58));share.setOnClickListener(v->share());Button copy=btn("COPIAR COORDENADAS",false);add(loc,copy,0,8,0,0,-1,dp(48));copy.setOnClickListener(v->copy());add(page,loc,0,14,0,16,-1,-2);refreshContext();
-        page.addView(over("TELEFONES DE EMERGÊNCIA",MUTED));LinearLayout calls=card();Button prf=btn("PRF · 191",false),samu=btn("SAMU · 192",false),fire=btn("BOMBEIROS · 193",false),police=btn("POLÍCIA · 190",false);calls.addView(prf,new LinearLayout.LayoutParams(-1,dp(52)));add(calls,samu,0,7,0,0,-1,dp(52));add(calls,fire,0,7,0,0,-1,dp(52));add(calls,police,0,7,0,0,-1,dp(52));prf.setOnClickListener(v->dial("191"));samu.setOnClickListener(v->dial("192"));fire.setOnClickListener(v->dial("193"));police.setOnClickListener(v->dial("190"));add(page,calls,0,8,0,14,-1,-2);
-        LinearLayout services=card();services.addView(text("Precisa de guincho, oficina, borracharia, posto ou hospital?",14,TEXT,true));Button near=btn("VER SERVIÇOS PRÓXIMOS",false);add(services,near,0,10,0,0,-1,dp(52));near.setOnClickListener(v->startActivity(new Intent(this,NearbyServicesActivity.class)));add(page,services,0,0,0,0,-1,-2);}
-    private void refreshContext(){if(roadText==null)return;String r=road==null||road.isEmpty()?"Rodovia não identificada":road;roadText.setText(r+(Double.isFinite(roadKm)?" · km "+String.format(Locale.getDefault(),"%.1f",roadKm):""));coordText.setText(Double.isFinite(lat)?String.format(Locale.US,"%.6f, %.6f",lat,lon):"Abra o mapa/Estrada por alguns segundos para obter uma posição.");}
-    private void share(){if(!Double.isFinite(lat)||!Double.isFinite(lon)){toast("Ainda não tenho uma posição GPS válida.");return;}StringBuilder msg=new StringBuilder("Preciso de ajuda na estrada.");if(road!=null&&!road.isEmpty())msg.append(" Rodovia: ").append(road).append('.');if(Double.isFinite(roadKm))msg.append(" Km aproximado: ").append(String.format(Locale.getDefault(),"%.1f",roadKm)).append('.');msg.append(" Localização: ").append(String.format(Locale.US,"%.6f, %.6f",lat,lon)).append(" https://maps.google.com/?q=").append(String.format(Locale.US,"%.6f,%.6f",lat,lon));Intent i=new Intent(Intent.ACTION_SEND);i.setType("text/plain");i.putExtra(Intent.EXTRA_TEXT,msg.toString());startActivity(Intent.createChooser(i,"Compartilhar SOS"));}
-    private void copy(){if(!Double.isFinite(lat)||!Double.isFinite(lon)){toast("Sem GPS válido.");return;}android.content.ClipboardManager cm=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(cm!=null)cm.setPrimaryClip(ClipData.newPlainText("Localização Estrada Play",String.format(Locale.US,"%.6f, %.6f",lat,lon)));toast("Coordenadas copiadas.");}
-    private void registerRoad(){if(receiverRegistered)return;try{IntentFilter f=new IntentFilter(RoadSafetyService.ACTION_STATE);if(Build.VERSION.SDK_INT>=33)InternalBroadcasts.register(this, roadReceiver, f);else InternalBroadcasts.register(this, roadReceiver, f);receiverRegistered=true;}catch(Throwable ignored){}}
-    private void unregisterRoad(){if(!receiverRegistered)return;try{unregisterReceiver(roadReceiver);}catch(Throwable ignored){}receiverRegistered=false;}
-    private void dial(String n){try{startActivity(new Intent(Intent.ACTION_DIAL,Uri.parse("tel:"+n)));}catch(Throwable e){toast("Não consegui abrir o discador.");}}
-    private LinearLayout card(){LinearLayout c=col();c.setPadding(dp(15),dp(14),dp(15),dp(14));c.setBackground(panel(SURFACE,16,BORDER));return c;}private Button btn(String v,boolean pri){Button b=new Button(this);b.setAllCaps(false);b.setText(v);b.setTextColor(TEXT);b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);b.setBackground(panel(pri?RED:SURFACE2,13,pri?0:BORDER));return b;}private TextView text(String v,float s,int c,boolean bold){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}private TextView over(String v,int c){TextView t=text(v,9,c,true);t.setLetterSpacing(.12f);return t;}private LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);return l;}private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}private GradientDrawable panel(int c,int r,int st){GradientDrawable g=new GradientDrawable();g.setColor(c);g.setCornerRadius(dp(r));if(st!=0)g.setStroke(dp(1),st);return g;}private void add(LinearLayout p,View v,int l,int t,int r,int b,int w,int h){LinearLayout.LayoutParams x=new LinearLayout.LayoutParams(w,h);x.setMargins(dp(l),dp(t),dp(r),dp(b));p.addView(v,x);}private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}
+    private double lat = Double.NaN;
+    private double lon = Double.NaN;
+    private double roadKm = Double.NaN;
+    private String road = "";
+    private TextView roadText;
+    private TextView coordText;
+    private boolean receiverRegistered;
+    private EstradaTheme theme;
+
+    private final BroadcastReceiver roadReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            double a = intent.getDoubleExtra("lat", Double.NaN);
+            double b = intent.getDoubleExtra("lon", Double.NaN);
+            if (Double.isFinite(a) && Double.isFinite(b)) {
+                lat = a;
+                lon = b;
+            }
+            String r = intent.getStringExtra("road");
+            if (r != null && !r.trim().isEmpty()) road = r.trim();
+            double km = intent.getDoubleExtra("road_km", Double.NaN);
+            if (Double.isFinite(km) && km >= 0) roadKm = km;
+            refreshContext();
+        }
+    };
+
+    @Override protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        seed();
+        build();
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        registerRoad();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        EstradaTheme current = EstradaTheme.get(this);
+        if (theme != null && !current.name.equals(theme.name)) build();
+    }
+
+    @Override protected void onStop() {
+        unregisterRoad();
+        super.onStop();
+    }
+
+    private void seed() {
+        road = KnownRoadCatalog.selected(this);
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return;
+        try {
+            LocationManager manager = (LocationManager) getSystemService(LOCATION_SERVICE);
+            Location best = null;
+            for (String provider : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
+                Location item = manager.getLastKnownLocation(provider);
+                if (item != null && (best == null || item.getTime() > best.getTime())) best = item;
+            }
+            if (best != null) {
+                lat = best.getLatitude();
+                lon = best.getLongitude();
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private void build() {
+        theme = EstradaTheme.get(this);
+        getWindow().setStatusBarColor(theme.background);
+        getWindow().setNavigationBarColor(theme.background);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout page = PremiumUi.col(this);
+        page.setPadding(dp(18), dp(18), dp(18), dp(28));
+        page.setBackgroundColor(theme.background);
+        scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+        setContentView(UnifiedAppShell.wrap(this, "central", scroll));
+
+        page.addView(PremiumUi.overline(this, "SOS RODOVIÁRIO", theme.danger));
+        TextView title = PremiumUi.text(this, "Ajuda na estrada", 28, theme.text, true);
+        page.addView(title);
+        margin(title, 0, 5, 0, 4);
+        TextView subtitle = PremiumUi.text(this,
+                "Use somente quando estiver parado em local seguro sempre que possível.",
+                11, theme.muted, false);
+        page.addView(subtitle);
+        margin(subtitle, 0, 0, 0, 16);
+
+        LinearLayout location = card();
+        location.addView(PremiumUi.overline(this,
+                Double.isFinite(lat) ? "LOCALIZAÇÃO PRONTA" : "AGUARDANDO GPS",
+                Double.isFinite(lat) ? theme.success : theme.warning));
+        roadText = PremiumUi.text(this, "", 18, theme.text, true);
+        coordText = PremiumUi.text(this, "", 11, theme.muted, false);
+        location.addView(roadText);
+        location.addView(coordText);
+        margin(coordText, 0, 4, 0, 0);
+
+        Button share = PremiumUi.button(this, "SOS · COMPARTILHAR LOCALIZAÇÃO", true);
+        share.setTextColor(theme.text);
+        location.addView(share, new LinearLayout.LayoutParams(-1, dp(56)));
+        margin(share, 0, 12, 0, 0);
+        share.setOnClickListener(v -> share());
+
+        Button copy = PremiumUi.button(this, "COPIAR COORDENADAS", false);
+        location.addView(copy, new LinearLayout.LayoutParams(-1, dp(48)));
+        margin(copy, 0, 8, 0, 0);
+        copy.setOnClickListener(v -> copy());
+        page.addView(location, new LinearLayout.LayoutParams(-1, -2));
+        refreshContext();
+
+        TextView phoneTitle = PremiumUi.overline(this, "TELEFONES DE EMERGÊNCIA", theme.muted);
+        page.addView(phoneTitle);
+        margin(phoneTitle, 0, 18, 0, 7);
+        LinearLayout calls = card();
+        addCall(calls, "PRF · 191", "191", true);
+        addCall(calls, "SAMU · 192", "192", false);
+        addCall(calls, "BOMBEIROS · 193", "193", false);
+        addCall(calls, "POLÍCIA · 190", "190", false);
+        page.addView(calls, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout services = card();
+        TextView serviceTitle = PremiumUi.text(this,
+                "Precisa de guincho, oficina, borracharia, posto ou hospital?",
+                14, theme.text, true);
+        services.addView(serviceTitle);
+        Button near = PremiumUi.button(this, "VER SERVIÇOS PRÓXIMOS", false);
+        services.addView(near, new LinearLayout.LayoutParams(-1, dp(50)));
+        margin(near, 0, 10, 0, 0);
+        near.setOnClickListener(v -> startActivity(new Intent(this, NearbyServicesActivity.class)));
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2);
+        sp.setMargins(0, dp(12), 0, 0);
+        page.addView(services, sp);
+    }
+
+    private void addCall(LinearLayout parent, String label, String number, boolean first) {
+        Button button = PremiumUi.button(this, label, false);
+        parent.addView(button, new LinearLayout.LayoutParams(-1, dp(50)));
+        if (!first) margin(button, 0, 7, 0, 0);
+        button.setOnClickListener(v -> dial(number));
+    }
+
+    private void refreshContext() {
+        if (roadText == null) return;
+        String value = road == null || road.isEmpty() ? "Rodovia não identificada" : road;
+        roadText.setText(value + (Double.isFinite(roadKm)
+                ? " · km " + String.format(Locale.getDefault(), "%.1f", roadKm) : ""));
+        coordText.setText(Double.isFinite(lat)
+                ? String.format(Locale.US, "%.6f, %.6f", lat, lon)
+                : "Abra a Estrada por alguns segundos para obter uma posição.");
+    }
+
+    private void share() {
+        if (!Double.isFinite(lat) || !Double.isFinite(lon)) {
+            toast("Ainda não tenho uma posição GPS válida.");
+            return;
+        }
+        StringBuilder msg = new StringBuilder("Preciso de ajuda na estrada.");
+        if (road != null && !road.isEmpty()) msg.append(" Rodovia: ").append(road).append('.');
+        if (Double.isFinite(roadKm)) {
+            msg.append(" Km aproximado: ")
+                    .append(String.format(Locale.getDefault(), "%.1f", roadKm)).append('.');
+        }
+        msg.append(" Localização: ")
+                .append(String.format(Locale.US, "%.6f, %.6f", lat, lon))
+                .append(" https://maps.google.com/?q=")
+                .append(String.format(Locale.US, "%.6f,%.6f", lat, lon));
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TEXT, msg.toString());
+        startActivity(Intent.createChooser(intent, "Compartilhar SOS"));
+    }
+
+    private void copy() {
+        if (!Double.isFinite(lat) || !Double.isFinite(lon)) {
+            toast("Sem GPS válido.");
+            return;
+        }
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(ClipData.newPlainText("Localização Estrada Play",
+                    String.format(Locale.US, "%.6f, %.6f", lat, lon)));
+        }
+        toast("Coordenadas copiadas.");
+    }
+
+    private void registerRoad() {
+        if (receiverRegistered) return;
+        try {
+            IntentFilter filter = new IntentFilter(RoadSafetyService.ACTION_STATE);
+            InternalBroadcasts.register(this, roadReceiver, filter);
+            receiverRegistered = true;
+        } catch (Throwable ignored) {}
+    }
+
+    private void unregisterRoad() {
+        if (!receiverRegistered) return;
+        try { unregisterReceiver(roadReceiver); } catch (Throwable ignored) {}
+        receiverRegistered = false;
+    }
+
+    private void dial(String number) {
+        try {
+            startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + number)));
+        } catch (Throwable e) {
+            toast("Não consegui abrir o discador.");
+        }
+    }
+
+    private LinearLayout card() {
+        LinearLayout card = PremiumUi.col(this);
+        card.setPadding(dp(15), dp(14), dp(15), dp(14));
+        card.setBackground(PremiumUi.panel(this, theme.glass, theme.border, theme.radiusDp));
+        return card;
+    }
+
+    private void margin(View view, int l, int t, int r, int b) {
+        if (!(view.getLayoutParams() instanceof LinearLayout.LayoutParams)) return;
+        LinearLayout.LayoutParams p = (LinearLayout.LayoutParams) view.getLayoutParams();
+        p.setMargins(dp(l), dp(t), dp(r), dp(b));
+        view.setLayoutParams(p);
+    }
+
+    private void toast(String value) {
+        Toast.makeText(this, value, Toast.LENGTH_LONG).show();
+    }
+
+    private int dp(float value) { return PremiumUi.dp(this, value); }
 }
