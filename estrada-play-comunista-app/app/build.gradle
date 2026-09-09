@@ -12,8 +12,7 @@ def releaseKeyPassword = project.findProperty('ESTRADAPLAY_RELEASE_KEY_PASSWORD'
 def releaseSigningReady = releaseKeyPath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword && file(releaseKeyPath).isFile()
 
 android {
-    // Source namespace remains stable for the 5.0.x implementation. The Android install identity
-    // is intentionally clean and independent from that historical source namespace.
+    // Source namespace remains stable during the 5.1 migration. Android install identity is clean.
     namespace 'com.estradaplay.comunista'
     compileSdk 36
 
@@ -21,8 +20,8 @@ android {
         applicationId 'com.estradaplay'
         minSdk 24
         targetSdk 36
-        versionCode 506
-        versionName '5.0.6'
+        versionCode 510
+        versionName '5.1.0'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
@@ -92,6 +91,34 @@ android {
     }
 }
 
+// PREMIUM_BRAND_GUARD_V510: new UI code must never reintroduce the retired visible brand.
+def forbiddenVisibleBrand = [
+        '"Estrada Play Comunista"',
+        '"ESTRADA PLAY COMUNISTA"',
+        '"EstradaPlay Comunista"'
+]
+
+tasks.register('verifyPremiumVisibleBrand') {
+    group = 'verification'
+    description = 'Falha se a marca visual antiga voltar para código de interface.'
+    doLast {
+        def offenders = []
+        fileTree('src/main/java').matching { include '**/*.java' }.each { f ->
+            String source = f.getText('UTF-8')
+            forbiddenVisibleBrand.each { token ->
+                if (source.contains(token)) offenders << "${f.name}: ${token}"
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('Marca visual antiga encontrada:\n - ' + offenders.unique().join('\n - '))
+        }
+    }
+}
+
+tasks.matching { it.name == 'preBuild' }.configureEach {
+    dependsOn tasks.named('verifyPremiumVisibleBrand')
+}
+
 gradle.taskGraph.whenReady { graph ->
     boolean wantsReleaseArtifact = graph.allTasks.any { task ->
         String n = task.name == null ? '' : task.name.toLowerCase(java.util.Locale.ROOT)
@@ -113,8 +140,7 @@ dependencies {
     implementation 'androidx.camera:camera-video:1.4.2'
     implementation 'io.github.webrtc-sdk:android:144.7559.09'
 
-    // NETWORK_DNS_FALLBACK_V505: keep normal Android DNS first, but allow a secure DNS-over-HTTPS
-    // retry when the system resolver cannot find the Estrada Play host while browsers still can.
+    // NETWORK_DNS_FALLBACK_V505: normal Android DNS first, secure DNS-over-HTTPS only on resolution failure.
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0'
 
