@@ -21,8 +21,8 @@ android {
         applicationId 'com.estradaplay'
         minSdk 24
         targetSdk 36
-        versionCode 504
-        versionName '5.0.4'
+        versionCode 505
+        versionName '5.0.5'
         buildConfigField 'String', 'SERVER_URL', '"' + estradaPlayUrl.replace('"', '\\"') + '"'
         buildConfigField 'String', 'CONVOY_PUBLIC_URL', '"' + convoyPublicUrl.replace('"', '\\"') + '"'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
@@ -112,6 +112,11 @@ dependencies {
     implementation 'androidx.camera:camera-view:1.4.2'
     implementation 'androidx.camera:camera-video:1.4.2'
     implementation 'io.github.webrtc-sdk:android:144.7559.09'
+
+    // NETWORK_DNS_FALLBACK_V505: keep normal Android DNS first, but allow a secure DNS-over-HTTPS
+    // retry when the system resolver cannot find the Estrada Play host while browsers still can.
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0'
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
