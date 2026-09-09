@@ -3,9 +3,6 @@ package com.estradaplay.comunista;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.res.ColorStateList;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -26,19 +23,11 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/** Premium destination/search flow. */
 public final class DestinationActivity extends ComponentActivity {
-    private static final int BG = Color.rgb(7, 7, 9);
-    private static final int SURFACE = Color.rgb(18, 14, 17);
-    private static final int BORDER = Color.rgb(65, 32, 38);
-    private static final int TEXT = Color.rgb(248, 246, 247);
-    private static final int MUTED = Color.rgb(161, 145, 149);
-    private static final int RED = Color.rgb(224, 30, 47);
-    private static final int RED_DARK = Color.rgb(80, 12, 21);
-    private static final int GREEN = Color.rgb(72, 212, 134);
-    private static final int GOLD = Color.rgb(226, 185, 76);
-
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private EstradaTheme theme;
     private EditText query;
     private Button search;
     private ProgressBar progress;
@@ -46,79 +35,101 @@ public final class DestinationActivity extends ComponentActivity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(BG);
         build();
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        EstradaTheme current = EstradaTheme.get(this);
+        if (theme != null && !current.name.equals(theme.name)) build();
+    }
+
     private void build() {
+        theme = EstradaTheme.get(this);
+        getWindow().setStatusBarColor(theme.background);
+        getWindow().setNavigationBarColor(theme.background);
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(BG);
-        LinearLayout page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(22), dp(26), dp(22), dp(28));
+        scroll.setBackgroundColor(theme.background);
+        LinearLayout page = PremiumUi.col(this);
+        page.setPadding(dp(20), dp(22), dp(20), dp(28));
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
-        setContentView(UnifiedAppShell.wrap(this,"trip",scroll));
+        setContentView(UnifiedAppShell.wrap(this, "trip", scroll));
 
-        TextView over = label("ESTRADA PLAY COMUNISTA", 11, RED, true);
-        over.setLetterSpacing(0.12f);
+        TextView over = PremiumUi.overline(this, "ROTA", theme.secondary);
         page.addView(over);
-        TextView title = label("Para onde vamos?", 31, TEXT, true);
-        page.addView(title); margin(title, 0, 8, 0, 4);
-        TextView body = label("O destino é opcional. Sem endereço, radares, lombadas, limites e proteção continuam funcionando normalmente.", 14, MUTED, false);
-        page.addView(body); margin(body, 0, 0, 0, 20);
+        TextView title = PremiumUi.text(this, "Para onde vamos?", 30, theme.text, true);
+        page.addView(title);
+        margins(title, 0, 6, 0, 4);
+        TextView body = PremiumUi.text(this,
+                "O destino é opcional. Sem endereço, alertas, limites e proteção continuam funcionando normalmente.",
+                13, theme.muted, false);
+        page.addView(body);
+        margins(body, 0, 0, 0, 18);
 
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout card = PremiumUi.col(this);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(panel(20, SURFACE, BORDER));
-        page.addView(card, new LinearLayout.LayoutParams(-1, -2));
+        card.setBackground(PremiumUi.panel(this, theme.glass, theme.border, theme.radiusDp + 2));
+        card.addView(PremiumUi.overline(this, "BUSCAR DESTINO", theme.muted));
 
         query = new EditText(this);
         query.setHint("Rua, número, cidade ou lugar");
-        query.setHintTextColor(MUTED);
-        query.setTextColor(TEXT);
-        query.setTextSize(16);
+        query.setHintTextColor(theme.muted);
+        query.setTextColor(theme.text);
+        query.setTextSize(15);
         query.setSingleLine(true);
         query.setPadding(dp(14), 0, dp(14), 0);
-        query.setBackground(panel(15, Color.rgb(27, 20, 23), BORDER));
-        card.addView(query, new LinearLayout.LayoutParams(-1, dp(58)));
+        query.setBackground(PremiumUi.panel(this, theme.surfaceAlt, theme.border, theme.radiusDp));
+        card.addView(query, new LinearLayout.LayoutParams(-1, dp(56)));
+        margins(query, 0, 10, 0, 0);
 
-        search = button("BUSCAR DESTINO", true);
-        card.addView(search, new LinearLayout.LayoutParams(-1, dp(58))); margin(search, 0, 12, 0, 0);
+        search = PremiumUi.button(this, "BUSCAR DESTINO", true);
+        card.addView(search, new LinearLayout.LayoutParams(-1, dp(54)));
+        margins(search, 0, 10, 0, 0);
         search.setOnClickListener(v -> search());
 
         progress = new ProgressBar(this);
-        progress.setIndeterminateTintList(ColorStateList.valueOf(RED));
+        progress.setIndeterminateTintList(ColorStateList.valueOf(theme.primary));
         progress.setVisibility(View.GONE);
-        card.addView(progress, new LinearLayout.LayoutParams(-1, dp(36))); margin(progress, 0, 10, 0, 0);
+        card.addView(progress, new LinearLayout.LayoutParams(-1, dp(34)));
+        margins(progress, 0, 8, 0, 0);
 
-        status = label("Busca online quando necessária; favoritos e recentes ficam no aparelho.", 12, MUTED, false);
+        status = PremiumUi.text(this,
+                "Busca online quando necessária; favoritos e recentes ficam no aparelho.",
+                11, theme.muted, false);
         status.setGravity(Gravity.CENTER);
-        card.addView(status); margin(status, 0, 8, 0, 0);
+        card.addView(status);
+        margins(status, 0, 8, 0, 0);
+        page.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
         addQuickDestinations(page);
 
-        Button passive = button("DIRIGIR SEM DESTINO", false);
-        page.addView(passive, new LinearLayout.LayoutParams(-1, dp(58))); margin(passive, 0, 16, 0, 0);
+        Button passive = PremiumUi.button(this, "DIRIGIR SEM DESTINO", false);
+        page.addView(passive, new LinearLayout.LayoutParams(-1, dp(54)));
+        margins(passive, 0, 14, 0, 0);
         passive.setOnClickListener(v -> {
             DestinationStore.clear(this);
-            openMap();
+            openRoad();
         });
 
         DestinationStore.Destination current = DestinationStore.read(this);
         if (current != null) {
-            TextView currentLabel = label("DESTINO ATUAL", 10, RED, true);
-            page.addView(currentLabel); margin(currentLabel, 0, 22, 0, 6);
-            TextView currentText = label(current.label, 14, TEXT, true);
-            currentText.setPadding(dp(14), dp(14), dp(14), dp(14));
-            currentText.setBackground(panel(16, RED_DARK, BORDER));
-            page.addView(currentText);
+            TextView currentLabel = PremiumUi.overline(this, "DESTINO ATUAL", theme.secondary);
+            page.addView(currentLabel);
+            margins(currentLabel, 0, 20, 0, 6);
+
+            LinearLayout currentCard = PremiumUi.col(this);
+            currentCard.setPadding(dp(14), dp(14), dp(14), dp(14));
+            currentCard.setBackground(PremiumUi.panel(this, theme.surfaceAlt, theme.border, theme.radiusDp));
+            currentCard.addView(PremiumUi.text(this, current.label, 14, theme.text, true));
             if (RouteOfflineCache.hasPreparedFor(this, current.lat, current.lon)) {
-                TextView offline = label("✓ Rota preparada para recuperação offline", 10, GREEN, true);
-                page.addView(offline); margin(offline, 0, 7, 0, 0);
+                TextView offline = PremiumUi.text(this,
+                        "✓ Rota preparada para recuperação offline", 10, theme.success, true);
+                currentCard.addView(offline);
+                margins(offline, 0, 7, 0, 0);
             }
+            page.addView(currentCard, new LinearLayout.LayoutParams(-1, -2));
         }
     }
 
@@ -127,16 +138,18 @@ public final class DestinationActivity extends ComponentActivity {
         ArrayList<DestinationStore.Destination> recent = RecentDestinationStore.list(this);
         if (favorites.isEmpty() && recent.isEmpty()) return;
 
-        TextView quick = label("ATALHOS", 10, GOLD, true);
-        quick.setLetterSpacing(.12f);
-        page.addView(quick); margin(quick, 0, 20, 0, 7);
+        TextView quick = PremiumUi.overline(this, "ATALHOS", theme.secondary);
+        page.addView(quick);
+        margins(quick, 0, 20, 0, 7);
 
         int shown = 0;
         for (FavoriteRoadStore.Item x : favorites) {
             if (shown++ >= 4) break;
-            String type = x.type == null || x.type.trim().isEmpty() ? "FAVORITO" : x.type.trim().toUpperCase(Locale.ROOT);
+            String type = x.type == null || x.type.trim().isEmpty()
+                    ? "FAVORITO" : x.type.trim().toUpperCase(Locale.ROOT);
             Button b = quickButton(type + "  ·  " + x.name, true);
-            page.addView(b, new LinearLayout.LayoutParams(-1, dp(52))); margin(b, 0, 0, 0, 7);
+            page.addView(b, new LinearLayout.LayoutParams(-1, dp(50)));
+            margins(b, 0, 0, 0, 7);
             b.setOnClickListener(v -> use(new DestinationStore.Destination(x.name, x.lat, x.lon)));
         }
 
@@ -145,29 +158,36 @@ public final class DestinationActivity extends ComponentActivity {
             if (recentShown >= 4) break;
             boolean duplicate = false;
             for (FavoriteRoadStore.Item x : favorites) {
-                if (RouteEngine.distanceM(x.lat, x.lon, d.lat, d.lon) < 80) { duplicate = true; break; }
+                if (RouteEngine.distanceM(x.lat, x.lon, d.lat, d.lon) < 80) {
+                    duplicate = true;
+                    break;
+                }
             }
             if (duplicate) continue;
             recentShown++;
             Button b = quickButton("RECENTE  ·  " + d.label, false);
-            page.addView(b, new LinearLayout.LayoutParams(-1, dp(50))); margin(b, 0, 0, 0, 6);
+            page.addView(b, new LinearLayout.LayoutParams(-1, dp(48)));
+            margins(b, 0, 0, 0, 6);
             b.setOnClickListener(v -> use(d));
         }
     }
 
     private Button quickButton(String value, boolean favorite) {
-        Button b = button(value, false);
+        Button b = PremiumUi.button(this, value, false);
         b.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         b.setPadding(dp(14), 0, dp(12), 0);
-        b.setTextColor(favorite ? TEXT : MUTED);
-        b.setBackground(panel(14, favorite ? Color.rgb(31, 18, 22) : Color.rgb(22, 18, 20), favorite ? RED_DARK : BORDER));
+        b.setTextColor(favorite ? theme.text : theme.muted);
+        b.setBackground(PremiumUi.panel(this,
+                favorite ? theme.surfaceAlt : theme.surface,
+                favorite ? theme.secondary : theme.border,
+                theme.radiusDp));
         return b;
     }
 
     private void use(DestinationStore.Destination d) {
         DestinationStore.save(this, d);
-        status.setText("Destino definido. Abrindo a estrada…");
-        openMap();
+        if (status != null) status.setText("Destino definido. Abrindo a estrada…");
+        openRoad();
     }
 
     private void search() {
@@ -209,51 +229,21 @@ public final class DestinationActivity extends ComponentActivity {
                 .show();
     }
 
-    private void openMap() {
-        Intent i = new Intent(this, RoadMapActivity.class);
+    private void openRoad() {
+        Intent i = new Intent(this, RoadEntryActivity.class);
         i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(i);
         finish();
     }
 
-    private Button button(String text, boolean primary) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setTextColor(TEXT);
-        b.setTextSize(12);
-        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        b.setLetterSpacing(0.06f);
-        b.setStateListAnimator(null);
-        b.setAllCaps(false);
-        b.setBackground(panel(16, primary ? RED : Color.rgb(31, 22, 25), primary ? 0 : BORDER));
-        return b;
-    }
-
-    private TextView label(String value, float size, int color, boolean bold) {
-        TextView t = new TextView(this);
-        t.setText(value);
-        t.setTextSize(size);
-        t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return t;
-    }
-
-    private GradientDrawable panel(int radiusDp, int color, int strokeColor) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(dp(radiusDp));
-        if (strokeColor != 0) d.setStroke(dp(1), strokeColor);
-        return d;
-    }
-
-    private void margin(View view, int l, int t, int r, int b) {
+    private void margins(View view, int l, int t, int r, int b) {
         if (!(view.getLayoutParams() instanceof LinearLayout.LayoutParams)) return;
         LinearLayout.LayoutParams p = (LinearLayout.LayoutParams) view.getLayoutParams();
         p.setMargins(dp(l), dp(t), dp(r), dp(b));
         view.setLayoutParams(p);
     }
 
-    private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    private int dp(float value) { return PremiumUi.dp(this, value); }
 
     @Override protected void onDestroy() {
         io.shutdownNow();
