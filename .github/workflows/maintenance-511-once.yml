@@ -1,0 +1,79 @@
+name: One-shot 5.1.1 stability maintenance
+
+on:
+  push:
+    branches:
+      - agent/estrada-play-comunista
+    paths:
+      - .github/workflows/maintenance-511-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/estrada-play-comunista
+          fetch-depth: 0
+      - name: Apply 5.1.1 lifecycle hardening
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              if old not in s:
+                  raise SystemExit(f'pattern not found in {path}: {old[:120]}')
+              s = s.replace(old, new, count)
+              p.write_text(s, encoding='utf-8')
+
+          replace(
+              'estrada-play-comunista-app/app/build.gradle',
+              "versionCode 510\n        versionName '5.1.0'",
+              "versionCode 511\n        versionName '5.1.1'"
+          )
+
+          replace(
+              'estrada-play-comunista-app/app/src/main/AndroidManifest.xml',
+              '<service android:name=".PlayerService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="mediaPlayback" />',
+              '<service android:name=".PlayerService" android:exported="false" android:foregroundServiceType="mediaPlayback" />'
+          )
+
+          replace(
+              'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/PlayerService.java',
+              '@Override public void onTaskRemoved(Intent rootIntent) { saveSnapshot(); stopSelf(); super.onTaskRemoved(rootIntent); }',
+              '''@Override public void onTaskRemoved(Intent rootIntent) {
+        // PLAYER_TASK_POLICY_V511: intentional playback may continue after the UI task is removed.
+        // A paused/idle player still shuts down so it cannot become a zombie background service.
+        saveSnapshot();
+        if (!isPlaying()) stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }'''
+          )
+
+          replace(
+              'estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java',
+              'if (!hasAccount()) { startActivity(new Intent(this, MainActivity.class)); finish(); return; }\n        if (!hasLocation()) { startActivity(new Intent(this, MainActivity.class)); finish(); return; }',
+              '''if (!hasAccount()) { startActivity(new Intent(this, PremiumAccountActivity.class)); finish(); return; }
+        // ROAD_ENTRY_SINGLE_GATE_V511: every permission miss returns to the dedicated gate,
+        // never to the compatibility router, preventing Central -> Estrada -> Central loops.
+        if (!hasLocation()) { startActivity(new Intent(this, RoadEntryActivity.class)); finish(); return; }'''
+          )
+          PY
+
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            estrada-play-comunista-app/app/build.gradle \
+            estrada-play-comunista-app/app/src/main/AndroidManifest.xml \
+            estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/PlayerService.java \
+            estrada-play-comunista-app/app/src/main/java/com/estradaplay/comunista/RoadMapActivity.java
+          git commit -m 'fix: harden 5.1.1 road and player lifecycle'
+          git push origin HEAD:agent/estrada-play-comunista
