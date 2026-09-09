@@ -1,28 +1,385 @@
 package com.estradaplay.comunista;
 
-import android.Manifest;import android.annotation.SuppressLint;import android.bluetooth.*;import android.content.pm.PackageManager;import android.graphics.*;import android.graphics.drawable.GradientDrawable;import android.os.*;import android.view.*;import android.widget.*;import androidx.activity.ComponentActivity;import java.io.*;import java.nio.charset.StandardCharsets;import java.util.*;import java.util.concurrent.*;import java.util.regex.*;
+import android.Manifest;
+import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 
-@SuppressLint("MissingPermission") // OBD2_PERMISSION_GUARD_V300: every Bluetooth call is runtime-guarded and revocation races catch SecurityException.
+import androidx.activity.ComponentActivity;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@SuppressLint("MissingPermission")
 public final class Obd2Activity extends ComponentActivity {
-    private static final int REQ_BT=7301;private static final UUID SPP=UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
-    private final int BG=Color.rgb(8,5,7),SURFACE=Color.rgb(18,9,12),SURFACE2=Color.rgb(28,14,18),BORDER=Color.rgb(76,38,44),TEXT=Color.rgb(246,238,224),MUTED=Color.rgb(174,151,146),RED=Color.rgb(190,18,38),GREEN=Color.rgb(72,212,134),GOLD=Color.rgb(226,185,76);private final ExecutorService io=Executors.newSingleThreadExecutor();private final Handler ui=new Handler(Looper.getMainLooper());private LinearLayout page,devices;private TextView state,rpm,coolant,vehicleSpeed,battery,fuel;private BluetoothSocket socket;private InputStream in;private OutputStream out;private volatile boolean polling;
-    @Override protected void onCreate(Bundle b){super.onCreate(b);build();}@Override protected void onDestroy(){polling=false;try{if(socket!=null)socket.close();}catch(Throwable ignored){}io.shutdownNow();super.onDestroy();}
-    private void build(){ScrollView sv=new ScrollView(this);page=col();page.setPadding(dp(18),dp(16),dp(18),dp(28));page.setBackgroundColor(BG);sv.addView(page);setContentView(UnifiedAppShell.wrap(this,"central",sv));LinearLayout h=row();Button back=btn("‹ CENTRAL",false);h.addView(back,new LinearLayout.LayoutParams(dp(100),dp(46)));back.setOnClickListener(v->finish());LinearLayout tt=col();tt.addView(over("OBD2 BLUETOOTH",RED));tt.addView(text("Painel do veículo",27,TEXT,true));tt.addView(text("Compatível com adaptadores ELM327 Bluetooth Classic já pareados no Android.",11,MUTED,false));h.addView(tt,new LinearLayout.LayoutParams(0,-2,1));page.addView(h);
-        LinearLayout status=card();state=text("DESCONECTADO",13,GOLD,true);status.addView(state);status.addView(text("Pareie primeiro o ELM327 nas configurações Bluetooth do aparelho. O Estrada Play não altera parâmetros da ECU; apenas consulta PIDs padrão.",11,MUTED,false));add(page,status,0,14,0,14,-1,-2);
-        LinearLayout metrics=row();rpm=metric("RPM","--");coolant=metric("MOTOR °C","--");metrics.addView(rpm,new LinearLayout.LayoutParams(0,dp(88),1));LinearLayout.LayoutParams m2=new LinearLayout.LayoutParams(0,dp(88),1);m2.setMargins(dp(7),0,0,0);metrics.addView(coolant,m2);page.addView(metrics);LinearLayout metrics2=row();vehicleSpeed=metric("OBD KM/H","--");battery=metric("BATERIA","--");fuel=metric("TANQUE","--");metrics2.addView(vehicleSpeed,new LinearLayout.LayoutParams(0,dp(88),1));LinearLayout.LayoutParams q=new LinearLayout.LayoutParams(0,dp(88),1);q.setMargins(dp(7),0,0,0);metrics2.addView(battery,q);LinearLayout.LayoutParams q2=new LinearLayout.LayoutParams(0,dp(88),1);q2.setMargins(dp(7),0,0,0);metrics2.addView(fuel,q2);add(page,metrics2,0,7,0,16,-1,-2);
-        page.addView(over("DISPOSITIVOS PAREADOS",MUTED));devices=col();page.addView(devices);loadBonded();
+    private static final int REQ_BT = 7301;
+    private static final UUID SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private LinearLayout page;
+    private LinearLayout devices;
+    private TextView state;
+    private TextView rpm;
+    private TextView coolant;
+    private TextView vehicleSpeed;
+    private TextView battery;
+    private TextView fuel;
+    private BluetoothSocket socket;
+    private InputStream in;
+    private OutputStream out;
+    private volatile boolean polling;
+    private EstradaTheme theme;
+
+    @Override protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        build();
     }
-    private boolean hasBluetoothConnectPermission(){return Build.VERSION.SDK_INT<31||checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED;}
-    private void loadBonded(){devices.removeAllViews();if(!hasBluetoothConnectPermission()){Button allow=btn("AUTORIZAR BLUETOOTH",true);devices.addView(allow,new LinearLayout.LayoutParams(-1,dp(54)));allow.setOnClickListener(v->requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},REQ_BT));return;}BluetoothAdapter a=BluetoothAdapter.getDefaultAdapter();if(a==null){devices.addView(text("Este aparelho não possui Bluetooth Classic.",12,MUTED,false));return;}try{if(!a.isEnabled()){devices.addView(text("Ative o Bluetooth do Android e volte a esta tela.",12,GOLD,false));return;}}catch(SecurityException e){devices.addView(text("Autorize o Bluetooth para continuar.",12,GOLD,false));return;}Set<BluetoothDevice> set;try{set=a.getBondedDevices();}catch(SecurityException e){devices.addView(text("Autorize o Bluetooth para ler os dispositivos pareados.",12,MUTED,false));return;}catch(Throwable e){devices.addView(text("Não consegui ler os dispositivos pareados.",12,MUTED,false));return;}if(set==null||set.isEmpty()){devices.addView(text("Nenhum dispositivo pareado. Pareie o ELM327 nas configurações do Android.",12,MUTED,false));return;}for(BluetoothDevice d:set){String name=safeName(d);Button b=btn(name+"\n"+safeAddress(d),false);b.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL);devices.addView(b,new LinearLayout.LayoutParams(-1,dp(62)));final BluetoothDevice device=d;b.setOnClickListener(v->connect(device));}}
-    @Override public void onRequestPermissionsResult(int r,String[] p,int[] g){super.onRequestPermissionsResult(r,p,g);if(r==REQ_BT)loadBonded();}
-    private String safeAddress(BluetoothDevice d){if(d==null||!hasBluetoothConnectPermission())return "";try{return d.getAddress();}catch(SecurityException e){return "";}catch(Throwable e){return "";}}
-    private void connect(BluetoothDevice d){if(polling||d==null)return;if(!hasBluetoothConnectPermission()){requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},REQ_BT);return;}state.setText("CONECTANDO…");io.execute(()->{if(!hasBluetoothConnectPermission()){ui.post(()->state.setText("AUTORIZE O BLUETOOTH PARA CONECTAR"));return;}try{BluetoothAdapter a=BluetoothAdapter.getDefaultAdapter();if(a!=null)a.cancelDiscovery();socket=d.createRfcommSocketToServiceRecord(SPP);socket.connect();in=socket.getInputStream();out=socket.getOutputStream();initElm();polling=true;ui.post(()->state.setText("CONECTADO · "+safeName(d)));pollLoop();}catch(SecurityException e){polling=false;closeSocket();ui.post(()->state.setText("AUTORIZE O BLUETOOTH PARA CONECTAR"));}catch(Throwable e){polling=false;closeSocket();ui.post(()->state.setText("FALHA AO CONECTAR · verifique se o ELM327 está livre"));}});}
-    private String safeName(BluetoothDevice d){if(d==null||!hasBluetoothConnectPermission())return "ELM327";try{String n=d.getName();return n==null||n.trim().isEmpty()?"Dispositivo Bluetooth":n;}catch(SecurityException e){return "ELM327";}catch(Throwable e){return "ELM327";}}
-    private void initElm()throws Exception{command("ATZ",3000);command("ATE0",1200);command("ATL0",1200);command("ATS0",1200);command("ATH0",1200);command("ATSP0",2200);}
-    private void pollLoop(){while(polling&&!Thread.currentThread().isInterrupted()){try{Double r=parsePid(command("010C",1400),"410C",2,4.0);Double c=parsePid(command("0105",1400),"4105",1,1.0);Double s=parsePid(command("010D",1400),"410D",1,1.0);Double f=parsePid(command("012F",1400),"412F",1,255.0/100.0);Double volts=parseVoltage(command("ATRV",1400));ui.post(()->{if(r!=null)rpm.setText(String.valueOf(Math.round(r)));if(c!=null)coolant.setText(String.valueOf(Math.round(c-40)));if(s!=null)vehicleSpeed.setText(String.valueOf(Math.round(s)));if(volts!=null)battery.setText(String.format(Locale.getDefault(),"%.1f V",volts));if(f!=null)fuel.setText(Math.round(f)+"%");});Thread.sleep(900);}catch(Throwable e){polling=false;closeSocket();ui.post(()->state.setText("CONEXÃO OBD ENCERRADA"));}}}
-    private synchronized String command(String cmd,long timeout)throws Exception{if(out==null||in==null)throw new IOException("sem conexão");while(in.available()>0)in.read();out.write((cmd+"\r").getBytes(StandardCharsets.US_ASCII));out.flush();long end=System.currentTimeMillis()+timeout;ByteArrayOutputStream b=new ByteArrayOutputStream();while(System.currentTimeMillis()<end){int n=in.available();if(n>0){byte[]buf=new byte[Math.min(256,n)];int x=in.read(buf);if(x>0){b.write(buf,0,x);String t=b.toString("US-ASCII");if(t.contains(">"))break;}}else Thread.sleep(35);}return b.toString("US-ASCII");}
-    private Double parsePid(String raw,String marker,int bytes,double divisor){if(raw==null)return null;String x=raw.toUpperCase(Locale.ROOT).replaceAll("[^0-9A-F]","");int at=x.indexOf(marker);if(at<0)return null;int start=at+marker.length();if(x.length()<start+bytes*2)return null;try{if(bytes==1){int a=Integer.parseInt(x.substring(start,start+2),16);return divisor==1.0?(double)a:a/divisor;}int a=Integer.parseInt(x.substring(start,start+2),16),b=Integer.parseInt(x.substring(start+2,start+4),16);return (a*256.0+b)/divisor;}catch(Throwable e){return null;}}
-    private Double parseVoltage(String raw){if(raw==null)return null;Matcher m=Pattern.compile("([0-9]{1,2}(?:\\.[0-9]+)?)\\s*V",Pattern.CASE_INSENSITIVE).matcher(raw);if(!m.find())return null;try{return Double.parseDouble(m.group(1));}catch(Throwable e){return null;}}
-    private void closeSocket(){try{if(socket!=null)socket.close();}catch(Throwable ignored){}socket=null;in=null;out=null;}
-    private TextView metric(String k,String v){TextView t=text(v+"\n"+k,18,GREEN,true);t.setGravity(Gravity.CENTER);t.setBackground(panel(SURFACE,15,BORDER));return t;}private LinearLayout card(){LinearLayout c=col();c.setPadding(dp(15),dp(14),dp(15),dp(14));c.setBackground(panel(SURFACE,16,BORDER));return c;}private Button btn(String v,boolean pri){Button b=new Button(this);b.setAllCaps(false);b.setText(v);b.setTextColor(TEXT);b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);b.setBackground(panel(pri?RED:SURFACE2,13,pri?0:BORDER));return b;}private TextView text(String v,float s,int c,boolean bold){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}private TextView over(String v,int c){TextView t=text(v,9,c,true);t.setLetterSpacing(.12f);return t;}private LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);return l;}private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}private GradientDrawable panel(int c,int r,int st){GradientDrawable g=new GradientDrawable();g.setColor(c);g.setCornerRadius(dp(r));if(st!=0)g.setStroke(dp(1),st);return g;}private void add(LinearLayout p,View v,int l,int t,int r,int b,int w,int h){LinearLayout.LayoutParams x=new LinearLayout.LayoutParams(w,h);x.setMargins(dp(l),dp(t),dp(r),dp(b));p.addView(v,x);}private int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}
+
+    @Override protected void onResume() {
+        super.onResume();
+        EstradaTheme current = EstradaTheme.get(this);
+        if (theme != null && !current.name.equals(theme.name)) build();
+    }
+
+    @Override protected void onDestroy() {
+        polling = false;
+        closeSocket();
+        io.shutdownNow();
+        super.onDestroy();
+    }
+
+    private void build() {
+        theme = EstradaTheme.get(this);
+        getWindow().setStatusBarColor(theme.background);
+        getWindow().setNavigationBarColor(theme.background);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        page = PremiumUi.col(this);
+        page.setPadding(dp(18), dp(18), dp(18), dp(28));
+        page.setBackgroundColor(theme.background);
+        scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+        setContentView(UnifiedAppShell.wrap(this, "central", scroll));
+
+        page.addView(PremiumUi.overline(this, "OBD2 BLUETOOTH", theme.secondary));
+        TextView title = PremiumUi.text(this, "Painel do veículo", 27, theme.text, true);
+        page.addView(title);
+        margin(title, 0, 5, 0, 3);
+        TextView subtitle = PremiumUi.text(this,
+                "Compatível com adaptadores ELM327 Bluetooth Classic já pareados no Android.",
+                11, theme.muted, false);
+        page.addView(subtitle);
+
+        LinearLayout status = card();
+        state = PremiumUi.text(this, "DESCONECTADO", 13, theme.warning, true);
+        status.addView(state);
+        TextView help = PremiumUi.text(this,
+                "Pareie primeiro o ELM327 nas configurações Bluetooth. O Estrada Play apenas consulta PIDs padrão; não altera parâmetros da ECU.",
+                11, theme.muted, false);
+        status.addView(help);
+        margin(help, 0, 5, 0, 0);
+        add(page, status, 0, 14, 0, 14, -1, -2);
+
+        LinearLayout metrics = PremiumUi.row(this);
+        rpm = metric("RPM", "--");
+        coolant = metric("MOTOR °C", "--");
+        metrics.addView(rpm, new LinearLayout.LayoutParams(0, dp(88), 1f));
+        LinearLayout.LayoutParams m2 = new LinearLayout.LayoutParams(0, dp(88), 1f);
+        m2.setMargins(dp(7), 0, 0, 0);
+        metrics.addView(coolant, m2);
+        page.addView(metrics);
+
+        LinearLayout metrics2 = PremiumUi.row(this);
+        vehicleSpeed = metric("OBD KM/H", "--");
+        battery = metric("BATERIA", "--");
+        fuel = metric("TANQUE", "--");
+        metrics2.addView(vehicleSpeed, new LinearLayout.LayoutParams(0, dp(88), 1f));
+        LinearLayout.LayoutParams q = new LinearLayout.LayoutParams(0, dp(88), 1f);
+        q.setMargins(dp(7), 0, 0, 0);
+        metrics2.addView(battery, q);
+        LinearLayout.LayoutParams q2 = new LinearLayout.LayoutParams(0, dp(88), 1f);
+        q2.setMargins(dp(7), 0, 0, 0);
+        metrics2.addView(fuel, q2);
+        add(page, metrics2, 0, 7, 0, 16, -1, -2);
+
+        page.addView(PremiumUi.overline(this, "DISPOSITIVOS PAREADOS", theme.muted));
+        devices = PremiumUi.col(this);
+        page.addView(devices);
+        margin(devices, 0, 7, 0, 0);
+        loadBonded();
+    }
+
+    private boolean hasBluetoothConnectPermission() {
+        return Build.VERSION.SDK_INT < 31
+                || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void loadBonded() {
+        devices.removeAllViews();
+        if (!hasBluetoothConnectPermission()) {
+            Button allow = PremiumUi.button(this, "AUTORIZAR BLUETOOTH", true);
+            devices.addView(allow, new LinearLayout.LayoutParams(-1, dp(54)));
+            allow.setOnClickListener(v -> requestPermissions(
+                    new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQ_BT));
+            return;
+        }
+
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter == null) {
+            devices.addView(PremiumUi.text(this,
+                    "Este aparelho não possui Bluetooth Classic.", 12, theme.muted, false));
+            return;
+        }
+        try {
+            if (!adapter.isEnabled()) {
+                devices.addView(PremiumUi.text(this,
+                        "Ative o Bluetooth do Android e volte a esta tela.", 12, theme.warning, false));
+                return;
+            }
+        } catch (SecurityException e) {
+            devices.addView(PremiumUi.text(this,
+                    "Autorize o Bluetooth para continuar.", 12, theme.warning, false));
+            return;
+        }
+
+        Set<BluetoothDevice> bonded;
+        try {
+            bonded = adapter.getBondedDevices();
+        } catch (SecurityException e) {
+            devices.addView(PremiumUi.text(this,
+                    "Autorize o Bluetooth para ler os dispositivos pareados.", 12, theme.muted, false));
+            return;
+        } catch (Throwable e) {
+            devices.addView(PremiumUi.text(this,
+                    "Não consegui ler os dispositivos pareados.", 12, theme.muted, false));
+            return;
+        }
+
+        if (bonded == null || bonded.isEmpty()) {
+            devices.addView(PremiumUi.text(this,
+                    "Nenhum dispositivo pareado. Pareie o ELM327 nas configurações do Android.",
+                    12, theme.muted, false));
+            return;
+        }
+
+        boolean first = true;
+        for (BluetoothDevice device : bonded) {
+            Button b = PremiumUi.button(this, safeName(device) + "\n" + safeAddress(device), false);
+            b.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+            devices.addView(b, new LinearLayout.LayoutParams(-1, dp(62)));
+            if (!first) margin(b, 0, 7, 0, 0);
+            first = false;
+            b.setOnClickListener(v -> connect(device));
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grants) {
+        super.onRequestPermissionsResult(requestCode, permissions, grants);
+        if (requestCode == REQ_BT) loadBonded();
+    }
+
+    private String safeAddress(BluetoothDevice device) {
+        if (device == null || !hasBluetoothConnectPermission()) return "";
+        try { return device.getAddress(); }
+        catch (Throwable e) { return ""; }
+    }
+
+    private String safeName(BluetoothDevice device) {
+        if (device == null || !hasBluetoothConnectPermission()) return "ELM327";
+        try {
+            String name = device.getName();
+            return name == null || name.trim().isEmpty() ? "Dispositivo Bluetooth" : name;
+        } catch (Throwable e) {
+            return "ELM327";
+        }
+    }
+
+    private void connect(BluetoothDevice device) {
+        if (polling || device == null) return;
+        if (!hasBluetoothConnectPermission()) {
+            requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQ_BT);
+            return;
+        }
+        state.setTextColor(theme.warning);
+        state.setText("CONECTANDO…");
+        io.execute(() -> {
+            if (!hasBluetoothConnectPermission()) {
+                ui.post(() -> state.setText("AUTORIZE O BLUETOOTH PARA CONECTAR"));
+                return;
+            }
+            try {
+                BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+                if (adapter != null) adapter.cancelDiscovery();
+                socket = device.createRfcommSocketToServiceRecord(SPP);
+                socket.connect();
+                in = socket.getInputStream();
+                out = socket.getOutputStream();
+                initElm();
+                polling = true;
+                ui.post(() -> {
+                    state.setTextColor(theme.success);
+                    state.setText("CONECTADO · " + safeName(device));
+                });
+                pollLoop();
+            } catch (SecurityException e) {
+                polling = false;
+                closeSocket();
+                ui.post(() -> state.setText("AUTORIZE O BLUETOOTH PARA CONECTAR"));
+            } catch (Throwable e) {
+                polling = false;
+                closeSocket();
+                ui.post(() -> {
+                    state.setTextColor(theme.danger);
+                    state.setText("FALHA AO CONECTAR · verifique se o ELM327 está livre");
+                });
+            }
+        });
+    }
+
+    private void initElm() throws Exception {
+        command("ATZ", 3000);
+        command("ATE0", 1200);
+        command("ATL0", 1200);
+        command("ATS0", 1200);
+        command("ATH0", 1200);
+        command("ATSP0", 2200);
+    }
+
+    private void pollLoop() {
+        while (polling && !Thread.currentThread().isInterrupted()) {
+            try {
+                Double r = parsePid(command("010C", 1400), "410C", 2, 4.0);
+                Double c = parsePid(command("0105", 1400), "4105", 1, 1.0);
+                Double s = parsePid(command("010D", 1400), "410D", 1, 1.0);
+                Double f = parsePid(command("012F", 1400), "412F", 1, 255.0 / 100.0);
+                Double volts = parseVoltage(command("ATRV", 1400));
+                ui.post(() -> {
+                    if (r != null) rpm.setText(String.valueOf(Math.round(r)));
+                    if (c != null) coolant.setText(String.valueOf(Math.round(c - 40)));
+                    if (s != null) vehicleSpeed.setText(String.valueOf(Math.round(s)));
+                    if (volts != null) battery.setText(String.format(Locale.getDefault(), "%.1f V", volts));
+                    if (f != null) fuel.setText(Math.round(f) + "%");
+                });
+                Thread.sleep(900);
+            } catch (Throwable e) {
+                polling = false;
+                closeSocket();
+                ui.post(() -> {
+                    state.setTextColor(theme.warning);
+                    state.setText("CONEXÃO OBD ENCERRADA");
+                });
+            }
+        }
+    }
+
+    private synchronized String command(String cmd, long timeout) throws Exception {
+        if (out == null || in == null) throw new IOException("sem conexão");
+        while (in.available() > 0) in.read();
+        out.write((cmd + "\r").getBytes(StandardCharsets.US_ASCII));
+        out.flush();
+        long end = System.currentTimeMillis() + timeout;
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        while (System.currentTimeMillis() < end) {
+            int available = in.available();
+            if (available > 0) {
+                byte[] bytes = new byte[Math.min(256, available)];
+                int count = in.read(bytes);
+                if (count > 0) {
+                    buffer.write(bytes, 0, count);
+                    String text = buffer.toString("US-ASCII");
+                    if (text.contains(">")) break;
+                }
+            } else {
+                Thread.sleep(35);
+            }
+        }
+        return buffer.toString("US-ASCII");
+    }
+
+    private Double parsePid(String raw, String marker, int bytes, double divisor) {
+        if (raw == null) return null;
+        String clean = raw.toUpperCase(Locale.ROOT).replaceAll("[^0-9A-F]", "");
+        int at = clean.indexOf(marker);
+        if (at < 0) return null;
+        int start = at + marker.length();
+        if (clean.length() < start + bytes * 2) return null;
+        try {
+            if (bytes == 1) {
+                int a = Integer.parseInt(clean.substring(start, start + 2), 16);
+                return divisor == 1.0 ? (double) a : a / divisor;
+            }
+            int a = Integer.parseInt(clean.substring(start, start + 2), 16);
+            int b = Integer.parseInt(clean.substring(start + 2, start + 4), 16);
+            return (a * 256.0 + b) / divisor;
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    private Double parseVoltage(String raw) {
+        if (raw == null) return null;
+        Matcher matcher = Pattern.compile("([0-9]{1,2}(?:\\.[0-9]+)?)\\s*V", Pattern.CASE_INSENSITIVE).matcher(raw);
+        if (!matcher.find()) return null;
+        try { return Double.parseDouble(matcher.group(1)); }
+        catch (Throwable e) { return null; }
+    }
+
+    private void closeSocket() {
+        try { if (socket != null) socket.close(); } catch (Throwable ignored) {}
+        socket = null;
+        in = null;
+        out = null;
+    }
+
+    private TextView metric(String key, String value) {
+        TextView t = PremiumUi.text(this, value + "\n" + key, 18, theme.success, true);
+        t.setGravity(Gravity.CENTER);
+        t.setBackground(PremiumUi.panel(this, theme.glass, theme.border, theme.radiusDp));
+        return t;
+    }
+
+    private LinearLayout card() {
+        LinearLayout c = PremiumUi.col(this);
+        c.setPadding(dp(15), dp(14), dp(15), dp(14));
+        c.setBackground(PremiumUi.panel(this, theme.glass, theme.border, theme.radiusDp));
+        return c;
+    }
+
+    private void add(LinearLayout parent, View view, int l, int t, int r, int b, int w, int h) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(w, h);
+        p.setMargins(dp(l), dp(t), dp(r), dp(b));
+        parent.addView(view, p);
+    }
+
+    private void margin(View view, int l, int t, int r, int b) {
+        if (!(view.getLayoutParams() instanceof LinearLayout.LayoutParams)) return;
+        LinearLayout.LayoutParams p = (LinearLayout.LayoutParams) view.getLayoutParams();
+        p.setMargins(dp(l), dp(t), dp(r), dp(b));
+        view.setLayoutParams(p);
+    }
+
+    private int dp(float value) { return PremiumUi.dp(this, value); }
 }
