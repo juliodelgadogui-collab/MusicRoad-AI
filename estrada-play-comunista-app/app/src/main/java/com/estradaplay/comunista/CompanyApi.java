@@ -15,6 +15,7 @@ final class CompanyApi {
     JSONObject dashboard() throws Exception { return call("dashboard", new JSONObject()); }
     JSONObject vehicles() throws Exception { return call("vehicles", new JSONObject()); }
     JSONObject drivers() throws Exception { return callPath("api/native_company_drivers.php", new JSONObject()); }
+    JSONObject driverProfiles() throws Exception { return callPath("api/native_company_driver_profiles.php?action=list", new JSONObject()); }
     JSONObject journeys() throws Exception { return callPath("api/native_company_journeys.php", new JSONObject()); }
     JSONObject driverStatus() throws Exception { return callPath("api/native_company_driver_status.php", new JSONObject()); }
     JSONObject convoyStatus() throws Exception { return callPath("api/native_company_convoy.php?action=status", new JSONObject()); }
@@ -23,6 +24,17 @@ final class CompanyApi {
     JSONObject claimConvoyLeadership() throws Exception { return callPath("api/native_company_convoy_claim_leader.php", new JSONObject()); }
     JSONObject maintenance() throws Exception { return callPath("api/native_company_maintenance.php?action=list", new JSONObject()); }
     JSONObject incidents() throws Exception { return callPath("api/native_company_incidents.php?action=list", new JSONObject()); }
+
+    JSONObject saveDriverProfile(int userId, String phone, String cnhNumber, String cnhCategory, String cnhExpiry, String notes) throws Exception {
+        JSONObject d = new JSONObject();
+        d.put("user_id", userId);
+        d.put("phone", phone == null ? "" : phone.trim());
+        d.put("cnh_number", cnhNumber == null ? "" : cnhNumber.trim());
+        d.put("cnh_category", cnhCategory == null ? "" : cnhCategory.trim());
+        d.put("cnh_expiry", cnhExpiry == null ? "" : cnhExpiry.trim());
+        d.put("notes", notes == null ? "" : notes.trim());
+        return callPath("api/native_company_driver_profiles.php?action=save", d);
+    }
 
     JSONObject addIncident(String type, String severity, String notes) throws Exception {
         JSONObject d = new JSONObject();
