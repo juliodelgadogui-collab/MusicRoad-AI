@@ -67,6 +67,7 @@
         <activity android:name=".PremiumAccountActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".AccountCentralRouterActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyHomeActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".CompanySetupActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyFleetActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyDriversActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyTripsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
