@@ -16,17 +16,20 @@ import androidx.activity.ComponentActivity;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Company driver roster and exclusive vehicle responsibility. */
+/** Company driver roster, professional data and exclusive vehicle responsibility. */
 public final class CompanyDriversActivity extends ComponentActivity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private EstradaTheme theme;
     private LinearLayout list;
     private TextView status;
     private JSONArray vehicles = new JSONArray();
+    private final Map<Integer, JSONObject> profiles = new HashMap<>();
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -47,7 +50,7 @@ public final class CompanyDriversActivity extends ComponentActivity {
         page.addView(back,new LinearLayout.LayoutParams(dp(110),dp(46)));
         TextView over=PremiumUi.overline(this,"MOTORISTAS",theme.secondary); page.addView(over); margins(over,0,22,0,4);
         page.addView(PremiumUi.text(this,"Equipe da frota",28,theme.text,true));
-        TextView sub=PremiumUi.text(this,"Vincule uma conta Estrada Play e defina o veículo responsável. Cada veículo pode ter somente um motorista ativo por vez.",12,theme.muted,false); page.addView(sub); margins(sub,0,7,0,16);
+        TextView sub=PremiumUi.text(this,"Vincule contas Estrada Play, acompanhe CNH e defina o veículo responsável. Cada veículo pode ter somente um motorista ativo por vez.",12,theme.muted,false); page.addView(sub); margins(sub,0,7,0,16);
         Button add=PremiumUi.button(this,"ADICIONAR MOTORISTA",true); add.setOnClickListener(v->addDriver()); page.addView(add,new LinearLayout.LayoutParams(-1,dp(54)));
         status=PremiumUi.text(this,"Carregando equipe…",11,theme.muted,false); status.setGravity(Gravity.CENTER); page.addView(status); margins(status,0,10,0,10);
         list=PremiumUi.col(this); page.addView(list,new LinearLayout.LayoutParams(-1,-2));
@@ -59,10 +62,17 @@ public final class CompanyDriversActivity extends ComponentActivity {
                 CompanyApi api = new CompanyApi(this);
                 JSONObject vehicleResponse = api.vehicles();
                 JSONObject driverResponse = api.drivers();
+                JSONObject profileResponse = api.driverProfiles();
                 JSONArray vs = vehicleResponse.optJSONArray("vehicles"); if (vs == null) vs = new JSONArray();
                 JSONArray ds = driverResponse.optJSONArray("drivers"); if (ds == null) ds = new JSONArray();
-                JSONArray finalVs=vs, finalDs=ds;
-                runOnUiThread(() -> { vehicles=finalVs; render(finalDs); });
+                JSONArray ps = profileResponse.optJSONArray("profiles"); if (ps == null) ps = new JSONArray();
+                JSONArray finalVs=vs, finalDs=ds, finalPs=ps;
+                runOnUiThread(() -> {
+                    vehicles=finalVs;
+                    profiles.clear();
+                    for(int i=0;i<finalPs.length();i++){JSONObject p=finalPs.optJSONObject(i);if(p!=null&&p.optInt("user_id",0)>0)profiles.put(p.optInt("user_id"),p);}
+                    render(finalDs);
+                });
             } catch (Throwable e) {
                 runOnUiThread(() -> status.setText("Não consegui carregar a equipe agora."));
             }
@@ -73,6 +83,8 @@ public final class CompanyDriversActivity extends ComponentActivity {
         list.removeAllViews(); status.setText(rows.length()+" motorista(s) vinculado(s)");
         for(int i=0;i<rows.length();i++) {
             JSONObject d=rows.optJSONObject(i); if(d==null) continue;
+            int userId=d.optInt("user_id",0);
+            JSONObject profile=profiles.get(userId);
             LinearLayout card=PremiumUi.col(this); card.setPadding(dp(14),dp(14),dp(14),dp(14)); card.setBackground(PremiumUi.panel(this,theme.surfaceAlt,theme.border,theme.radiusDp));
             String name=d.optString("name","Motorista"); String username=d.optString("username","");
             card.addView(PremiumUi.text(this,name,16,theme.text,true));
@@ -84,8 +96,16 @@ public final class CompanyDriversActivity extends ComponentActivity {
             String presence=d.optString("presence","");
             if(!presence.isEmpty()) { TextView p=PremiumUi.text(this,presence,10,theme.muted,false); card.addView(p); margins(p,0,3,0,0); }
 
+            String cnhStatus=profile==null?"SEM DATA":profile.optString("cnh_status","SEM DATA");
+            String category=profile==null?"":profile.optString("cnh_category","").trim();
+            String expiry=profile==null?"":profile.optString("cnh_expiry","").trim();
+            int cnhColor="VENCIDA".equals(cnhStatus)?theme.danger:("PRÓXIMA".equals(cnhStatus)?theme.warning:("EM DIA".equals(cnhStatus)?theme.success:theme.muted));
+            String cnhLine="CNH · "+cnhStatus+(category.isEmpty()?"":" · "+category)+(expiry.isEmpty()||"null".equalsIgnoreCase(expiry)?"":" · "+expiry);
+            TextView cnh=PremiumUi.text(this,cnhLine,10,cnhColor,"VENCIDA".equals(cnhStatus)||"PRÓXIMA".equals(cnhStatus));card.addView(cnh);margins(cnh,0,5,0,0);
+
+            Button profileButton=PremiumUi.button(this,"DADOS / CNH",false);profileButton.setOnClickListener(x->editProfile(d,profile));card.addView(profileButton,new LinearLayout.LayoutParams(-1,dp(44)));margins(profileButton,0,10,0,0);
             Button assign=PremiumUi.button(this,v==null?"VINCULAR VEÍCULO":"TROCAR VEÍCULO",false);
-            assign.setOnClickListener(x->chooseVehicle(d)); card.addView(assign,new LinearLayout.LayoutParams(-1,dp(44))); margins(assign,0,10,0,0);
+            assign.setOnClickListener(x->chooseVehicle(d)); card.addView(assign,new LinearLayout.LayoutParams(-1,dp(44))); margins(assign,0,7,0,0);
 
             LinearLayout actions=PremiumUi.row(this);
             Button unassign=PremiumUi.button(this,"DESVINCULAR",false);
@@ -99,6 +119,20 @@ public final class CompanyDriversActivity extends ComponentActivity {
 
             LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2); cp.setMargins(0,0,0,dp(8)); list.addView(card,cp);
         }
+    }
+
+    private void editProfile(JSONObject driver,JSONObject existing){
+        LinearLayout form=PremiumUi.col(this);form.setPadding(dp(18),dp(8),dp(18),0);
+        EditText phone=field("Telefone");EditText cnh=field("Número da CNH");EditText category=field("Categoria (ex.: AE)");EditText expiry=field("Validade AAAA-MM-DD");EditText notes=field("Observação");
+        if(existing!=null){phone.setText(existing.optString("phone",""));cnh.setText(existing.optString("cnh_number",""));category.setText(existing.optString("cnh_category",""));String date=existing.optString("cnh_expiry","");if(!"null".equalsIgnoreCase(date))expiry.setText(date);notes.setText(existing.optString("notes",""));}
+        form.addView(phone);form.addView(cnh);form.addView(category);form.addView(expiry);form.addView(notes);
+        new AlertDialog.Builder(this).setTitle("Dados de "+driver.optString("name","motorista")).setView(form).setNegativeButton("Cancelar",null)
+                .setPositiveButton("Salvar",(d,w)->saveProfile(driver.optInt("user_id",0),phone,cnh,category,expiry,notes)).show();
+    }
+
+    private void saveProfile(int userId,EditText phone,EditText cnh,EditText category,EditText expiry,EditText notes){
+        if(userId<=0)return;status.setText("Salvando dados do motorista…");
+        io.execute(()->{try{new CompanyApi(this).saveDriverProfile(userId,phone.getText().toString(),cnh.getText().toString(),category.getText().toString(),expiry.getText().toString(),notes.getText().toString());runOnUiThread(this::load);}catch(Throwable e){String m=e.getMessage()==null?"Não consegui salvar os dados profissionais.":e.getMessage();runOnUiThread(()->status.setText(m));}});
     }
 
     private void addDriver() {
@@ -171,6 +205,7 @@ public final class CompanyDriversActivity extends ComponentActivity {
         });
     }
 
+    private EditText field(String hint){EditText e=new EditText(this);e.setSingleLine(true);e.setHint(hint);e.setTextColor(theme.text);e.setHintTextColor(theme.muted);e.setPadding(dp(12),0,dp(12),0);e.setBackground(PremiumUi.panel(this,theme.surfaceAlt,theme.border,theme.radiusDp));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(52));p.setMargins(0,0,0,dp(7));e.setLayoutParams(p);return e;}
     private String vehicleLabel(JSONObject v){String nick=v.optString("nickname","").trim();String plate=v.optString("plate","").trim();return nick.isEmpty()?plate:(nick+(plate.isEmpty()?"":" · "+plate));}
     private int dp(float v){return PremiumUi.dp(this,v);}    
     private void margins(View v,int l,int t,int r,int b){if(!(v.getLayoutParams() instanceof LinearLayout.LayoutParams))return;LinearLayout.LayoutParams p=(LinearLayout.LayoutParams)v.getLayoutParams();p.setMargins(dp(l),dp(t),dp(r),dp(b));v.setLayoutParams(p);}    
