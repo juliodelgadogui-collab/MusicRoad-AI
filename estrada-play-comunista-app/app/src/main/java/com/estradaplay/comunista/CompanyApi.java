@@ -2,6 +2,7 @@ package com.estradaplay.comunista;
 
 import android.content.Context;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** Thin client for the company/fleet API. */
@@ -17,6 +18,7 @@ final class CompanyApi {
     JSONObject journeys() throws Exception { return callPath("api/native_company_journeys.php", new JSONObject()); }
     JSONObject driverStatus() throws Exception { return callPath("api/native_company_driver_status.php", new JSONObject()); }
     JSONObject convoyStatus() throws Exception { return callPath("api/native_company_convoy.php?action=status", new JSONObject()); }
+    JSONObject convoyRoster() throws Exception { return callPath("api/native_company_convoy_roster.php?action=status", new JSONObject()); }
     JSONObject fleetMap() throws Exception { return callPath("api/native_company_map.php", new JSONObject()); }
 
     JSONObject createCompany(String name) throws Exception {
@@ -30,6 +32,13 @@ final class CompanyApi {
         d.put("code", code == null ? "" : code.trim());
         d.put("title", title == null ? "Comboio da empresa" : title.trim());
         return callPath("api/native_company_convoy.php?action=publish", d);
+    }
+
+    JSONObject saveConvoyRoster(JSONArray driverIds, int leaderUserId) throws Exception {
+        JSONObject d = new JSONObject();
+        d.put("driver_ids", driverIds == null ? new JSONArray() : driverIds);
+        d.put("leader_user_id", Math.max(0, leaderUserId));
+        return callPath("api/native_company_convoy_roster.php?action=save", d);
     }
 
     JSONObject closeConvoy() throws Exception {
