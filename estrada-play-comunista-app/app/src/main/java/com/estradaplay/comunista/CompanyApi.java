@@ -22,6 +22,12 @@ final class CompanyApi {
     JSONObject fleetMap() throws Exception { return callPath("api/native_company_map.php", new JSONObject()); }
     JSONObject claimConvoyLeadership() throws Exception { return callPath("api/native_company_convoy_claim_leader.php", new JSONObject()); }
 
+    JSONObject report(int days) throws Exception {
+        JSONObject d = new JSONObject();
+        d.put("days", days);
+        return callPath("api/native_company_report.php", d);
+    }
+
     JSONObject createCompany(String name) throws Exception {
         JSONObject d = new JSONObject();
         d.put("name", name == null ? "" : name.trim());
