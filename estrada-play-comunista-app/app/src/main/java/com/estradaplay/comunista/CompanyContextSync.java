@@ -10,8 +10,18 @@ final class CompanyContextSync {
 
     static void refresh(Context context) {
         try {
-            JSONObject response = new CompanyApi(context).context();
+            CompanyApi api = new CompanyApi(context);
+            JSONObject response = api.context();
             JSONObject company = response.optJSONObject("company");
+            if (company != null) {
+                try {
+                    JSONObject convoy = api.convoyStatus().optJSONObject("active_convoy");
+                    if (convoy == null) company.remove("active_convoy");
+                    else company.put("active_convoy", convoy);
+                } catch (Throwable ignored) {
+                    // Membership/vehicle context is still valid even if the convoy endpoint is temporarily unavailable.
+                }
+            }
             CompanyAccount.saveCompany(context, company);
         } catch (Throwable ignored) {
             // Keep the last cached company context. A temporary company API outage must not block the app.
