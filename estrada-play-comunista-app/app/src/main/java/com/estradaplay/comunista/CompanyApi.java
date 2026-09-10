@@ -14,6 +14,7 @@ final class CompanyApi {
     JSONObject dashboard() throws Exception { return call("dashboard", new JSONObject()); }
     JSONObject vehicles() throws Exception { return call("vehicles", new JSONObject()); }
     JSONObject drivers() throws Exception { return call("drivers", new JSONObject()); }
+    JSONObject journeys() throws Exception { return call("journeys", new JSONObject()); }
 
     JSONObject saveVehicle(int id, String plate, String nickname, String model, int year, double odometerKm) throws Exception {
         JSONObject d = new JSONObject();
