@@ -14,7 +14,7 @@ final class CompanyApi {
     JSONObject dashboard() throws Exception { return call("dashboard", new JSONObject()); }
     JSONObject vehicles() throws Exception { return call("vehicles", new JSONObject()); }
     JSONObject drivers() throws Exception { return call("drivers", new JSONObject()); }
-    JSONObject journeys() throws Exception { return call("journeys", new JSONObject()); }
+    JSONObject journeys() throws Exception { return callPath("api/native_company_journeys.php", new JSONObject()); }
 
     JSONObject saveVehicle(int id, String plate, String nickname, String model, int year, double odometerKm) throws Exception {
         JSONObject d = new JSONObject();
@@ -53,7 +53,11 @@ final class CompanyApi {
     JSONObject journeyStop() throws Exception { return call("journey_stop", new JSONObject()); }
 
     private JSONObject call(String action, JSONObject payload) throws Exception {
-        ApiClient.Response r = api.post("api/native_company.php?action=" + action, payload == null ? new JSONObject() : payload);
+        return callPath("api/native_company.php?action=" + action, payload);
+    }
+
+    private JSONObject callPath(String path, JSONObject payload) throws Exception {
+        ApiClient.Response r = api.post(path, payload == null ? new JSONObject() : payload);
         JSONObject j = r.json();
         if (!r.ok() || !j.optBoolean("ok", false)) {
             throw new Exception(j.optString("error", "Módulo empresa indisponível."));
