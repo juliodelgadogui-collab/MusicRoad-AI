@@ -25,6 +25,16 @@ final class CompanyApi {
     JSONObject maintenance() throws Exception { return callPath("api/native_company_maintenance.php?action=list", new JSONObject()); }
     JSONObject incidents() throws Exception { return callPath("api/native_company_incidents.php?action=list", new JSONObject()); }
 
+    JSONObject vehicleDetail(int vehicleId) throws Exception {
+        JSONObject d = new JSONObject(); d.put("vehicle_id", vehicleId);
+        return callPath("api/native_company_vehicle_detail.php", d);
+    }
+
+    JSONObject compareFleet(int days) throws Exception {
+        JSONObject d = new JSONObject(); d.put("days", days);
+        return callPath("api/native_company_compare.php", d);
+    }
+
     JSONObject saveDriverProfile(int userId, String phone, String cnhNumber, String cnhCategory, String cnhExpiry, String notes) throws Exception {
         JSONObject d = new JSONObject();
         d.put("user_id", userId);
