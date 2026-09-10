@@ -114,18 +114,21 @@ if ($action === 'add_driver') {
 }
 
 if ($action === 'assign') {
+    // Compatibility path for older clients. Keep the same invariant as native_company_driver_manage.php.
     company_require_manager($context);
     $driverId=(int)($data['user_id']??0); $vehicleId=(int)($data['vehicle_id']??0);
     if($driverId<=0||$vehicleId<=0) json_response(['ok'=>false,'error'=>'Motorista e veículo são obrigatórios.'],422);
-    $m=db()->prepare("SELECT id FROM company_members WHERE company_id=? AND user_id=? AND status='active' LIMIT 1");$m->execute([$companyId,$driverId]);if(!$m->fetchColumn())json_response(['ok'=>false,'error'=>'Motorista não pertence a esta empresa.'],404);
+    $m=db()->prepare("SELECT id FROM company_members WHERE company_id=? AND user_id=? AND status='active' AND member_role='driver' LIMIT 1");$m->execute([$companyId,$driverId]);if(!$m->fetchColumn())json_response(['ok'=>false,'error'=>'Motorista não pertence a esta empresa.'],404);
     $v=db()->prepare("SELECT id FROM company_vehicles WHERE company_id=? AND id=? AND status='active' LIMIT 1");$v->execute([$companyId,$vehicleId]);if(!$v->fetchColumn())json_response(['ok'=>false,'error'=>'Veículo não pertence a esta empresa.'],404);
-    db()->beginTransaction();
+    $now=date('Y-m-d H:i:s');db()->beginTransaction();
     try{
-        $off=db()->prepare('UPDATE company_driver_vehicle SET active=0,ended_at=? WHERE company_id=? AND user_id=? AND active=1');$off->execute([date('Y-m-d H:i:s'),$companyId,$driverId]);
-        $i=db()->prepare('INSERT INTO company_driver_vehicle (company_id,user_id,vehicle_id,active,assigned_at,ended_at) VALUES (?,?,?,1,?,NULL)');$i->execute([$companyId,$driverId,$vehicleId,date('Y-m-d H:i:s')]);
+        $offDriver=db()->prepare('UPDATE company_driver_vehicle SET active=0,ended_at=? WHERE company_id=? AND user_id=? AND active=1');$offDriver->execute([$now,$companyId,$driverId]);
+        $offVehicle=db()->prepare('UPDATE company_driver_vehicle SET active=0,ended_at=? WHERE company_id=? AND vehicle_id=? AND active=1');$offVehicle->execute([$now,$companyId,$vehicleId]);
+        $i=db()->prepare('INSERT INTO company_driver_vehicle (company_id,user_id,vehicle_id,active,assigned_at,ended_at) VALUES (?,?,?,1,?,NULL)');$i->execute([$companyId,$driverId,$vehicleId,$now]);
+        $p=db()->prepare('DELETE FROM company_presence WHERE company_id=? AND (user_id=? OR vehicle_id=?)');$p->execute([$companyId,$driverId,$vehicleId]);
         db()->commit();
     }catch(Throwable $e){if(db()->inTransaction())db()->rollBack();throw $e;}
-    audit_log('company.driver.assign',['company_id'=>$companyId,'driver_id'=>$driverId,'vehicle_id'=>$vehicleId,'user_id'=>$userId]);
+    audit_log('company.driver.assign.compat',['company_id'=>$companyId,'driver_id'=>$driverId,'vehicle_id'=>$vehicleId,'user_id'=>$userId]);
     json_response(['ok'=>true]);
 }
 
