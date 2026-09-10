@@ -36,15 +36,29 @@ public final class CompanyTripsActivity extends ComponentActivity {
         Button back=PremiumUi.button(this,"‹ EMPRESA",false);back.setOnClickListener(v->finish());page.addView(back,new LinearLayout.LayoutParams(dp(110),dp(46)));
         TextView over=PremiumUi.overline(this,"VIAGENS",theme.secondary);page.addView(over);margins(over,0,22,0,4);
         page.addView(PremiumUi.text(this,"Histórico da frota",28,theme.text,true));
-        TextView sub=PremiumUi.text(this,"Jornadas registradas enquanto os motoristas usam a Estrada, com veículo, duração e quilometragem.",12,theme.muted,false);page.addView(sub);margins(sub,0,7,0,14);
+        TextView sub=PremiumUi.text(this,"Jornadas registradas enquanto os motoristas usam a Estrada, com veículo, tempo de uso e quilometragem.",12,theme.muted,false);page.addView(sub);margins(sub,0,7,0,14);
         status=PremiumUi.text(this,"Carregando viagens…",11,theme.muted,false);page.addView(status);margins(status,0,0,0,10);
         list=PremiumUi.col(this);page.addView(list,new LinearLayout.LayoutParams(-1,-2));
     }
 
     private void load(){io.execute(()->{try{JSONObject j=new CompanyApi(this).journeys();JSONArray rows=j.optJSONArray("journeys");if(rows==null)rows=new JSONArray();JSONArray finalRows=rows;runOnUiThread(()->render(finalRows));}catch(Throwable e){runOnUiThread(()->status.setText("Não consegui carregar as viagens agora."));}});}
 
-    private void render(JSONArray rows){list.removeAllViews();status.setText(rows.length()+" viagem(ns) recente(s)");for(int i=0;i<rows.length();i++){JSONObject r=rows.optJSONObject(i);if(r==null)continue;LinearLayout card=PremiumUi.col(this);card.setPadding(dp(14),dp(14),dp(14),dp(14));card.setBackground(PremiumUi.panel(this,theme.surfaceAlt,theme.border,theme.radiusDp));String driver=r.optString("driver_name","Motorista");String vehicle=r.optString("vehicle_label","Veículo");card.addView(PremiumUi.text(this,driver,15,theme.text,true));card.addView(PremiumUi.text(this,vehicle,11,theme.secondary,true));TextView km=PremiumUi.text(this,String.format(Locale.getDefault(),"%.1f km",r.optDouble("distance_km",0.0)),18,theme.text,true);card.addView(km);margins(km,0,8,0,2);String started=r.optString("started_at","");String ended=r.optString("ended_at","");String state=r.optString("status","");card.addView(PremiumUi.text(this,started+(ended.isEmpty()?" · em andamento":" → "+ended)+(state.isEmpty()?"":" · "+state),10,theme.muted,false));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,0,0,dp(8));list.addView(card,p);}}
+    private void render(JSONArray rows){
+        list.removeAllViews();status.setText(rows.length()+" viagem(ns) recente(s)");
+        for(int i=0;i<rows.length();i++){
+            JSONObject r=rows.optJSONObject(i);if(r==null)continue;
+            LinearLayout card=PremiumUi.col(this);card.setPadding(dp(14),dp(14),dp(14),dp(14));card.setBackground(PremiumUi.panel(this,theme.surfaceAlt,theme.border,theme.radiusDp));
+            String driver=r.optString("driver_name","Motorista");String vehicle=r.optString("vehicle_label","Veículo");
+            card.addView(PremiumUi.text(this,driver,15,theme.text,true));card.addView(PremiumUi.text(this,vehicle,11,theme.secondary,true));
+            double distance=r.optDouble("distance_km",0.0);long duration=Math.max(0L,r.optLong("duration_seconds",0L));
+            TextView metrics=PremiumUi.text(this,String.format(Locale.getDefault(),"%.1f km · %s",distance,durationLabel(duration)),18,theme.text,true);card.addView(metrics);margins(metrics,0,8,0,2);
+            String started=r.optString("started_at","");String ended=r.optString("ended_at","");String state=r.optString("status","");
+            card.addView(PremiumUi.text(this,started+(ended.isEmpty()?" · em andamento":" → "+ended)+(state.isEmpty()?"":" · "+state),10,theme.muted,false));
+            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,0,0,dp(8));list.addView(card,p);
+        }
+    }
 
+    private String durationLabel(long seconds){long totalMinutes=Math.max(0,seconds/60);long hours=totalMinutes/60;long minutes=totalMinutes%60;if(hours>0)return hours+"h"+String.format(Locale.getDefault(),"%02d",minutes);return minutes+" min";}
     private int dp(float v){return PremiumUi.dp(this,v);}private void margins(View v,int l,int t,int r,int b){if(!(v.getLayoutParams() instanceof LinearLayout.LayoutParams))return;LinearLayout.LayoutParams p=(LinearLayout.LayoutParams)v.getLayoutParams();p.setMargins(dp(l),dp(t),dp(r),dp(b));v.setLayoutParams(p);}    
     @Override protected void onDestroy(){io.shutdownNow();super.onDestroy();}
 }
