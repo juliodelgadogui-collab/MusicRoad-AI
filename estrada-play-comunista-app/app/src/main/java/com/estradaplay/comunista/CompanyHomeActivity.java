@@ -166,13 +166,18 @@ public final class CompanyHomeActivity extends ComponentActivity {
                 JSONObject j = api.dashboard();
                 JSONObject s = j.optJSONObject("summary");
                 if (s == null) s = new JSONObject();
-                int openIncidents=0, highIncidents=0;
+                int openIncidents=0, highIncidents=0, overdueMaintenance=0, soonMaintenance=0;
                 try {
                     JSONObject incidents=api.incidents();
                     JSONObject incidentSummary=incidents.optJSONObject("summary");
                     if(incidentSummary!=null){openIncidents=incidentSummary.optInt("open",0);highIncidents=incidentSummary.optInt("high",0);}
                 } catch (Throwable ignored) {}
-                JSONObject finalS = s; int finalOpen=openIncidents, finalHigh=highIncidents;
+                try {
+                    JSONObject maintenance=api.maintenance();
+                    JSONObject maintenanceSummary=maintenance.optJSONObject("summary");
+                    if(maintenanceSummary!=null){overdueMaintenance=maintenanceSummary.optInt("overdue",0);soonMaintenance=maintenanceSummary.optInt("soon",0);}
+                } catch (Throwable ignored) {}
+                JSONObject finalS = s; int finalOpen=openIncidents, finalHigh=highIncidents, finalOverdue=overdueMaintenance, finalSoon=soonMaintenance;
                 runOnUiThread(() -> {
                     vehiclesValue.setText(String.valueOf(finalS.optInt("vehicles", 0)));
                     driversValue.setText(String.valueOf(finalS.optInt("drivers", 0)));
@@ -180,7 +185,9 @@ public final class CompanyHomeActivity extends ComponentActivity {
                     kmValue.setText(String.format(Locale.getDefault(), "%.0f", finalS.optDouble("km_today", 0.0)));
                     int active=finalS.optInt("active_now",0);
                     if(finalHigh>0){status.setText(finalHigh+" ocorrência(s) urgente(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.danger);}
+                    else if(finalOverdue>0){status.setText(finalOverdue+" manutenção(ões) vencida(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.danger);}
                     else if(finalOpen>0){status.setText(finalOpen+" ocorrência(s) aberta(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.warning);}
+                    else if(finalSoon>0){status.setText(finalSoon+" manutenção(ões) próxima(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.warning);}
                     else {status.setText(active>0?active+" veículo(s) em jornada agora":"Nenhum veículo em jornada agora");status.setTextColor(theme.muted);}
                 });
             } catch (Throwable e) {
