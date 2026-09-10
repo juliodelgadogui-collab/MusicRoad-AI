@@ -76,6 +76,11 @@ public final class EstradaPlayApplication extends Application {
         // ROUTE_DIRECTION_V320: route cancellation and sustained reverse-direction detection are core.
         try { routeNavigationAssist = RouteNavigationAssist.install(this); } catch (Throwable ignored) {}
 
+        // COMPANY_JOURNEY_CORE: enterprise mileage/presence reuses RoadSafetyService broadcasts.
+        // Install before optional crash-guard exits so a linked driver never loses company mileage.
+        // This tracker never requests location itself and closes its journey when the app leaves use.
+        try { CompanyJourneyTracker.install(this); } catch (Throwable ignored) {}
+
         try { MusicLibraryIntegrityV247.repair(this); } catch (Throwable ignored) {}
 
         boolean deferOptionalBridges = ProcessCrashGuard.install(this);
