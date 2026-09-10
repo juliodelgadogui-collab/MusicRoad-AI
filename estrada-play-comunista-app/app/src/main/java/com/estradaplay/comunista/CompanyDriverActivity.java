@@ -58,6 +58,7 @@ public final class CompanyDriverActivity extends ComponentActivity {
         page.addView(convoyCard,lp(-1,-2,0,10,0,0));
 
         Button road=PremiumUi.button(this,"ABRIR ESTRADA",true);road.setOnClickListener(v->startActivity(new Intent(this,RoadEntryActivity.class)));page.addView(road,lp(-1,54,0,14,0,0));
+        Button fuel=PremiumUi.button(this,"REGISTRAR ABASTECIMENTO",false);fuel.setOnClickListener(v->startActivity(new Intent(this,CompanyFuelActivity.class)));page.addView(fuel,lp(-1,50,0,8,0,0));
         Button personal=PremiumUi.button(this,"VOLTAR À CENTRAL PESSOAL",false);personal.setOnClickListener(v->{CompanyBootstrapProvider.markRouted();startActivity(new Intent(this,PremiumHomeActivity.class));finish();});page.addView(personal,lp(-1,50,0,8,0,0));
         status=PremiumUi.text(this,"Atualizando vínculo…",10,theme.muted,false);status.setGravity(Gravity.CENTER);page.addView(status);margins(status,0,10,0,0);
     }
