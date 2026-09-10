@@ -66,11 +66,14 @@
         <activity android:name=".PremiumHomeActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
         <activity android:name=".PremiumAccountActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".AccountCentralRouterActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".CompanyEntryActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyHomeActivity" android:exported="false" android:launchMode="singleTask" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanySetupActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".CompanyDriverActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyFleetActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyDriversActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyTripsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".CompanyConvoyActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".PremiumDownloadsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".PremiumMusicActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
         <activity android:name=".ThemeSettingsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
