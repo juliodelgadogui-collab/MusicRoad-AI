@@ -98,7 +98,7 @@ public final class CompanyHomeActivity extends ComponentActivity {
         LinearLayout row2 = PremiumUi.row(this);
         row2.addView(tile("COMBOIO", "Criar e acompanhar o grupo", v -> startActivity(new Intent(this, ConvoyActivity.class))), new LinearLayout.LayoutParams(0, dp(118), 1f));
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, dp(118), 1f); tlp.setMargins(dp(8),0,0,0);
-        row2.addView(tile("VIAGENS", "Histórico e km percorrido", v -> startActivity(new Intent(this, TripHistoryActivity.class))), tlp);
+        row2.addView(tile("VIAGENS", "Histórico e km percorrido", v -> startActivity(new Intent(this, CompanyTripsActivity.class))), tlp);
         page.addView(row2, lp(-1, -2, 0, 8, 0, 0));
 
         LinearLayout row3 = PremiumUi.row(this);
