@@ -1,9 +1,14 @@
 package com.estradaplay.comunista;
 
+import android.app.Activity;
+import android.app.Application;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -17,9 +22,12 @@ final class CompanyJourneyTracker {
     private final Context app;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final AtomicBoolean sending = new AtomicBoolean(false);
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private int visibleActivities;
     private long lastSentAt;
     private double lastSentLat = Double.NaN;
     private double lastSentLon = Double.NaN;
+    private final Runnable stopJourney = this::stopJourneyIfNeeded;
 
     private final BroadcastReceiver roadReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -50,6 +58,30 @@ final class CompanyJourneyTracker {
         app = context.getApplicationContext();
         IntentFilter filter = new IntentFilter(RoadSafetyService.ACTION_STATE);
         InternalBroadcasts.register(app, roadReceiver, filter);
+        if (app instanceof Application) {
+            ((Application) app).registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
+                @Override public void onActivityCreated(Activity activity, Bundle state) {}
+                @Override public void onActivityResumed(Activity activity) {}
+                @Override public void onActivityPaused(Activity activity) {}
+                @Override public void onActivitySaveInstanceState(Activity activity, Bundle outState) {}
+                @Override public void onActivityDestroyed(Activity activity) {}
+
+                @Override public void onActivityStarted(Activity activity) {
+                    visibleActivities++;
+                    main.removeCallbacks(stopJourney);
+                }
+
+                @Override public void onActivityStopped(Activity activity) {
+                    visibleActivities = Math.max(0, visibleActivities - 1);
+                    if (activity != null && activity.isChangingConfigurations()) return;
+                    if (visibleActivities == 0) {
+                        main.removeCallbacks(stopJourney);
+                        // Covers genuine task/background exit while ignoring normal Activity hand-offs.
+                        main.postDelayed(stopJourney, 1200L);
+                    }
+                }
+            });
+        }
     }
 
     static void install(Context context) {
@@ -60,6 +92,16 @@ final class CompanyJourneyTracker {
                 catch (Throwable ignored) { instance = null; }
             }
         }
+    }
+
+    private void stopJourneyIfNeeded() {
+        if (visibleActivities != 0 || !CompanyAccount.isDriverContext(app) || CompanyAccount.activeVehicleId(app) <= 0) return;
+        io.execute(() -> {
+            try { new CompanyApi(app).journeyStop(); } catch (Throwable ignored) {}
+        });
+        lastSentAt = 0L;
+        lastSentLat = Double.NaN;
+        lastSentLon = Double.NaN;
     }
 
     private static double distanceM(double aLat, double aLon, double bLat, double bLon) {
