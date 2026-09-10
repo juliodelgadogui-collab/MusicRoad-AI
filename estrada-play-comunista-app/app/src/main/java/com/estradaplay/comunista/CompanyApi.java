@@ -13,8 +13,14 @@ final class CompanyApi {
     JSONObject context() throws Exception { return call("context", new JSONObject()); }
     JSONObject dashboard() throws Exception { return call("dashboard", new JSONObject()); }
     JSONObject vehicles() throws Exception { return call("vehicles", new JSONObject()); }
-    JSONObject drivers() throws Exception { return call("drivers", new JSONObject()); }
+    JSONObject drivers() throws Exception { return callPath("api/native_company_drivers.php", new JSONObject()); }
     JSONObject journeys() throws Exception { return callPath("api/native_company_journeys.php", new JSONObject()); }
+
+    JSONObject createCompany(String name) throws Exception {
+        JSONObject d = new JSONObject();
+        d.put("name", name == null ? "" : name.trim());
+        return callPath("api/native_company_create.php", d);
+    }
 
     JSONObject saveVehicle(int id, String plate, String nickname, String model, int year, double odometerKm) throws Exception {
         JSONObject d = new JSONObject();
