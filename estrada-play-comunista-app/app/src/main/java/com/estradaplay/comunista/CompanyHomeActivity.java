@@ -27,6 +27,7 @@ public final class CompanyHomeActivity extends ComponentActivity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         if (!CompanyAccount.shouldUseCompanyCentral(this)) {
+            CompanyBootstrapProvider.markRouted();
             startActivity(new Intent(this, PremiumHomeActivity.class));
             finish();
             return;
@@ -96,7 +97,7 @@ public final class CompanyHomeActivity extends ComponentActivity {
         page.addView(row1, lp(-1, -2, 0, 8, 0, 0));
 
         LinearLayout row2 = PremiumUi.row(this);
-        row2.addView(tile("COMBOIO", "Criar e acompanhar o grupo", v -> startActivity(new Intent(this, ConvoyActivity.class))), new LinearLayout.LayoutParams(0, dp(118), 1f));
+        row2.addView(tile("COMBOIO", "Operação da frota em grupo", v -> startActivity(new Intent(this, CompanyConvoyActivity.class))), new LinearLayout.LayoutParams(0, dp(118), 1f));
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, dp(118), 1f); tlp.setMargins(dp(8),0,0,0);
         row2.addView(tile("VIAGENS", "Histórico e km percorrido", v -> startActivity(new Intent(this, CompanyTripsActivity.class))), tlp);
         page.addView(row2, lp(-1, -2, 0, 8, 0, 0));
@@ -112,7 +113,10 @@ public final class CompanyHomeActivity extends ComponentActivity {
         page.addView(road, lp(-1, 54, 0, 16, 0, 0));
 
         Button personal = PremiumUi.button(this, "CENTRAL DO MOTORISTA", false);
-        personal.setOnClickListener(v -> startActivity(new Intent(this, PremiumHomeActivity.class)));
+        personal.setOnClickListener(v -> {
+            CompanyBootstrapProvider.markRouted();
+            startActivity(new Intent(this, PremiumHomeActivity.class));
+        });
         page.addView(personal, lp(-1, 50, 0, 8, 0, 0));
     }
 
