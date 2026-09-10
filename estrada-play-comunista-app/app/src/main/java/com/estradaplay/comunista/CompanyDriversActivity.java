@@ -20,7 +20,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Company driver roster and vehicle assignment. */
+/** Company driver roster and exclusive vehicle responsibility. */
 public final class CompanyDriversActivity extends ComponentActivity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private EstradaTheme theme;
@@ -47,7 +47,7 @@ public final class CompanyDriversActivity extends ComponentActivity {
         page.addView(back,new LinearLayout.LayoutParams(dp(110),dp(46)));
         TextView over=PremiumUi.overline(this,"MOTORISTAS",theme.secondary); page.addView(over); margins(over,0,22,0,4);
         page.addView(PremiumUi.text(this,"Equipe da frota",28,theme.text,true));
-        TextView sub=PremiumUi.text(this,"Vincule uma conta Estrada Play já existente e defina qual veículo ela está dirigindo.",12,theme.muted,false); page.addView(sub); margins(sub,0,7,0,16);
+        TextView sub=PremiumUi.text(this,"Vincule uma conta Estrada Play e defina o veículo responsável. Cada veículo pode ter somente um motorista ativo por vez.",12,theme.muted,false); page.addView(sub); margins(sub,0,7,0,16);
         Button add=PremiumUi.button(this,"ADICIONAR MOTORISTA",true); add.setOnClickListener(v->addDriver()); page.addView(add,new LinearLayout.LayoutParams(-1,dp(54)));
         status=PremiumUi.text(this,"Carregando equipe…",11,theme.muted,false); status.setGravity(Gravity.CENTER); page.addView(status); margins(status,0,10,0,10);
         list=PremiumUi.col(this); page.addView(list,new LinearLayout.LayoutParams(-1,-2));
@@ -83,7 +83,20 @@ public final class CompanyDriversActivity extends ComponentActivity {
             TextView km=PremiumUi.text(this,String.format(Locale.getDefault(),"Hoje · %.1f km",d.optDouble("km_today",0.0)),11,theme.muted,false); card.addView(km); margins(km,0,4,0,0);
             String presence=d.optString("presence","");
             if(!presence.isEmpty()) { TextView p=PremiumUi.text(this,presence,10,theme.muted,false); card.addView(p); margins(p,0,3,0,0); }
-            Button assign=PremiumUi.button(this,v==null?"VINCULAR VEÍCULO":"TROCAR VEÍCULO",false); assign.setOnClickListener(x->chooseVehicle(d)); card.addView(assign,new LinearLayout.LayoutParams(-1,dp(44))); margins(assign,0,10,0,0);
+
+            Button assign=PremiumUi.button(this,v==null?"VINCULAR VEÍCULO":"TROCAR VEÍCULO",false);
+            assign.setOnClickListener(x->chooseVehicle(d)); card.addView(assign,new LinearLayout.LayoutParams(-1,dp(44))); margins(assign,0,10,0,0);
+
+            LinearLayout actions=PremiumUi.row(this);
+            Button unassign=PremiumUi.button(this,"DESVINCULAR",false);
+            unassign.setEnabled(v!=null);
+            unassign.setOnClickListener(x->confirmUnassign(d));
+            actions.addView(unassign,new LinearLayout.LayoutParams(0,dp(42),1f));
+            Button remove=PremiumUi.button(this,"REMOVER",false);
+            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(0,dp(42),1f);rp.setMargins(dp(7),0,0,0);
+            actions.addView(remove,rp);remove.setOnClickListener(x->confirmRemove(d));
+            card.addView(actions,new LinearLayout.LayoutParams(-1,-2)); margins(actions,0,7,0,0);
+
             LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2); cp.setMargins(0,0,0,dp(8)); list.addView(card,cp);
         }
     }
@@ -107,15 +120,54 @@ public final class CompanyDriversActivity extends ComponentActivity {
     private void chooseVehicle(JSONObject driver) {
         if(vehicles.length()==0){Toast.makeText(this,"Cadastre um veículo primeiro.",Toast.LENGTH_LONG).show();return;}
         String[] labels=new String[vehicles.length()]; for(int i=0;i<vehicles.length();i++){JSONObject v=vehicles.optJSONObject(i);labels[i]=v==null?"Veículo":vehicleLabel(v);}
-        new AlertDialog.Builder(this).setTitle("Veículo de "+driver.optString("name","motorista")).setItems(labels,(dialog,which)->{
-            JSONObject v=vehicles.optJSONObject(which); if(v!=null)assign(driver.optInt("user_id",0),v.optInt("id",0));
-        }).setNegativeButton("Cancelar",null).show();
+        new AlertDialog.Builder(this)
+                .setTitle("Veículo de "+driver.optString("name","motorista"))
+                .setMessage("Se o veículo já estiver com outro motorista, a responsabilidade será transferida automaticamente.")
+                .setItems(labels,(dialog,which)->{
+                    JSONObject v=vehicles.optJSONObject(which); if(v!=null)assign(driver.optInt("user_id",0),v.optInt("id",0));
+                }).setNegativeButton("Cancelar",null).show();
     }
 
     private void assign(int userId,int vehicleId) {
         if(userId<=0||vehicleId<=0)return; status.setText("Atualizando responsável…"); io.execute(() -> {
             try { new CompanyApi(this).assignVehicle(userId,vehicleId); runOnUiThread(this::load); }
             catch(Throwable e){runOnUiThread(()->status.setText(e.getMessage()==null?"Não consegui vincular o veículo.":e.getMessage()));}
+        });
+    }
+
+    private void confirmUnassign(JSONObject driver) {
+        int userId=driver.optInt("user_id",0); if(userId<=0)return;
+        String name=driver.optString("name","motorista");
+        new AlertDialog.Builder(this)
+                .setTitle("Desvincular veículo")
+                .setMessage("Encerrar o vínculo atual de "+name+" com o veículo? O histórico de viagens e quilômetros será preservado.")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Desvincular",(d,w)->unassign(userId)).show();
+    }
+
+    private void unassign(int userId) {
+        status.setText("Desvinculando veículo…");
+        io.execute(()->{
+            try { new CompanyApi(this).unassignDriver(userId); runOnUiThread(this::load); }
+            catch(Throwable e){runOnUiThread(()->status.setText(e.getMessage()==null?"Não consegui desvincular o veículo.":e.getMessage()));}
+        });
+    }
+
+    private void confirmRemove(JSONObject driver) {
+        int userId=driver.optInt("user_id",0); if(userId<=0)return;
+        String name=driver.optString("name","motorista");
+        new AlertDialog.Builder(this)
+                .setTitle("Remover motorista")
+                .setMessage("Remover "+name+" da empresa? O acesso à frota será encerrado, mas viagens, abastecimentos e quilômetros antigos serão mantidos.")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Remover",(d,w)->removeDriver(userId)).show();
+    }
+
+    private void removeDriver(int userId) {
+        status.setText("Removendo motorista…");
+        io.execute(()->{
+            try { new CompanyApi(this).removeDriver(userId); runOnUiThread(this::load); }
+            catch(Throwable e){runOnUiThread(()->status.setText(e.getMessage()==null?"Não consegui remover o motorista.":e.getMessage()));}
         });
     }
 
