@@ -157,6 +157,32 @@ function convoy_route_deviation(array $route,float $lat,float $lon): ?float {
 }
 function convoy_is_blocked(PDO $pdo,int $convoyId,string $device): bool {$q=$pdo->prepare('SELECT 1 FROM estrada_convoy_blocks WHERE convoy_id=? AND device_token=? LIMIT 1');$q->execute([$convoyId,$device]);return (bool)$q->fetchColumn();}
 function convoy_is_leader(array $convoy,string $device): bool {return isset($convoy['leader_device_token'])&&(string)$convoy['leader_device_token']!==''&&hash_equals((string)$convoy['leader_device_token'],$device);}
+
+/** Personal convoys remain code-based. A code published by a company becomes roster-protected. */
+function convoy_company_access_allowed(PDO $pdo,string $code,int $userId): bool {
+    try{
+        $q=$pdo->prepare('SELECT company_id FROM company_convoy_links WHERE convoy_code=? ORDER BY active DESC,updated_at DESC LIMIT 1');
+        $q->execute([$code]);$companyId=(int)($q->fetchColumn()?:0);
+    }catch(Throwable $e){return true;}
+    if($companyId<=0)return true;
+    if($userId<=0)return false;
+    try{
+        $m=$pdo->prepare("SELECT member_role FROM company_members WHERE company_id=? AND user_id=? AND status='active' LIMIT 1");
+        $m->execute([$companyId,$userId]);$role=strtolower((string)($m->fetchColumn()?:''));
+        if(in_array($role,['owner','admin','manager'],true))return true;
+    }catch(Throwable $e){return false;}
+    try{
+        $r=$pdo->prepare('SELECT 1 FROM company_convoy_roster WHERE company_id=? AND convoy_code=? AND user_id=? AND active=1 LIMIT 1');
+        $r->execute([$companyId,$code,$userId]);
+        return (bool)$r->fetchColumn();
+    }catch(Throwable $e){return false;}
+}
+function convoy_require_company_access(PDO $pdo,string $code,int $userId,int $convoyId,string $device): void {
+    if(convoy_company_access_allowed($pdo,$code,$userId))return;
+    try{$pdo->prepare('DELETE FROM estrada_convoy_members WHERE convoy_id=? AND device_token=?')->execute([$convoyId,$device]);}catch(Throwable $ignored){}
+    json_response(['ok'=>false,'error'=>'Este Comboio pertence a uma empresa e sua conta não está na equipe autorizada.'],403);
+}
+
 function convoy_state(PDO $pdo,array $convoy,string $device): array {
     $q=$pdo->prepare("SELECT device_token,nickname,latitude,longitude,speed_kmh,heading,UNIX_TIMESTAMP(last_seen)*1000 AS seen_ms,TIMESTAMPDIFF(SECOND,last_seen,NOW()) AS age_s FROM estrada_convoy_members WHERE convoy_id=? AND last_seen>=DATE_SUB(NOW(),INTERVAL 90 SECOND) ORDER BY joined_at ASC,last_seen DESC");
     $q->execute([(int)$convoy['id']]);$rows=$q->fetchAll(PDO::FETCH_ASSOC)?:[];$route=convoy_route_points($convoy['route_points_json']??'');$leaderDevice=(string)($convoy['leader_device_token']??'');$leaderLat=null;$leaderLon=null;
@@ -191,6 +217,7 @@ if(!$convoy)json_response(['ok'=>false,'error'=>'Comboio não encontrado ou expi
 $convoyId=(int)$convoy['id'];
 
 if($action==='join'){
+    convoy_require_company_access($pdo,$code,$userId,$convoyId,$device);
     if(convoy_is_blocked($pdo,$convoyId,$device))json_response(['ok'=>false,'error'=>'Este aparelho foi removido deste comboio pelo líder.'],403);
     [$lat,$lon]=convoy_coords($body);convoy_member_upsert($pdo,$convoyId,$userId,$device,convoy_nickname($body,$device),$lat,$lon,$body);
     if((string)($convoy['leader_device_token']??'')===''){$pdo->prepare('UPDATE estrada_convoys SET leader_device_token=? WHERE id=?')->execute([$device,$convoyId]);$convoy=convoy_find($pdo,$code)?:$convoy;}
@@ -202,21 +229,26 @@ if($action==='leave'){
     json_response(['ok'=>true,'left'=>true,'code'=>$code]);
 }
 if($action==='ping'){
+    convoy_require_company_access($pdo,$code,$userId,$convoyId,$device);
     $q=$pdo->prepare('SELECT 1 FROM estrada_convoy_members WHERE convoy_id=? AND device_token=? LIMIT 1');$q->execute([$convoyId,$device]);if(!$q->fetchColumn())json_response(['ok'=>false,'error'=>'Entre novamente no comboio.'],403);
     [$lat,$lon]=convoy_coords($body);convoy_member_upsert($pdo,$convoyId,$userId,$device,convoy_nickname($body,$device),$lat,$lon,$body);$pdo->prepare('UPDATE estrada_convoys SET expires_at=DATE_ADD(NOW(),INTERVAL 24 HOUR) WHERE id=?')->execute([$convoyId]);$convoy=convoy_find($pdo,$code)?:$convoy;json_response(convoy_state($pdo,$convoy,$device));
 }
 if($action==='set_route'){
+    convoy_require_company_access($pdo,$code,$userId,$convoyId,$device);
     if(!convoy_is_leader($convoy,$device))json_response(['ok'=>false,'error'=>'Somente o líder pode compartilhar a rota.'],403);
     $dlat=(float)($body['destination_lat']??NAN);$dlon=(float)($body['destination_lon']??NAN);if(!is_finite($dlat)||!is_finite($dlon)||$dlat<-35||$dlat>6||$dlon<-75||$dlon>-30)json_response(['ok'=>false,'error'=>'Destino inválido.'],422);
     $label=mb_substr(trim((string)($body['destination_label']??'Destino do comboio')),0,120,'UTF-8');$route=convoy_route_points($body['route_points']??[]);$q=$pdo->prepare('UPDATE estrada_convoys SET destination_label=?,destination_lat=?,destination_lon=?,route_points_json=?,route_updated_at=NOW(),expires_at=DATE_ADD(NOW(),INTERVAL 24 HOUR) WHERE id=?');$q->execute([$label!==''?$label:'Destino do comboio',$dlat,$dlon,json_encode($route,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),$convoyId]);$convoy=convoy_find($pdo,$code)?:$convoy;if(function_exists('audit_log'))audit_log('convoy.route',['code'=>$code]);json_response(convoy_state($pdo,$convoy,$device));
 }
 if($action==='clear_route'){
+    convoy_require_company_access($pdo,$code,$userId,$convoyId,$device);
     if(!convoy_is_leader($convoy,$device))json_response(['ok'=>false,'error'=>'Somente o líder pode limpar a rota.'],403);$pdo->prepare('UPDATE estrada_convoys SET destination_label=NULL,destination_lat=NULL,destination_lon=NULL,route_points_json=NULL,route_updated_at=NULL WHERE id=?')->execute([$convoyId]);$convoy=convoy_find($pdo,$code)?:$convoy;json_response(convoy_state($pdo,$convoy,$device));
 }
 if($action==='kick'){
+    convoy_require_company_access($pdo,$code,$userId,$convoyId,$device);
     if(!convoy_is_leader($convoy,$device))json_response(['ok'=>false,'error'=>'Somente o líder pode remover participantes.'],403);$targetId=strtolower(trim((string)($body['member_id']??'')));$target=convoy_find_member_device($pdo,$convoyId,$targetId);if($target===null)json_response(['ok'=>false,'error'=>'Participante não encontrado.'],404);if(hash_equals($target,$device))json_response(['ok'=>false,'error'=>'O líder deve sair do comboio em vez de remover a si mesmo.'],422);$pdo->prepare('INSERT INTO estrada_convoy_blocks (convoy_id,device_token,blocked_at) VALUES (?,?,NOW()) ON DUPLICATE KEY UPDATE blocked_at=NOW()')->execute([$convoyId,$target]);$pdo->prepare('DELETE FROM estrada_convoy_members WHERE convoy_id=? AND device_token=?')->execute([$convoyId,$target]);if(function_exists('audit_log'))audit_log('convoy.kick',['code'=>$code,'member_id'=>$targetId]);json_response(convoy_state($pdo,$convoy,$device));
 }
 if($action==='state'){
+    convoy_require_company_access($pdo,$code,$userId,$convoyId,$device);
     $q=$pdo->prepare('SELECT 1 FROM estrada_convoy_members WHERE convoy_id=? AND device_token=? LIMIT 1');$q->execute([$convoyId,$device]);if(!$q->fetchColumn())json_response(['ok'=>false,'error'=>'Você não faz parte deste comboio.'],403);json_response(convoy_state($pdo,$convoy,$device));
 }
 json_response(['ok'=>false,'error'=>'Ação inválida.'],422);
