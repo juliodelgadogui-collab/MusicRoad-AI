@@ -33,6 +33,11 @@ public final class CompanySetupActivity extends ComponentActivity {
             finish();
             return;
         }
+        if (CompanyAccount.hasCompany(this)) {
+            startActivity(new Intent(this, CompanyDriverActivity.class));
+            finish();
+            return;
+        }
         build();
     }
 
