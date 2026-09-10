@@ -98,6 +98,11 @@ public final class DriveToolsActivity extends ComponentActivity {
                 new Tool("⚙", "Servidor", "Ajustes avançados", ServerSettingsActivity.class)
         });
 
+        section("EMPRESA");
+        grid(new Tool[]{
+                new Tool("▦", "Estrada Play Frotas", "Veículos, motoristas e km diário", CompanySetupActivity.class)
+        });
+
         section("PREFERÊNCIAS DE DIREÇÃO");
         toggle("Modo noturno automático", "Ajusta a leitura dos instrumentos", "auto_night", DriveSettings.autoNight(this));
         toggle("Chuva automática", "Antecipa avisos conforme clima e rota", "rain_auto", DriveSettings.autoRain(this));
@@ -120,7 +125,7 @@ public final class DriveToolsActivity extends ComponentActivity {
     private void addQuickRow() {
         LinearLayout row = PremiumUi.row(this);
         LinearLayout road = quick("↗", "ESTRADA", "Voltar ao mapa", theme.primary);
-        road.setOnClickListener(v -> open(RoadMapActivity.class));
+        road.setOnClickListener(v -> open(RoadEntryActivity.class));
         row.addView(road, new LinearLayout.LayoutParams(0, dp(104), 1f));
         LinearLayout music = quick("♪", "MÚSICA", "Biblioteca local", theme.secondary);
         music.setOnClickListener(v -> open(PremiumMusicActivity.class));
