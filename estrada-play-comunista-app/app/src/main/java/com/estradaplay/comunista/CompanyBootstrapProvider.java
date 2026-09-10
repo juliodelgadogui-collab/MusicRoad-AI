@@ -19,6 +19,11 @@ public final class CompanyBootstrapProvider extends ContentProvider {
         routing = false;
     }
 
+    private static void resetForAccountFlow() {
+        routedThisProcess = false;
+        routing = false;
+    }
+
     @Override public boolean onCreate() {
         if (getContext() == null) return true;
         android.content.Context appContext = getContext().getApplicationContext();
@@ -33,6 +38,12 @@ public final class CompanyBootstrapProvider extends ContentProvider {
             @Override public void onActivityDestroyed(Activity activity) {}
 
             @Override public void onActivityResumed(Activity activity) {
+                // Logout/account switch can happen without killing the Android process. Re-arm the router
+                // whenever the authentication flow becomes visible so the next successful login is classified again.
+                if (activity instanceof GateActivity || activity instanceof PremiumAccountActivity) {
+                    resetForAccountFlow();
+                    return;
+                }
                 if (!(activity instanceof PremiumHomeActivity) || routedThisProcess || routing || activity.isFinishing()) return;
                 routing = true;
                 try {
