@@ -1,6 +1,7 @@
 package com.estradaplay.comunista;
 
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -97,12 +98,21 @@ public final class CompanyFleetActivity extends ComponentActivity {
             double odo = v.optDouble("odometer_km",0.0);
             TextView km = PremiumUi.text(this, String.format(Locale.getDefault(), "Hodômetro referência · %.0f km", odo), 10, theme.muted, false);
             card.addView(km); margins(km,0,5,0,0);
+
+            LinearLayout actions=PremiumUi.row(this);
+            Button details=PremiumUi.button(this,"DETALHES",true);
+            details.setOnClickListener(x->openDetails(v.optInt("id",0)));
+            actions.addView(details,new LinearLayout.LayoutParams(0,dp(44),1f));
             Button edit = PremiumUi.button(this, "EDITAR", false);
             edit.setOnClickListener(x -> editVehicle(v));
-            card.addView(edit, new LinearLayout.LayoutParams(-1, dp(44))); margins(edit,0,10,0,0);
+            LinearLayout.LayoutParams ep=new LinearLayout.LayoutParams(0,dp(44),1f);ep.setMargins(dp(7),0,0,0);actions.addView(edit,ep);
+            card.addView(actions,new LinearLayout.LayoutParams(-1,dp(44))); margins(actions,0,10,0,0);
+            card.setClickable(true);card.setFocusable(true);card.setOnClickListener(x->openDetails(v.optInt("id",0)));
             list.addView(card, marginLp());
         }
     }
+
+    private void openDetails(int id){if(id<=0)return;Intent i=new Intent(this,CompanyVehicleDetailActivity.class);i.putExtra(CompanyVehicleDetailActivity.EXTRA_VEHICLE_ID,id);startActivity(i);}
 
     private void editVehicle(JSONObject existing) {
         LinearLayout form = PremiumUi.col(this); form.setPadding(dp(18),dp(8),dp(18),0);
