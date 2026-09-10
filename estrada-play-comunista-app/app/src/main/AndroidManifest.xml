@@ -77,6 +77,7 @@
         <activity android:name=".CompanyReportsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyMaintenanceActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyFuelActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".CompanyIncidentsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyConvoyActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".PremiumDownloadsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".PremiumMusicActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:screenOrientation="${appOrientation}" />
