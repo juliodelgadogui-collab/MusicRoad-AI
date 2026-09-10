@@ -62,14 +62,19 @@ foreach ($rows as $r) {
     $plate = trim((string)($r['plate'] ?? ''));
     $model = trim((string)($r['model'] ?? ''));
     $vehicle = $nickname !== '' ? $nickname . ($plate !== '' ? ' · '.$plate : '') : ($plate !== '' ? $plate : ($model !== '' ? $model : 'Veículo'));
+    $startedAt=(string)($r['started_at']??'');$endedAt=(string)($r['ended_at']??'');
+    $startedTs=$startedAt!==''?(strtotime($startedAt)?:0):0;$endedTs=$endedAt!==''?(strtotime($endedAt)?:0):0;
+    if($startedTs>0&&$endedTs<=0&&(string)($r['status']??'')==='active')$endedTs=time();
+    $durationSeconds=($startedTs>0&&$endedTs>=$startedTs)?($endedTs-$startedTs):0;
     $out[] = [
         'id'=>(int)$r['id'],
         'driver_name'=>(string)($r['driver_name'] ?? 'Motorista'),
         'username'=>(string)($r['username'] ?? ''),
         'vehicle_label'=>$vehicle,
-        'started_at'=>(string)($r['started_at'] ?? ''),
-        'ended_at'=>(string)($r['ended_at'] ?? ''),
+        'started_at'=>$startedAt,
+        'ended_at'=>$endedAt,
         'distance_km'=>round(((float)($r['distance_m'] ?? 0))/1000.0,1),
+        'duration_seconds'=>$durationSeconds,
         'status'=>(string)($r['status'] ?? ''),
     ];
 }
