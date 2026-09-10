@@ -17,6 +17,7 @@ final class CompanyApi {
     JSONObject journeys() throws Exception { return callPath("api/native_company_journeys.php", new JSONObject()); }
     JSONObject driverStatus() throws Exception { return callPath("api/native_company_driver_status.php", new JSONObject()); }
     JSONObject convoyStatus() throws Exception { return callPath("api/native_company_convoy.php?action=status", new JSONObject()); }
+    JSONObject fleetMap() throws Exception { return callPath("api/native_company_map.php", new JSONObject()); }
 
     JSONObject createCompany(String name) throws Exception {
         JSONObject d = new JSONObject();
