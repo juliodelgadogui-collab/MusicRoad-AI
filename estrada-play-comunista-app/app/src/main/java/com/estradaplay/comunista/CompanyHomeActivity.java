@@ -97,7 +97,7 @@ public final class CompanyHomeActivity extends ComponentActivity {
         LinearLayout row1 = PremiumUi.row(this);
         row1.addView(tile("FROTA", "Cadastrar e acompanhar veículos", v -> startActivity(new Intent(this, CompanyFleetActivity.class))), new LinearLayout.LayoutParams(0, dp(118), 1f));
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(0, dp(118), 1f); dlp.setMargins(dp(8),0,0,0);
-        row1.addView(tile("MOTORISTAS", "Equipe e veículo responsável", v -> startActivity(new Intent(this, CompanyDriversActivity.class))), dlp);
+        row1.addView(tile("MOTORISTAS", "Equipe, CNH e veículo responsável", v -> startActivity(new Intent(this, CompanyDriversActivity.class))), dlp);
         page.addView(row1, lp(-1, -2, 0, 8, 0, 0));
 
         LinearLayout row2 = PremiumUi.row(this);
@@ -166,7 +166,7 @@ public final class CompanyHomeActivity extends ComponentActivity {
                 JSONObject j = api.dashboard();
                 JSONObject s = j.optJSONObject("summary");
                 if (s == null) s = new JSONObject();
-                int openIncidents=0, highIncidents=0, overdueMaintenance=0, soonMaintenance=0;
+                int openIncidents=0, highIncidents=0, overdueMaintenance=0, soonMaintenance=0, expiredCnh=0, soonCnh=0;
                 try {
                     JSONObject incidents=api.incidents();
                     JSONObject incidentSummary=incidents.optJSONObject("summary");
@@ -177,7 +177,13 @@ public final class CompanyHomeActivity extends ComponentActivity {
                     JSONObject maintenanceSummary=maintenance.optJSONObject("summary");
                     if(maintenanceSummary!=null){overdueMaintenance=maintenanceSummary.optInt("overdue",0);soonMaintenance=maintenanceSummary.optInt("soon",0);}
                 } catch (Throwable ignored) {}
-                JSONObject finalS = s; int finalOpen=openIncidents, finalHigh=highIncidents, finalOverdue=overdueMaintenance, finalSoon=soonMaintenance;
+                try {
+                    JSONObject profiles=api.driverProfiles();
+                    JSONObject cnhSummary=profiles.optJSONObject("summary");
+                    if(cnhSummary!=null){expiredCnh=cnhSummary.optInt("expired",0);soonCnh=cnhSummary.optInt("soon",0);}
+                } catch (Throwable ignored) {}
+                JSONObject finalS = s;
+                int finalOpen=openIncidents, finalHigh=highIncidents, finalOverdue=overdueMaintenance, finalSoon=soonMaintenance, finalExpiredCnh=expiredCnh, finalSoonCnh=soonCnh;
                 runOnUiThread(() -> {
                     vehiclesValue.setText(String.valueOf(finalS.optInt("vehicles", 0)));
                     driversValue.setText(String.valueOf(finalS.optInt("drivers", 0)));
@@ -185,8 +191,10 @@ public final class CompanyHomeActivity extends ComponentActivity {
                     kmValue.setText(String.format(Locale.getDefault(), "%.0f", finalS.optDouble("km_today", 0.0)));
                     int active=finalS.optInt("active_now",0);
                     if(finalHigh>0){status.setText(finalHigh+" ocorrência(s) urgente(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.danger);}
+                    else if(finalExpiredCnh>0){status.setText(finalExpiredCnh+" CNH vencida(s) · revise a equipe antes da jornada");status.setTextColor(theme.danger);}
                     else if(finalOverdue>0){status.setText(finalOverdue+" manutenção(ões) vencida(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.danger);}
                     else if(finalOpen>0){status.setText(finalOpen+" ocorrência(s) aberta(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.warning);}
+                    else if(finalSoonCnh>0){status.setText(finalSoonCnh+" CNH próxima(s) do vencimento");status.setTextColor(theme.warning);}
                     else if(finalSoon>0){status.setText(finalSoon+" manutenção(ões) próxima(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.warning);}
                     else {status.setText(active>0?active+" veículo(s) em jornada agora":"Nenhum veículo em jornada agora");status.setTextColor(theme.muted);}
                 });
