@@ -49,6 +49,7 @@ public final class AccountCentralRouterActivity extends ComponentActivity {
         CompanyJourneyTracker.install(getApplicationContext());
         Class<?> target = CompanyAccount.shouldUseCompanyCentral(this)
                 ? CompanyHomeActivity.class : PremiumHomeActivity.class;
+        CompanyBootstrapProvider.markRouted();
         Intent i = new Intent(this, target);
         i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(i);
