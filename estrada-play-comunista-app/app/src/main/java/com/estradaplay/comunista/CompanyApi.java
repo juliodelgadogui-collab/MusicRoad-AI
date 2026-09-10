@@ -15,11 +15,23 @@ final class CompanyApi {
     JSONObject vehicles() throws Exception { return call("vehicles", new JSONObject()); }
     JSONObject drivers() throws Exception { return callPath("api/native_company_drivers.php", new JSONObject()); }
     JSONObject journeys() throws Exception { return callPath("api/native_company_journeys.php", new JSONObject()); }
+    JSONObject convoyStatus() throws Exception { return callPath("api/native_company_convoy.php?action=status", new JSONObject()); }
 
     JSONObject createCompany(String name) throws Exception {
         JSONObject d = new JSONObject();
         d.put("name", name == null ? "" : name.trim());
         return callPath("api/native_company_create.php", d);
+    }
+
+    JSONObject publishConvoy(String code, String title) throws Exception {
+        JSONObject d = new JSONObject();
+        d.put("code", code == null ? "" : code.trim());
+        d.put("title", title == null ? "Comboio da empresa" : title.trim());
+        return callPath("api/native_company_convoy.php?action=publish", d);
+    }
+
+    JSONObject closeConvoy() throws Exception {
+        return callPath("api/native_company_convoy.php?action=close", new JSONObject());
     }
 
     JSONObject saveVehicle(int id, String plate, String nickname, String model, int year, double odometerKm) throws Exception {
