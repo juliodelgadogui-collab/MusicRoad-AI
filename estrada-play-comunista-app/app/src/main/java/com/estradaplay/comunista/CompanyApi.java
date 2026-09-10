@@ -21,11 +21,29 @@ final class CompanyApi {
     JSONObject convoyRoster() throws Exception { return callPath("api/native_company_convoy_roster.php?action=status", new JSONObject()); }
     JSONObject fleetMap() throws Exception { return callPath("api/native_company_map.php", new JSONObject()); }
     JSONObject claimConvoyLeadership() throws Exception { return callPath("api/native_company_convoy_claim_leader.php", new JSONObject()); }
+    JSONObject maintenance() throws Exception { return callPath("api/native_company_maintenance.php?action=list", new JSONObject()); }
 
     JSONObject report(int days) throws Exception {
         JSONObject d = new JSONObject();
         d.put("days", days);
         return callPath("api/native_company_report.php", d);
+    }
+
+    JSONObject saveMaintenanceTask(int id, int vehicleId, String title, double intervalKm, int intervalDays, String notes) throws Exception {
+        JSONObject d = new JSONObject();
+        if (id > 0) d.put("id", id);
+        d.put("vehicle_id", vehicleId);
+        d.put("title", title == null ? "" : title.trim());
+        d.put("interval_km", Math.max(0.0, intervalKm));
+        d.put("interval_days", Math.max(0, intervalDays));
+        d.put("notes", notes == null ? "" : notes.trim());
+        return callPath("api/native_company_maintenance.php?action=save", d);
+    }
+
+    JSONObject completeMaintenanceTask(int id) throws Exception {
+        JSONObject d = new JSONObject();
+        d.put("id", id);
+        return callPath("api/native_company_maintenance.php?action=complete", d);
     }
 
     JSONObject createCompany(String name) throws Exception {
