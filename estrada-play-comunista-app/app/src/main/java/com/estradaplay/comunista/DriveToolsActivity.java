@@ -100,7 +100,7 @@ public final class DriveToolsActivity extends ComponentActivity {
 
         section("EMPRESA");
         grid(new Tool[]{
-                new Tool("▦", "Estrada Play Frotas", "Veículos, motoristas e km diário", CompanySetupActivity.class)
+                new Tool("▦", "Estrada Play Frotas", "Veículos, motoristas e km diário", CompanyEntryActivity.class)
         });
 
         section("PREFERÊNCIAS DE DIREÇÃO");
