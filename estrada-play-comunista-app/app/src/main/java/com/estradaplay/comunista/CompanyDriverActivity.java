@@ -69,14 +69,29 @@ public final class CompanyDriverActivity extends ComponentActivity {
         if(v==null){vehicle.setText("Nenhum veículo atribuído");vehicle.setTextColor(theme.warning);}else{String nick=v.optString("nickname","").trim();String plate=v.optString("plate","").trim();String model=v.optString("model","").trim();String label=nick.isEmpty()?plate:nick+(plate.isEmpty()?"":" · "+plate);if(label.isEmpty())label=model.isEmpty()?"Veículo atribuído":model;vehicle.setText(label);vehicle.setTextColor(theme.text);}
         km.setText(String.format(Locale.getDefault(),"Hoje · %.1f km",today));
         activeConvoy=company==null?null:company.optJSONObject("active_convoy");
-        if(activeConvoy==null){convoy.setText("Nenhum comboio ativo.");joinConvoy.setVisibility(View.GONE);}else{String code=activeConvoy.optString("code","");String title=activeConvoy.optString("title","Comboio da empresa");convoy.setText(title+" · "+code);joinConvoy.setVisibility(code.isEmpty()?View.GONE:View.VISIBLE);}
+        if(activeConvoy==null){
+            convoy.setText("Você não foi incluído em nenhum comboio da empresa.");
+            joinConvoy.setVisibility(View.GONE);
+        }else{
+            String code=activeConvoy.optString("code","");String title=activeConvoy.optString("title","Comboio da empresa");boolean leader=activeConvoy.optBoolean("leader",false);
+            convoy.setText((leader?"★ VOCÊ É O LÍDER · ":"")+title+" · "+code);
+            joinConvoy.setText(leader?"ENTRAR COMO LÍDER":"ENTRAR NO COMBOIO");
+            joinConvoy.setVisibility(code.isEmpty()?View.GONE:View.VISIBLE);
+        }
         status.setText(v==null?"A empresa ainda precisa atribuir um veículo a você.":"Vínculo atualizado.");
     }
 
     private void joinCompanyConvoy(){
         String code=activeConvoy==null?"":activeConvoy.optString("code","").trim();if(code.isEmpty())return;
-        joinConvoy.setEnabled(false);joinConvoy.setText("ENTRANDO…");status.setText("Conectando ao comboio da empresa…");
-        io.execute(()->{try{JSONObject j=new ConvoyStore(this).join(code,null);if(!j.optBoolean("ok",false))throw new Exception(j.optString("error","Não consegui entrar no comboio."));runOnUiThread(()->{startActivity(new Intent(this,ConvoyActivity.class));joinConvoy.setEnabled(true);joinConvoy.setText("ENTRAR NO COMBOIO");});}catch(Throwable e){String m=e.getMessage()==null?"Não consegui entrar no comboio.":e.getMessage();runOnUiThread(()->{status.setText(m);joinConvoy.setEnabled(true);joinConvoy.setText("ENTRAR NO COMBOIO");});}});
+        boolean leader=activeConvoy.optBoolean("leader",false);
+        joinConvoy.setEnabled(false);joinConvoy.setText("ENTRANDO…");status.setText(leader?"Assumindo liderança do comboio…":"Conectando ao comboio da empresa…");
+        io.execute(()->{
+            try{
+                if(leader)new CompanyApi(this).claimConvoyLeadership();
+                JSONObject j=new ConvoyStore(this).join(code,null);if(!j.optBoolean("ok",false))throw new Exception(j.optString("error","Não consegui entrar no comboio."));
+                runOnUiThread(()->{startActivity(new Intent(this,ConvoyActivity.class));joinConvoy.setEnabled(true);joinConvoy.setText(leader?"ENTRAR COMO LÍDER":"ENTRAR NO COMBOIO");});
+            }catch(Throwable e){String m=e.getMessage()==null?"Não consegui entrar no comboio.":e.getMessage();runOnUiThread(()->{status.setText(m);joinConvoy.setEnabled(true);joinConvoy.setText(leader?"ENTRAR COMO LÍDER":"ENTRAR NO COMBOIO");});}
+        });
     }
 
     private int dp(float v){return PremiumUi.dp(this,v);}private LinearLayout.LayoutParams lp(int w,int h,int l,int t,int r,int b){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(w<0?w:dp(w),h<0?h:dp(h));p.setMargins(dp(l),dp(t),dp(r),dp(b));return p;}private void margins(View v,int l,int t,int r,int b){if(!(v.getLayoutParams() instanceof LinearLayout.LayoutParams))return;LinearLayout.LayoutParams p=(LinearLayout.LayoutParams)v.getLayoutParams();p.setMargins(dp(l),dp(t),dp(r),dp(b));v.setLayoutParams(p);}    
