@@ -22,6 +22,20 @@ final class CompanyApi {
     JSONObject fleetMap() throws Exception { return callPath("api/native_company_map.php", new JSONObject()); }
     JSONObject claimConvoyLeadership() throws Exception { return callPath("api/native_company_convoy_claim_leader.php", new JSONObject()); }
     JSONObject maintenance() throws Exception { return callPath("api/native_company_maintenance.php?action=list", new JSONObject()); }
+    JSONObject incidents() throws Exception { return callPath("api/native_company_incidents.php?action=list", new JSONObject()); }
+
+    JSONObject addIncident(String type, String severity, String notes) throws Exception {
+        JSONObject d = new JSONObject();
+        d.put("type", type == null ? "other" : type.trim());
+        d.put("severity", severity == null ? "medium" : severity.trim());
+        d.put("notes", notes == null ? "" : notes.trim());
+        return callPath("api/native_company_incidents.php?action=add", d);
+    }
+
+    JSONObject resolveIncident(int id) throws Exception {
+        JSONObject d = new JSONObject(); d.put("id", id);
+        return callPath("api/native_company_incidents.php?action=resolve", d);
+    }
 
     JSONObject fuel(int days) throws Exception {
         JSONObject d = new JSONObject(); d.put("days", days);
