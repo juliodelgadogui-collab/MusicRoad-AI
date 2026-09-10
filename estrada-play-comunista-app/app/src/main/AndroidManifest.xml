@@ -71,6 +71,8 @@
         <activity android:name=".CompanySetupActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyDriverActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyFleetActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".CompanyVehicleDetailActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
+        <activity android:name=".CompanyComparisonActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyFleetMapActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyDriversActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
         <activity android:name=".CompanyTripsActivity" android:exported="false" android:screenOrientation="${appOrientation}" />
