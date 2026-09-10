@@ -20,6 +20,7 @@ final class CompanyApi {
     JSONObject convoyStatus() throws Exception { return callPath("api/native_company_convoy.php?action=status", new JSONObject()); }
     JSONObject convoyRoster() throws Exception { return callPath("api/native_company_convoy_roster.php?action=status", new JSONObject()); }
     JSONObject fleetMap() throws Exception { return callPath("api/native_company_map.php", new JSONObject()); }
+    JSONObject claimConvoyLeadership() throws Exception { return callPath("api/native_company_convoy_claim_leader.php", new JSONObject()); }
 
     JSONObject createCompany(String name) throws Exception {
         JSONObject d = new JSONObject();
