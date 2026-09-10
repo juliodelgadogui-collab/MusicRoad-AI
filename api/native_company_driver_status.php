@@ -40,7 +40,34 @@ try {
     $q = db()->prepare('SELECT convoy_code,title,updated_at FROM company_convoy_links WHERE company_id=? AND active=1 LIMIT 1');
     $q->execute([$companyId]);
     $c = $q->fetch();
-    if ($c) $convoy=['code'=>(string)$c['convoy_code'],'title'=>(string)($c['title']??''),'updated_at'=>(string)$c['updated_at']];
+    if ($c) {
+        $code = (string)$c['convoy_code'];
+        $allowed = true;
+        $leader = false;
+        try {
+            // If the operation has an explicit roster, only selected drivers receive it.
+            $count = db()->prepare('SELECT COUNT(*) FROM company_convoy_roster WHERE company_id=? AND convoy_code=? AND active=1');
+            $count->execute([$companyId,$code]);
+            $configured = (int)($count->fetchColumn() ?: 0);
+            if ($configured > 0) {
+                $selected = db()->prepare('SELECT is_leader FROM company_convoy_roster WHERE company_id=? AND convoy_code=? AND user_id=? AND active=1 LIMIT 1');
+                $selected->execute([$companyId,$code,$userId]);
+                $value = $selected->fetchColumn();
+                $allowed = $value !== false;
+                $leader = $allowed && (int)$value === 1;
+            }
+        } catch (Throwable $ignored) {
+            // Backward compatibility before the roster table exists: the company convoy remains visible.
+        }
+        if ($allowed) {
+            $convoy = [
+                'code'=>$code,
+                'title'=>(string)($c['title'] ?? ''),
+                'updated_at'=>(string)$c['updated_at'],
+                'leader'=>$leader,
+            ];
+        }
+    }
 } catch (Throwable $ignored) {}
 
 json_response(['ok'=>true,'company'=>[
