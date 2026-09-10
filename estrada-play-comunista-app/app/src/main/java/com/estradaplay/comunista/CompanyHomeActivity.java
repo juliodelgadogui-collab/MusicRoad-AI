@@ -87,7 +87,11 @@ public final class CompanyHomeActivity extends ComponentActivity {
         driversValue = addStat(stats, "MOTORISTAS", "—");
         activeValue = addStat(stats, "RODANDO", "—");
         kmValue = addStat(stats, "KM HOJE", "—");
-        page.addView(stats, lp(-1, -2, 0, 0, 0, 18));
+        page.addView(stats, lp(-1, -2, 0, 0, 0, 10));
+
+        Button map = PremiumUi.button(this, "ABRIR MAPA DA FROTA", true);
+        map.setOnClickListener(v -> startActivity(new Intent(this, CompanyFleetMapActivity.class)));
+        page.addView(map, lp(-1, 54, 0, 0, 0, 18));
 
         page.addView(PremiumUi.overline(this, "GESTÃO", theme.muted));
         LinearLayout row1 = PremiumUi.row(this);
