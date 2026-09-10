@@ -105,7 +105,19 @@ final class CompanyApi {
         JSONObject d = new JSONObject();
         d.put("user_id", userId);
         d.put("vehicle_id", vehicleId);
-        return call("assign", d);
+        return callPath("api/native_company_driver_manage.php?action=assign", d);
+    }
+
+    JSONObject unassignDriver(int userId) throws Exception {
+        JSONObject d = new JSONObject();
+        d.put("user_id", userId);
+        return callPath("api/native_company_driver_manage.php?action=unassign", d);
+    }
+
+    JSONObject removeDriver(int userId) throws Exception {
+        JSONObject d = new JSONObject();
+        d.put("user_id", userId);
+        return callPath("api/native_company_driver_manage.php?action=remove", d);
     }
 
     JSONObject journeyPing(double lat, double lon, double speedKmh, double heading) throws Exception {
