@@ -58,12 +58,25 @@ public final class CompanyDriverActivity extends ComponentActivity {
         page.addView(convoyCard,lp(-1,-2,0,10,0,0));
 
         Button road=PremiumUi.button(this,"ABRIR ESTRADA",true);road.setOnClickListener(v->startActivity(new Intent(this,RoadEntryActivity.class)));page.addView(road,lp(-1,54,0,14,0,0));
+        Button incident=PremiumUi.button(this,"REPORTAR OCORRÊNCIA",false);incident.setOnClickListener(v->startActivity(new Intent(this,CompanyIncidentsActivity.class)));page.addView(incident,lp(-1,50,0,8,0,0));
         Button fuel=PremiumUi.button(this,"REGISTRAR ABASTECIMENTO",false);fuel.setOnClickListener(v->startActivity(new Intent(this,CompanyFuelActivity.class)));page.addView(fuel,lp(-1,50,0,8,0,0));
         Button personal=PremiumUi.button(this,"VOLTAR À CENTRAL PESSOAL",false);personal.setOnClickListener(v->{CompanyBootstrapProvider.markRouted();startActivity(new Intent(this,PremiumHomeActivity.class));finish();});page.addView(personal,lp(-1,50,0,8,0,0));
         status=PremiumUi.text(this,"Atualizando vínculo…",10,theme.muted,false);status.setGravity(Gravity.CENTER);page.addView(status);margins(status,0,10,0,0);
     }
 
-    private void refresh(){io.execute(()->{try{JSONObject response=new CompanyApi(this).driverStatus();JSONObject company=response.optJSONObject("company");if(company!=null)CompanyAccount.saveCompany(this,company);double today=response.optDouble("km_today",0.0);runOnUiThread(()->apply(company,today));}catch(Throwable e){runOnUiThread(()->status.setText("Sem conexão com a empresa agora. A Central pessoal continua disponível."));}});}
+    private void refresh(){
+        io.execute(()->{
+            try{
+                JSONObject response=new CompanyApi(this).driverStatus();JSONObject company=response.optJSONObject("company");if(company!=null)CompanyAccount.saveCompany(this,company);double today=response.optDouble("km_today",0.0);runOnUiThread(()->apply(company,today));
+            }catch(Throwable e){
+                String message=e.getMessage()==null?"":e.getMessage().toLowerCase(Locale.ROOT);
+                if(message.contains("não está vinculada")||message.contains("nao esta vinculada")){
+                    CompanyAccount.saveCompany(this,null);
+                    runOnUiThread(()->{CompanyBootstrapProvider.markRouted();startActivity(new Intent(this,PremiumHomeActivity.class));finish();});
+                }else runOnUiThread(()->status.setText("Sem conexão com a empresa agora. A Central pessoal continua disponível."));
+            }
+        });
+    }
 
     private void apply(JSONObject company,double today){
         JSONObject v=company==null?null:company.optJSONObject("active_vehicle");
@@ -75,7 +88,7 @@ public final class CompanyDriverActivity extends ComponentActivity {
             joinConvoy.setVisibility(View.GONE);
         }else{
             String code=activeConvoy.optString("code","");String title=activeConvoy.optString("title","Comboio da empresa");boolean leader=activeConvoy.optBoolean("leader",false);
-            convoy.setText((leader?"★ VOCÊ É O LÍDER · ":"")+title+" · "+code);
+            convoy.setText((leader?"★ VOCÊ É O LÍDER · ":"")+title);
             joinConvoy.setText(leader?"ENTRAR COMO LÍDER":"ENTRAR NO COMBOIO");
             joinConvoy.setVisibility(code.isEmpty()?View.GONE:View.VISIBLE);
         }
