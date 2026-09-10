@@ -25,6 +25,26 @@ $role = strtolower((string)($company['member_role'] ?? ''));
 if (!in_array($role,['owner','admin','manager'],true)) json_response(['ok'=>false,'error'=>'Sua conta não tem permissão para ver a frota.'],403);
 $companyId = (int)$company['id'];
 
+// If Android kills a process before journeyStop reaches the server, do not leave a trip
+// permanently marked as active. Ten minutes without matching presence closes it at the
+// last known sample (or at start time when no sample survived).
+try {
+    $stale = db()->prepare("SELECT j.id,j.started_at,p.last_seen_at
+        FROM company_journeys j
+        LEFT JOIN company_presence p ON p.company_id=j.company_id AND p.user_id=j.user_id AND p.journey_id=j.id
+        WHERE j.company_id=? AND j.status='active'");
+    $stale->execute([$companyId]);
+    $now = time();
+    $close = db()->prepare("UPDATE company_journeys SET ended_at=?,status='closed' WHERE id=? AND company_id=? AND status='active'");
+    foreach ($stale->fetchAll() ?: [] as $candidate) {
+        $lastRaw = (string)($candidate['last_seen_at'] ?? '');
+        $lastTs = $lastRaw !== '' ? (strtotime($lastRaw) ?: 0) : 0;
+        if ($lastTs > 0 && ($now - $lastTs) <= 600) continue;
+        $endedAt = $lastTs > 0 ? date('Y-m-d H:i:s',$lastTs) : (string)($candidate['started_at'] ?? date('Y-m-d H:i:s'));
+        $close->execute([$endedAt,(int)$candidate['id'],$companyId]);
+    }
+} catch (Throwable $ignored) {}
+
 $s = db()->prepare("SELECT j.id,j.started_at,j.ended_at,j.distance_m,j.status,
         u.name AS driver_name,u.username,
         v.plate,v.nickname,v.model
