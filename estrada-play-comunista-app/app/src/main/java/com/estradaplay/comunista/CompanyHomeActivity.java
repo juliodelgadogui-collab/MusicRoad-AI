@@ -109,7 +109,7 @@ public final class CompanyHomeActivity extends ComponentActivity {
         LinearLayout row3 = PremiumUi.row(this);
         row3.addView(tile("MANUTENÇÃO", "Serviços por veículo", v -> startActivity(new Intent(this, CompanyMaintenanceActivity.class))), new LinearLayout.LayoutParams(0, dp(118), 1f));
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, dp(118), 1f); clp.setMargins(dp(8),0,0,0);
-        row3.addView(tile("CUSTOS", "Combustível e custo por km", v -> startActivity(new Intent(this, VehicleCostActivity.class))), clp);
+        row3.addView(tile("CUSTOS", "Combustível e custo por km", v -> startActivity(new Intent(this, CompanyFuelActivity.class))), clp);
         page.addView(row3, lp(-1, -2, 0, 8, 0, 0));
 
         View reports = tile("RELATÓRIOS", "Km por dia, motorista e veículo", v -> startActivity(new Intent(this, CompanyReportsActivity.class)));
