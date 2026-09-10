@@ -112,8 +112,11 @@ public final class CompanyHomeActivity extends ComponentActivity {
         row3.addView(tile("CUSTOS", "Combustível e custo por km", v -> startActivity(new Intent(this, CompanyFuelActivity.class))), clp);
         page.addView(row3, lp(-1, -2, 0, 8, 0, 0));
 
-        View reports = tile("RELATÓRIOS", "Km por dia, motorista e veículo", v -> startActivity(new Intent(this, CompanyReportsActivity.class)));
-        page.addView(reports, lp(-1, 112, 0, 8, 0, 0));
+        LinearLayout row4 = PremiumUi.row(this);
+        row4.addView(tile("OCORRÊNCIAS", "Pane, pneu, acidente e atraso", v -> startActivity(new Intent(this, CompanyIncidentsActivity.class))), new LinearLayout.LayoutParams(0, dp(118), 1f));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0, dp(118), 1f); rlp.setMargins(dp(8),0,0,0);
+        row4.addView(tile("RELATÓRIOS", "Km por dia, motorista e veículo", v -> startActivity(new Intent(this, CompanyReportsActivity.class))), rlp);
+        page.addView(row4, lp(-1, -2, 0, 8, 0, 0));
 
         Button road = PremiumUi.button(this, "ABRIR MINHA ESTRADA", true);
         road.setOnClickListener(v -> startActivity(new Intent(this, RoadEntryActivity.class)));
@@ -159,21 +162,29 @@ public final class CompanyHomeActivity extends ComponentActivity {
     private void refresh() {
         io.execute(() -> {
             try {
-                JSONObject j = new CompanyApi(this).dashboard();
+                CompanyApi api = new CompanyApi(this);
+                JSONObject j = api.dashboard();
                 JSONObject s = j.optJSONObject("summary");
                 if (s == null) s = new JSONObject();
-                JSONObject finalS = s;
+                int openIncidents=0, highIncidents=0;
+                try {
+                    JSONObject incidents=api.incidents();
+                    JSONObject incidentSummary=incidents.optJSONObject("summary");
+                    if(incidentSummary!=null){openIncidents=incidentSummary.optInt("open",0);highIncidents=incidentSummary.optInt("high",0);}
+                } catch (Throwable ignored) {}
+                JSONObject finalS = s; int finalOpen=openIncidents, finalHigh=highIncidents;
                 runOnUiThread(() -> {
                     vehiclesValue.setText(String.valueOf(finalS.optInt("vehicles", 0)));
                     driversValue.setText(String.valueOf(finalS.optInt("drivers", 0)));
                     activeValue.setText(String.valueOf(finalS.optInt("active_now", 0)));
                     kmValue.setText(String.format(Locale.getDefault(), "%.0f", finalS.optDouble("km_today", 0.0)));
-                    status.setText(finalS.optInt("active_now", 0) > 0
-                            ? finalS.optInt("active_now", 0) + " veículo(s) em jornada agora"
-                            : "Nenhum veículo em jornada agora");
+                    int active=finalS.optInt("active_now",0);
+                    if(finalHigh>0){status.setText(finalHigh+" ocorrência(s) urgente(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.danger);}
+                    else if(finalOpen>0){status.setText(finalOpen+" ocorrência(s) aberta(s) · "+active+" veículo(s) em jornada");status.setTextColor(theme.warning);}
+                    else {status.setText(active>0?active+" veículo(s) em jornada agora":"Nenhum veículo em jornada agora");status.setTextColor(theme.muted);}
                 });
             } catch (Throwable e) {
-                runOnUiThread(() -> status.setText("Sem conexão com o módulo da empresa. Os dados locais do motorista continuam funcionando."));
+                runOnUiThread(() -> {status.setText("Sem conexão com o módulo da empresa. Os dados locais do motorista continuam funcionando.");status.setTextColor(theme.muted);});
             }
         });
     }
