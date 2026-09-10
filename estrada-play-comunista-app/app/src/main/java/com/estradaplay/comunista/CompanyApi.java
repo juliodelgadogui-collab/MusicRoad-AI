@@ -23,6 +23,20 @@ final class CompanyApi {
     JSONObject claimConvoyLeadership() throws Exception { return callPath("api/native_company_convoy_claim_leader.php", new JSONObject()); }
     JSONObject maintenance() throws Exception { return callPath("api/native_company_maintenance.php?action=list", new JSONObject()); }
 
+    JSONObject fuel(int days) throws Exception {
+        JSONObject d = new JSONObject(); d.put("days", days);
+        return callPath("api/native_company_fuel.php?action=list", d);
+    }
+
+    JSONObject addFuel(int vehicleId, double liters, double totalValue, double odometerKm, String station, String notes) throws Exception {
+        JSONObject d = new JSONObject();
+        if (vehicleId > 0) d.put("vehicle_id", vehicleId);
+        d.put("liters", liters); d.put("total_value", totalValue);
+        if (Double.isFinite(odometerKm) && odometerKm > 0) d.put("odometer_km", odometerKm);
+        d.put("station", station == null ? "" : station.trim()); d.put("notes", notes == null ? "" : notes.trim());
+        return callPath("api/native_company_fuel.php?action=add", d);
+    }
+
     JSONObject report(int days) throws Exception {
         JSONObject d = new JSONObject();
         d.put("days", days);
