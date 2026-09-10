@@ -112,6 +112,9 @@ public final class CompanyHomeActivity extends ComponentActivity {
         row3.addView(tile("CUSTOS", "Combustível e custo por km", v -> startActivity(new Intent(this, VehicleCostActivity.class))), clp);
         page.addView(row3, lp(-1, -2, 0, 8, 0, 0));
 
+        View reports = tile("RELATÓRIOS", "Km por dia, motorista e veículo", v -> startActivity(new Intent(this, CompanyReportsActivity.class)));
+        page.addView(reports, lp(-1, 112, 0, 8, 0, 0));
+
         Button road = PremiumUi.button(this, "ABRIR MINHA ESTRADA", true);
         road.setOnClickListener(v -> startActivity(new Intent(this, RoadEntryActivity.class)));
         page.addView(road, lp(-1, 54, 0, 16, 0, 0));
