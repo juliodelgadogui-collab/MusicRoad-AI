@@ -56,9 +56,14 @@ public final class CompanyFleetActivity extends ComponentActivity {
         TextView sub = PremiumUi.text(this, "Cadastre placa, modelo, identificação interna e hodômetro de referência.", 12, theme.muted, false);
         page.addView(sub); margins(sub,0,7,0,16);
 
+        LinearLayout topActions=PremiumUi.row(this);
         Button add = PremiumUi.button(this, "CADASTRAR VEÍCULO", true);
         add.setOnClickListener(v -> editVehicle(null));
-        page.addView(add, new LinearLayout.LayoutParams(-1, dp(54)));
+        topActions.addView(add,new LinearLayout.LayoutParams(0,dp(54),1f));
+        Button compare=PremiumUi.button(this,"COMPARAR",false);
+        compare.setOnClickListener(v->startActivity(new Intent(this,CompanyComparisonActivity.class)));
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(54),1f);cp.setMargins(dp(7),0,0,0);topActions.addView(compare,cp);
+        page.addView(topActions,new LinearLayout.LayoutParams(-1,dp(54)));
 
         status = PremiumUi.text(this, "Carregando frota…", 11, theme.muted, false);
         status.setGravity(Gravity.CENTER);
