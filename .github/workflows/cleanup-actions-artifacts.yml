@@ -1,4 +1,4 @@
-name: Limpeza automática de Artifacts
+name: Limpeza automática do GitHub
 
 on:
   push:
@@ -10,36 +10,43 @@ on:
       max_age_hours:
         description: 'Apagar artifacts com mais de quantas horas? Use 0 para apagar todos.'
         required: false
-        default: '12'
+        default: '24'
+      keep_runs:
+        description: 'Quantidade de execuções de Actions mais recentes para manter.'
+        required: false
+        default: '150'
   schedule:
-    - cron: '17 */6 * * *'
+    - cron: '27 4 * * *'
 
 permissions:
   actions: write
   contents: read
 
 concurrency:
-  group: cleanup-actions-artifacts
-  cancel-in-progress: true
+  group: cleanup-github
+  cancel-in-progress: false
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       GH_TOKEN: ${{ github.token }}
-      MAX_AGE_HOURS: ${{ inputs.max_age_hours || '12' }}
+      MAX_AGE_HOURS: ${{ inputs.max_age_hours || '24' }}
+      KEEP_RUNS: ${{ inputs.keep_runs || '150' }}
     steps:
+      - name: Validar parâmetros
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$MAX_AGE_HOURS" =~ ^[0-9]+$ ]] || { echo "max_age_hours inválido: $MAX_AGE_HOURS"; exit 1; }
+          [[ "$KEEP_RUNS" =~ ^[0-9]+$ ]] || { echo "keep_runs inválido: $KEEP_RUNS"; exit 1; }
+          [ "$KEEP_RUNS" -ge 20 ] || { echo "keep_runs deve ser pelo menos 20"; exit 1; }
+
       - name: Apagar Artifacts antigos
         shell: bash
         run: |
           set -euo pipefail
-
-          if ! [[ "$MAX_AGE_HOURS" =~ ^[0-9]+$ ]]; then
-            echo "max_age_hours inválido: $MAX_AGE_HOURS"
-            exit 1
-          fi
-
           cutoff=$(date -u -d "$MAX_AGE_HOURS hours ago" +%s)
           total=0
           deleted=0
@@ -51,9 +58,12 @@ jobs:
             created_epoch=$(date -u -d "$created_at" +%s)
 
             if [ "$created_epoch" -le "$cutoff" ]; then
-              echo "Apagando: $name (id=$id, criado=$created_at)"
-              gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"
-              deleted=$((deleted + 1))
+              echo "Apagando artifact: $name (id=$id, criado=$created_at)"
+              if gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; then
+                deleted=$((deleted + 1))
+              else
+                echo "Aviso: não foi possível apagar artifact id=$id"
+              fi
             else
               kept=$((kept + 1))
             fi
@@ -61,5 +71,56 @@ jobs:
 
           echo "Artifacts encontrados: $total"
           echo "Artifacts apagados: $deleted"
-          echo "Artifacts mantidos: $kept"
-          echo "Regra: apagar artifacts com mais de $MAX_AGE_HOURS hora(s)."
+          echo "Artifacts recentes mantidos: $kept"
+
+      - name: Reduzir histórico de Actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_run="${GITHUB_RUN_ID}"
+          tmp=$(mktemp)
+
+          gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | select(.status == "completed") | [.id, .name, .created_at] | @tsv' > "$tmp"
+
+          total=$(wc -l < "$tmp" | tr -d ' ')
+          echo "Execuções concluídas encontradas: $total"
+          echo "Mantendo as $KEEP_RUNS mais recentes."
+
+          deleted=0
+          skipped=0
+          index=0
+
+          while IFS=$'\t' read -r id name created_at; do
+            [ -z "${id:-}" ] && continue
+            index=$((index + 1))
+
+            if [ "$id" = "$current_run" ]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            if [ "$index" -le "$KEEP_RUNS" ]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            echo "Apagando Action antiga: $name (run=$id, criado=$created_at)"
+            if gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/runs/${id}"; then
+              deleted=$((deleted + 1))
+            else
+              echo "Aviso: não foi possível apagar run=$id"
+            fi
+          done < "$tmp"
+
+          rm -f "$tmp"
+          echo "Actions apagados: $deleted"
+          echo "Actions mantidos/ignorados: $skipped"
+
+      - name: Resumo
+        shell: bash
+        run: |
+          echo "Limpeza concluída."
+          echo "Artifacts: mantém aproximadamente as últimas $MAX_AGE_HOURS hora(s)."
+          echo "Actions: mantém as $KEEP_RUNS execuções concluídas mais recentes."
+          echo "Releases, tags, branches e código não são apagados por esta rotina."
