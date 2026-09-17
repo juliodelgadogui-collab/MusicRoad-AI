@@ -1,0 +1,93 @@
+name: Package Estrada Play Server 5.2.0 Once
+
+on:
+  push:
+    branches:
+      - agent/estrada-play-comunista-cleanup-staging
+    paths:
+      - '.github/workflows/package-server-520-once.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare safe server overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="Estrada-Play-Server-5.2.0"
+          mkdir -p "$OUT/api" "$OUT/docs"
+
+          files=(
+            api/bootstrap.php
+            api/native_auth.php
+            api/native_company.php
+            api/native_company_create.php
+            api/native_company_drivers.php
+            api/native_company_driver_status.php
+            api/native_company_driver_manage.php
+            api/native_company_driver_profiles.php
+            api/native_company_journeys.php
+            api/native_company_map.php
+            api/native_company_report.php
+            api/native_company_maintenance.php
+            api/native_company_fuel.php
+            api/native_company_incidents.php
+            api/native_company_vehicle_detail.php
+            api/native_company_compare.php
+            api/native_company_convoy.php
+            api/native_company_convoy_roster.php
+            api/native_company_convoy_claim_leader.php
+            api/convoy.php
+          )
+
+          for f in "${files[@]}"; do
+            test -f "$f"
+            php -l "$f"
+            cp "$f" "$OUT/api/$(basename "$f")"
+          done
+
+          cp docs/MODULO-EMPRESA.md "$OUT/docs/MODULO-EMPRESA.md"
+          cat > "$OUT/LEIA-ANTES-DE-ENVIAR.txt" <<'EOF'
+          ESTRADA PLAY SERVER 5.2.0 - ATUALIZACAO SEGURA
+
+          Este pacote e um overlay para o servidor Estrada Play existente.
+
+          1. FACA BACKUP DO BANCO E DOS ARQUIVOS ATUAIS.
+          2. Extraia este ZIP localmente.
+          3. Envie o conteudo da pasta Estrada-Play-Server-5.2.0 para a RAIZ do servidor atual,
+             preservando a estrutura api/ e docs/.
+          4. Substitua os arquivos api/ existentes quando solicitado.
+          5. NAO apague config/, storage/, banco de dados ou credenciais existentes.
+          6. Acesse o app 5.2.0 e teste primeiro com uma conta de empresa de teste.
+
+          O primeiro uso dos endpoints Empresa cria/atualiza as tabelas necessarias por CREATE TABLE IF NOT EXISTS.
+          O usuario do banco precisa ter permissao para criar tabelas no primeiro teste.
+
+          Arquivos propositalmente AUSENTES deste pacote:
+          - config/config.php
+          - storage/
+          - bancos SQLite/MariaDB
+          - credenciais
+          - instalador completo
+
+          A protecao do Comboio Empresa exige tambem a substituicao de api/convoy.php,
+          que esta incluida neste pacote.
+          EOF
+
+          zip -qr "Estrada-Play-Server-5.2.0-UPDATE.zip" "$OUT"
+
+      - name: Upload server package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Estrada-Play-Server-5.2.0-UPDATE
+          path: Estrada-Play-Server-5.2.0-UPDATE.zip
+          if-no-files-found: error
+          retention-days: 7
