@@ -94,7 +94,7 @@ jobs:
       - name: Upload Universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-5.2.0-UNIVERSAL
+          name: Estrada-Play-5.2.1-UNIVERSAL
           path: estrada-play-comunista-app/app/build/outputs/apk/universal/candidate/*.apk
           if-no-files-found: error
           retention-days: 7
