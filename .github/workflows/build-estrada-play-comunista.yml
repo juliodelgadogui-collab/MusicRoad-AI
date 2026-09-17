@@ -21,6 +21,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify canonical Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f estrada-play-comunista-app/settings.gradle
+          test -f estrada-play-comunista-app/app/build.gradle
+          for retired in android-app android-app-v2 estradaplay-app estradaplay-app-v2; do
+            if [ -e "$retired" ]; then
+              echo "Base Android aposentada voltou para a árvore: $retired"
+              exit 1
+            fi
+          done
+
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -81,7 +94,7 @@ jobs:
       - name: Upload Universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: Estrada-Play-5.1.1-UNIVERSAL
+          name: Estrada-Play-5.2.0-UNIVERSAL
           path: estrada-play-comunista-app/app/build/outputs/apk/universal/candidate/*.apk
           if-no-files-found: error
           retention-days: 7
