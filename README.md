@@ -1,32 +1,73 @@
-# MusicRoad AI 1.0.0
+# Estrada Play
 
-Sistema web/PWA com dois perfis:
+Aplicativo Android nativo para estrada, navegação, música, segurança rodoviária e operação de frotas.
 
-- **ADM**: gerencia clientes, ativa/desativa contas, redefine senhas, configura pastas públicas do Google Drive, biblioteca do servidor e radares.
-- **Cliente**: usa player, Smart Mix, GPS/rotas e autoriza uma ou mais pastas de música do próprio dispositivo.
+## Fonte oficial
 
-## Credenciais iniciais
+A única base Android ativa do projeto é:
 
-- ADM: `adm` / `1`
-- Cliente teste: `cliente` / `1`
+`estrada-play-comunista-app/`
 
-Troque as senhas após instalar.
+As bases Android antigas foram retiradas da árvore atual e permanecem apenas no histórico do Git.
 
-## Instalação
+## Versão atual de desenvolvimento
 
-1. Extraia o ZIP na pasta do domínio/subdomínio.
-2. Garanta PHP 8.2+ com PDO SQLite, cURL, OpenSSL e mbstring.
-3. Acesse `install/` e clique em **Preparar banco SQLite**.
-4. Acesse `login.php`.
-5. Use HTTPS, obrigatório para geolocalização e recomendado para PWA.
+- Version name: `5.2.0`
+- Version code: `520`
+- APK: Universal
+- Application ID instalado: `com.estradaplay.universal`
+- Namespace interno temporariamente mantido: `com.estradaplay.comunista`
+- Branch de desenvolvimento: `agent/estrada-play-comunista`
 
-## Acesso às músicas do dispositivo
+O namespace legado é uma dívida técnica conhecida e não representa a marca exibida ao usuário.
 
-O Cliente não adiciona faixa por faixa. Ele toca em **Autorizar pasta de músicas** e escolhe uma pasta. O sistema procura automaticamente arquivos de áudio dentro dela e nas subpastas.
+## Regras de arquitetura
 
-- Em navegadores com File System Access API, o app guarda o vínculo autorizado à pasta e relê os arquivos diretamente.
-- Em navegadores sem essa API, o sistema usa o seletor de pasta do navegador e mantém uma cópia local no armazenamento do PWA/IndexedDB para reprodução. Os arquivos não são enviados ao servidor.
+- Android nativo; não usar WebView como base do aplicativo.
+- Não restaurar arquiteturas antigas baseadas em scripts `apply_v*` ou múltiplas pastas Android.
+- Não fazer merge para `main` sem autorização explícita.
+- O workflow oficial compila somente `estrada-play-comunista-app/`.
+- Builds normais geram apenas o APK Universal.
 
-## Localização
+## Principais módulos
 
-No primeiro acesso do Cliente, o sistema solicita permissão de localização. O navegador e o sistema operacional continuam sendo os responsáveis por conceder ou negar a permissão.
+- Central pessoal Estrada Play
+- Estrada / mapa / navegação
+- Música local e player
+- Proteção e alertas rodoviários
+- Copiloto
+- Comboio
+- Dashcam local
+- Manutenção e custos pessoais
+- Módulo Empresa / Estrada Play Frotas
+
+O módulo Empresa inclui frota, motoristas, vínculo motorista-veículo, jornadas, km diário, mapa da frota, Comboio Empresa, abastecimentos, manutenção, ocorrências e relatórios. Consulte `docs/MODULO-EMPRESA.md`.
+
+## Backend
+
+O backend PHP e as APIs ficam principalmente em `api/` e compartilham o mesmo sistema de autenticação nativa. O aplicativo usa por padrão:
+
+`https://musicroad1.gestao2.store/`
+
+Endpoints presentes no Git não significam automaticamente que já estejam publicados na hospedagem. Alterações de banco e APIs devem ser implantadas e validadas no servidor antes de uma liberação de produção.
+
+## Build
+
+O workflow oficial é:
+
+`.github/workflows/build-estrada-play-comunista.yml`
+
+Ele é `workflow_dispatch` manual e executa:
+
+1. verificação da fonte Android canônica;
+2. testes unitários;
+3. Android lint;
+4. compilação do Universal candidate e APK de instrumentação;
+5. smoke tests em emulador quando habilitados;
+6. upload do APK Universal.
+
+A assinatura `candidate` usa a chave estável de teste. Uma release de produção continua bloqueada sem a chave permanente configurada.
+
+## Estado de produção
+
+A versão 5.2.0 contém uma unificação estrutural importante e o módulo Empresa. Antes de tratar essa versão como release, ela deve passar pelo workflow completo e por teste real em aparelho, incluindo login, permissão de localização, Estrada, mapa, rotação, música e os fluxos Empresa.
