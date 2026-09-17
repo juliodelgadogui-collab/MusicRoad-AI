@@ -1,3 +1,0 @@
-EstradaPlay 2.0.6 direct-build trigger.
-
-Purpose: compile the already-applied non-blocking library boot fix from estradaplay-app-v2 after the migration workflow commit did not cascade into the direct-build workflow.
