@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = 'EstradaPlayComunista'
+rootProject.name = 'EstradaPlay'
 include ':app'
