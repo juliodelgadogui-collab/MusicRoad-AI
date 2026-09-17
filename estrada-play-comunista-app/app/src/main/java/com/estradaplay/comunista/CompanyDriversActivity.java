@@ -153,13 +153,24 @@ public final class CompanyDriversActivity extends ComponentActivity {
 
     private void chooseVehicle(JSONObject driver) {
         if(vehicles.length()==0){Toast.makeText(this,"Cadastre um veículo primeiro.",Toast.LENGTH_LONG).show();return;}
-        String[] labels=new String[vehicles.length()]; for(int i=0;i<vehicles.length();i++){JSONObject v=vehicles.optJSONObject(i);labels[i]=v==null?"Veículo":vehicleLabel(v);}
+        String[] labels=new String[vehicles.length()];
+        for(int i=0;i<vehicles.length();i++){
+            JSONObject v=vehicles.optJSONObject(i);
+            labels[i]=v==null?"Veículo":vehicleLabel(v);
+        }
+        // AlertDialog does not render its item list when a message occupies the content area.
+        // Keep this dialog list-only so every registered vehicle is always visible/selectable.
         new AlertDialog.Builder(this)
                 .setTitle("Veículo de "+driver.optString("name","motorista"))
-                .setMessage("Se o veículo já estiver com outro motorista, a responsabilidade será transferida automaticamente.")
                 .setItems(labels,(dialog,which)->{
-                    JSONObject v=vehicles.optJSONObject(which); if(v!=null)assign(driver.optInt("user_id",0),v.optInt("id",0));
-                }).setNegativeButton("Cancelar",null).show();
+                    JSONObject v=vehicles.optJSONObject(which);
+                    if(v!=null){
+                        Toast.makeText(this,"Transferindo a responsabilidade do veículo, se necessário.",Toast.LENGTH_SHORT).show();
+                        assign(driver.optInt("user_id",0),v.optInt("id",0));
+                    }
+                })
+                .setNegativeButton("Cancelar",null)
+                .show();
     }
 
     private void assign(int userId,int vehicleId) {
