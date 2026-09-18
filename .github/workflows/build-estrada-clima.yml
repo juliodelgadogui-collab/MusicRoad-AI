@@ -1,9 +1,9 @@
 name: Build Estrada Clima Universal
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/estrada-clima
+      - main
     paths:
       - 'build/estrada-clima-0.1.0-source.tar.gz.b64'
       - '.github/workflows/build-estrada-clima.yml'
