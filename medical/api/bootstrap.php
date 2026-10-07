@@ -9,7 +9,6 @@ $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
 if (!$db_exists) {
-    // Create tables
     $db->exec('CREATE TABLE IF NOT EXISTS medicos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome_completo TEXT,
@@ -23,11 +22,13 @@ if (!$db_exists) {
         endereco TEXT,
         logo_path TEXT,
         assinatura_path TEXT,
-        senha_hash TEXT
+        senha_hash TEXT,
+        is_admin INTEGER DEFAULT 0
     )');
 
     $db->exec('CREATE TABLE IF NOT EXISTS pacientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        medico_id INTEGER,
         nome TEXT,
         cpf TEXT,
         data_nascimento TEXT,
@@ -38,7 +39,8 @@ if (!$db_exists) {
         profissao TEXT,
         funcao TEXT,
         empresa TEXT,
-        info_clinica TEXT
+        info_clinica TEXT,
+        FOREIGN KEY (medico_id) REFERENCES medicos(id)
     )');
 
     $db->exec('CREATE TABLE IF NOT EXISTS atendimentos (
@@ -80,6 +82,8 @@ if (!$db_exists) {
         observacoes TEXT,
         status TEXT,
         pdf_path TEXT,
+        cancelado_em TEXT,
+        cancelado_motivo TEXT,
         FOREIGN KEY (paciente_id) REFERENCES pacientes(id),
         FOREIGN KEY (medico_id) REFERENCES medicos(id),
         FOREIGN KEY (atendimento_id) REFERENCES atendimentos(id)
@@ -101,6 +105,8 @@ if (!$db_exists) {
         conclusao TEXT,
         status TEXT,
         pdf_path TEXT,
+        cancelado_em TEXT,
+        cancelado_motivo TEXT,
         FOREIGN KEY (paciente_id) REFERENCES pacientes(id),
         FOREIGN KEY (medico_id) REFERENCES medicos(id),
         FOREIGN KEY (atendimento_id) REFERENCES atendimentos(id)
@@ -118,17 +124,41 @@ if (!$db_exists) {
 
     $db->exec('CREATE TABLE IF NOT EXISTS cids (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        codigo TEXT,
+        codigo TEXT UNIQUE,
         descricao TEXT
     )');
-
-    $hash = password_hash('123456', PASSWORD_DEFAULT);
-    $db->exec("INSERT INTO medicos (nome_completo, email, senha_hash, crm, uf) VALUES ('Médico Teste', 'medico@teste.com', '$hash', '12345', 'SP')");
+} else {
+    // Attempt migration to ensure 'medico_id' in pacientes table if missing.
+    try {
+        $db->exec('ALTER TABLE pacientes ADD COLUMN medico_id INTEGER REFERENCES medicos(id)');
+    } catch(Exception $e) {}
+    try {
+        $db->exec('ALTER TABLE atestados ADD COLUMN cancelado_em TEXT');
+        $db->exec('ALTER TABLE atestados ADD COLUMN cancelado_motivo TEXT');
+    } catch(Exception $e) {}
+    try {
+        $db->exec('ALTER TABLE laudos ADD COLUMN cancelado_em TEXT');
+        $db->exec('ALTER TABLE laudos ADD COLUMN cancelado_motivo TEXT');
+    } catch(Exception $e) {}
 }
 
 function db() {
     global $db;
     return $db;
+}
+
+function csrf_token() {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function require_csrf() {
+    $token = $_POST['csrf'] ?? '';
+    if (!hash_equals(csrf_token(), $token)) {
+        die('Ação inválida (CSRF Token incorreto). Volte e tente novamente.');
+    }
 }
 
 function audit_log($acao, $tabela = null, $registro_id = null, $detalhes = null) {

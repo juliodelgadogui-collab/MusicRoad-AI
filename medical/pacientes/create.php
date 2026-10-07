@@ -21,8 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($nome)) {
         $error = 'O nome é obrigatório.';
     } else {
-        $stmt = db()->prepare('INSERT INTO pacientes (nome, cpf, data_nascimento, sexo, telefone, email, endereco, profissao, funcao, empresa, info_clinica) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $stmt->execute([$nome, $cpf, $data_nascimento, $sexo, $telefone, $email, $endereco, $profissao, $funcao, $empresa, $info_clinica]);
+        $stmt = db()->prepare('INSERT INTO pacientes (medico_id, nome, cpf, data_nascimento, sexo, telefone, email, endereco, profissao, funcao, empresa, info_clinica) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([$medico['id'], $nome, $cpf, $data_nascimento, $sexo, $telefone, $email, $endereco, $profissao, $funcao, $empresa, $info_clinica]);
         $id = db()->lastInsertId();
 
         audit_log('cadastro_paciente', 'pacientes', $id);

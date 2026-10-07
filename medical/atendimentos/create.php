@@ -5,7 +5,8 @@ require_login();
 $medico = current_medico();
 $error = '';
 
-$stmt = db()->query('SELECT id, nome FROM pacientes ORDER BY nome ASC');
+$stmt = db()->prepare('SELECT id, nome FROM pacientes WHERE medico_id = ? ORDER BY nome ASC');
+$stmt->execute([$medico['id']]);
 $pacientes = $stmt->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

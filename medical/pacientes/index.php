@@ -4,7 +4,8 @@ require_login();
 
 $medico = current_medico();
 
-$stmt = db()->query('SELECT * FROM pacientes ORDER BY nome ASC');
+$stmt = db()->prepare('SELECT * FROM pacientes WHERE medico_id = ? ORDER BY nome ASC');
+$stmt->execute([$medico['id']]);
 $pacientes = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>

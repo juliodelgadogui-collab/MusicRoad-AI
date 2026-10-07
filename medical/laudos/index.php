@@ -69,7 +69,7 @@ $laudos = $stmt->fetchAll();
                     <td><?php echo htmlspecialchars($l['cid_codigo']); ?></td>
                     <td><?php echo htmlspecialchars($l['codigo_validacao']); ?></td>
                     <td>
-                        <a href="view.php?id=<?php echo $l['id']; ?>">Visualizar PDF</a>
+                        <a href="view.php?id=<?php echo $l['id']; ?>" target="_blank">Visualizar PDF</a> | <form method="POST" action="cancelar.php" style="display:inline;" onsubmit="return confirm('Confirmar cancelamento?');"><input type="hidden" name="csrf" value="<?php echo htmlspecialchars(csrf_token()); ?>"><input type="hidden" name="id" value="<?php echo $l['id']; ?>"><input type="hidden" name="motivo" value="Cancelado pelo emissor"><button type="submit" style="background:none;border:none;color:red;cursor:pointer;text-decoration:underline;">Cancelar</button></form>
                     </td>
                 </tr>
                 <?php endforeach; ?>

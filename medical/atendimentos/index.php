@@ -4,12 +4,14 @@ require_login();
 
 $medico = current_medico();
 
-$stmt = db()->query('
+$stmt = db()->prepare('
     SELECT a.*, p.nome as paciente_nome
     FROM atendimentos a
     JOIN pacientes p ON a.paciente_id = p.id
+    WHERE a.medico_id = ?
     ORDER BY a.data_atendimento DESC
 ');
+$stmt->execute([$medico['id']]);
 $atendimentos = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -67,7 +69,6 @@ $atendimentos = $stmt->fetchAll();
                     <td><?php echo htmlspecialchars($a['paciente_nome']); ?></td>
                     <td><?php echo htmlspecialchars($a['queixa_principal']); ?></td>
                     <td>
-                        <a href="view.php?id=<?php echo $a['id']; ?>">Ver</a> |
                         <a href="../atestados/create.php?atendimento_id=<?php echo $a['id']; ?>">Gerar Atestado</a> |
                         <a href="../laudos/create.php?atendimento_id=<?php echo $a['id']; ?>">Gerar Laudo</a>
                     </td>

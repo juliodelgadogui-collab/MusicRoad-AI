@@ -1,0 +1,12 @@
+# Protect sensitive directories
+RewriteEngine On
+RewriteRule ^database/ - [F]
+RewriteRule ^storage/ - [F]
+RewriteRule ^api/bootstrap\.php$ - [F]
+
+# Deny direct access to files matching specific extensions
+<FilesMatch "\.(sqlite|sql|log|ini|json)$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes
