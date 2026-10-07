@@ -1,5 +1,7 @@
 <?php
 session_name('MEDICAL_SESSION');
+$secure=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off');
+session_set_cookie_params(['httponly'=>true,'secure'=>$secure,'samesite'=>'Lax']);
 session_start();
 
 $db_path = __DIR__ . '/../database/medical.sqlite';
@@ -7,6 +9,8 @@ $db_exists = file_exists($db_path);
 $db = new PDO('sqlite:' . $db_path);
 $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+$db->exec('PRAGMA foreign_keys=ON');
+$db->exec('PRAGMA journal_mode=WAL');
 
 if (!$db_exists) {
     $db->exec('CREATE TABLE IF NOT EXISTS medicos (
@@ -142,6 +146,16 @@ if (!$db_exists) {
     } catch(Exception $e) {}
 }
 
+function ensure_column($table,$column,$definition){$cols=db()->query('PRAGMA table_info('.$table.')')->fetchAll();foreach($cols as $c)if($c['name']===$column)return;db()->exec('ALTER TABLE '.$table.' ADD COLUMN '.$column.' '.$definition);}
+foreach([['pacientes','alergias','TEXT'],['pacientes','medicamentos','TEXT'],['pacientes','antecedentes','TEXT'],['atestados','titulo','TEXT'],['atestados','conteudo_personalizado','TEXT'],['atestados','inicio_afastamento','TEXT'],['atestados','fim_afastamento','TEXT'],['atestados','dias_afastamento','INTEGER'],['atestados','atividade_habitual','TEXT'],['atestados','incapacidade_restricao','TEXT'],['laudos','titulo','TEXT'],['laudos','conteudo_personalizado','TEXT'],['laudos','atividade_habitual','TEXT'],['laudos','periodo_estimado','TEXT'],['laudos','incapacidade_restricao','TEXT']] as $c)ensure_column($c[0],$c[1],$c[2]);
+$db->exec("CREATE TABLE IF NOT EXISTS modelos_documento(id INTEGER PRIMARY KEY AUTOINCREMENT,medico_id INTEGER NOT NULL,tipo TEXT NOT NULL,nome TEXT NOT NULL,conteudo TEXT NOT NULL,ativo INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+
+function e($v){return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8');}
+function unique_code($p){return $p.'-'.date('Y').'-'.strtoupper(bin2hex(random_bytes(5)));}
+function patient_for_doctor($id,$doctor){$q=db()->prepare('SELECT * FROM pacientes WHERE id=? AND medico_id=?');$q->execute([$id,$doctor]);return $q->fetch()?:null;}
+function cid_find($q,$limit=30){$q=trim($q);if($q==='')return[];$s=db()->prepare('SELECT codigo,descricao FROM cids WHERE codigo LIKE ? OR descricao LIKE ? ORDER BY codigo LIMIT ?');$l='%'.$q.'%';$s->execute([$l,$l,$limit]);return $s->fetchAll();}
+function render_header($title){$m=current_medico();?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?=e($title)?> · Sistema Médico</title><style>body{font:15px Arial;margin:0;background:#f4f7fb;color:#172033}.top{background:#102a43;color:#fff;padding:16px 22px;display:flex;justify-content:space-between}.nav{background:#fff;padding:11px 22px;border-bottom:1px solid #dbe3ee;display:flex;gap:16px;flex-wrap:wrap}.nav a{color:#24445f;text-decoration:none}.wrap{max-width:1150px;margin:24px auto;padding:0 16px}.card{background:#fff;border:1px solid #dbe3ee;border-radius:14px;padding:20px;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}label{font-weight:700;display:block;margin:6px 0}input,select,textarea{width:100%;box-sizing:border-box;padding:11px;border:1px solid #cbd6e2;border-radius:9px;font:inherit}textarea{min-height:110px}.btn{display:inline-block;background:#1565c0;color:#fff;border:0;border-radius:9px;padding:11px 16px;text-decoration:none;cursor:pointer;font-weight:700}.btn.ok{background:#16845b}.muted{color:#64748b}.error{background:#fff0f0;color:#a61b1b;padding:12px;border-radius:9px}.cid-results{border:1px solid #ccd6e1;max-height:220px;overflow:auto}.cid-results button{display:block;width:100%;text-align:left;padding:10px;border:0;border-bottom:1px solid #eee;background:#fff}@media(max-width:700px){.grid{grid-template-columns:1fr}.top{flex-direction:column;gap:8px}}</style></head><body><div class="top"><strong>🏥 Sistema Médico</strong><span><?=e($m['nome_completo']??'')?> · <a style="color:#fff" href="/medical/login/logout.php">Sair</a></span></div><div class="nav"><a href="/medical/">Início</a><a href="/medical/pacientes/index.php">Pacientes</a><a href="/medical/atendimentos/index.php">Atendimentos</a><a href="/medical/atestados/index.php">Atestados</a><a href="/medical/laudos/index.php">Laudos</a><a href="/medical/cid/index.php">CID-10</a><a href="/medical/configuracoes/index.php">Configurações</a></div><main class="wrap"><?php}
+function render_footer(){echo'</main></body></html>';}
 function db() {
     global $db;
     return $db;
