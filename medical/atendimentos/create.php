@@ -10,6 +10,7 @@ $stmt->execute([$medico['id']]);
 $pacientes = $stmt->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $paciente_id = (int)$_POST['paciente_id'];
     $data_atendimento = date('Y-m-d H:i:s');
     $queixa_principal = $_POST['queixa_principal'] ?? '';
@@ -96,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <form method="POST">
+                <input type="hidden" name="csrf" value="<?php echo htmlspecialchars(csrf_token()); ?>">
             <div class="card">
                 <h3>Informações Gerais</h3>
                 <div class="form-group">
