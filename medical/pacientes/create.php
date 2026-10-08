@@ -6,6 +6,7 @@ $medico = current_medico();
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $nome = $_POST['nome'] ?? '';
     $cpf = $_POST['cpf'] ?? '';
     $data_nascimento = $_POST['data_nascimento'] ?? '';
@@ -76,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="error"><?php echo htmlspecialchars($error); ?></div>
             <?php endif; ?>
             <form method="POST">
+                <input type="hidden" name="csrf" value="<?php echo htmlspecialchars(csrf_token()); ?>">
                 <div class="form-group">
                     <label>Nome Completo *</label>
                     <input type="text" name="nome" required>
