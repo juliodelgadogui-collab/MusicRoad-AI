@@ -21,8 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Nome, CRM e UF são obrigatórios.';
     } else {
         $assinatura_path = $medico['assinatura_path'];
+        $logo_path = $medico['logo_path'] ?? null;
 
-        if (isset($_FILES['assinatura']) && $_FILES['assinatura']['error'] === UPLOAD_ERR_OK) {
+        if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
+            $tmp=$_FILES['logo']['tmp_name']; $name=basename($_FILES['logo']['name']); $mime=(new finfo(FILEINFO_MIME_TYPE))->file($tmp); $ext=strtolower(pathinfo($name,PATHINFO_EXTENSION));
+            if(!in_array($mime,['image/png','image/jpeg','image/webp'],true)||!in_array($ext,['png','jpg','jpeg','webp'],true)||$_FILES['logo']['size']>3*1024*1024){$error='Logo inválido. Use PNG, JPG ou WEBP até 3MB.';}else{$filename='logo_'.$medico['id'].'_'.time().'.'.$ext;$dest=__DIR__.'/../storage/assinaturas/'.$filename;if(move_uploaded_file($tmp,$dest)){$logo_path='storage/assinaturas/'.$filename;}else{$error='Falha ao salvar o logo.';}}
+        }
+
+        if (!$error && isset($_FILES['assinatura']) && $_FILES['assinatura']['error'] === UPLOAD_ERR_OK) {
             $tmp_name = $_FILES['assinatura']['tmp_name'];
             $name = basename($_FILES['assinatura']['name']);
             $size = $_FILES['assinatura']['size'];
@@ -55,8 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$error) {
-            $stmt = db()->prepare('UPDATE medicos SET nome_completo = ?, cpf = ?, crm = ?, uf = ?, especialidade = ?, rqe = ?, telefone = ?, endereco = ?, assinatura_path = ? WHERE id = ?');
-            $stmt->execute([$nome, $cpf, $crm, $uf, $especialidade, $rqe, $telefone, $endereco, $assinatura_path, $medico['id']]);
+            $stmt = db()->prepare('UPDATE medicos SET nome_completo = ?, cpf = ?, crm = ?, uf = ?, especialidade = ?, rqe = ?, telefone = ?, endereco = ?, assinatura_path = ?, logo_path = ? WHERE id = ?');
+            $stmt->execute([$nome, $cpf, $crm, $uf, $especialidade, $rqe, $telefone, $endereco, $assinatura_path, $logo_path, $medico['id']]);
             $success = 'Configurações salvas com sucesso!';
             $medico = current_medico(); // Refresh
         }
@@ -167,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <h3>Assinatura Digitalizada</h3>
                 <p style="font-size: 14px; color: #666;">Faça o upload de uma imagem contendo apenas a sua assinatura (sem fundo escuro). Tipos aceitos: PNG, JPG, WEBP (Máx. 2MB).</p>
                 <div class="form-group">
-                    <label>Imagem da Assinatura</label>
+                    <label>Logo / identidade visual</label><input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp"><br><br><label>Imagem da Assinatura</label>
                     <input type="file" name="assinatura" accept=".png, .jpg, .jpeg, .webp">
                 </div>
 
