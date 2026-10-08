@@ -4,12 +4,14 @@ require_login();
 
 $medico = current_medico();
 
-$stmt = db()->query('
+$stmt = db()->prepare('
     SELECT l.*, p.nome as paciente_nome
     FROM laudos l
     JOIN pacientes p ON l.paciente_id = p.id
+    WHERE l.medico_id = ?
     ORDER BY l.data_emissao DESC
 ');
+$stmt->execute([$medico['id']]);
 $laudos = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>

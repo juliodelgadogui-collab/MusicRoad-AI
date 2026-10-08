@@ -4,12 +4,14 @@ require_login();
 
 $medico = current_medico();
 
-$stmt = db()->query('
+$stmt = db()->prepare('
     SELECT a.*, p.nome as paciente_nome
     FROM atestados a
     JOIN pacientes p ON a.paciente_id = p.id
+    WHERE a.medico_id = ?
     ORDER BY a.data_emissao DESC
 ');
+$stmt->execute([$medico['id']]);
 $atestados = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
